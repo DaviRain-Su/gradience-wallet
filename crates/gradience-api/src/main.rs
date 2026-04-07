@@ -567,7 +567,7 @@ async fn wallet_sign(
             break;
         }
     }
-    let _from_addr = addr.ok_or(StatusCode::NOT_FOUND)?;
+    let from_addr = addr.ok_or(StatusCode::NOT_FOUND)?;
 
     let wei = gradience_core::eth_to_wei(&body.amount)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -580,7 +580,7 @@ async fn wallet_sign(
 
     let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let nonce = client.get_transaction_count(&body.to).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = client.get_transaction_count(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let gas_price_hex = client.get_gas_price().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

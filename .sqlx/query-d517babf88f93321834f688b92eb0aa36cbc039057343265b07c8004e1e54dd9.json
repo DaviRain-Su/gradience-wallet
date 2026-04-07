@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "d517babf88f93321834f688b92eb0aa36cbc039057343265b07c8004e1e54dd9"
+}

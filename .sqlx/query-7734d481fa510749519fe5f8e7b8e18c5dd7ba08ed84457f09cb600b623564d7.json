@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO workspaces (id, name, owner_id, plan) VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "7734d481fa510749519fe5f8e7b8e18c5dd7ba08ed84457f09cb600b623564d7"
+}

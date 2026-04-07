@@ -118,8 +118,8 @@ pub async fn fund(
     let from_addr = addr.ok_or_else(|| anyhow::anyhow!("No EVM address found for wallet {}", wallet_id))?;
     let to_addr = to.unwrap_or_else(|| from_addr.clone());
 
-    let eth_f64: f64 = amount.parse().map_err(|_| anyhow::anyhow!("Invalid amount"))?;
-    let wei = (eth_f64 * 1e18) as u128;
+    let wei = gradience_core::eth_to_wei(&amount)
+        .map_err(|_| anyhow::anyhow!("Invalid amount"))?;
 
     let rpc_url = if chain == "base" {
         "https://mainnet.base.org"

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO policy_approvals (id, policy_id, wallet_id, request_json) VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "4217749c5a3d86c9fc8981bbf89eb1f68eefa32001e3460a8962b4b7a0993a2c"
+}
