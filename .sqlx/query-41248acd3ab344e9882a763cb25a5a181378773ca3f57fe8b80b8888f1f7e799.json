@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO wallet_addresses (id, wallet_id, chain_id, address, derivation_path) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "41248acd3ab344e9882a763cb25a5a181378773ca3f57fe8b80b8888f1f7e799"
+}

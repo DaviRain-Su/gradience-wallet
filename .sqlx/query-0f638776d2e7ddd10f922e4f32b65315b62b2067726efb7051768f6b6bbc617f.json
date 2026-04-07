@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO spending_trackers (wallet_id, rule_type, token_address, chain_id, period, spent_amount, reset_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(wallet_id, rule_type, token_address, chain_id, period) DO UPDATE SET spent_amount = excluded.spent_amount, reset_at = excluded.reset_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": []
+  },
+  "hash": "0f638776d2e7ddd10f922e4f32b65315b62b2067726efb7051768f6b6bbc617f"
+}

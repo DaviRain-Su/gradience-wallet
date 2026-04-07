@@ -1,0 +1,23 @@
+[package]
+name = "gradience-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "gradience_mcp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "gradience-mcp"
+path = "src/main.rs"
+
+[dependencies]
+gradience-core = { path = "../gradience-core" }
+anyhow.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+hex.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

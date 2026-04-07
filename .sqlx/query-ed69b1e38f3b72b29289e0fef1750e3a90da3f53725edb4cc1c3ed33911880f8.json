@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO policies (id, name, wallet_id, workspace_id, rules_json, priority) VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "ed69b1e38f3b72b29289e0fef1750e3a90da3f53725edb4cc1c3ed33911880f8"
+}

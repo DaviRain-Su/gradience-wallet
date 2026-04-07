@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO api_keys (id, wallet_id, name, key_hash, permissions, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "aa3f82ca28c98b8ded7e2b15bb99e1240404b69623e1596e655d8138dc8bf909"
+}

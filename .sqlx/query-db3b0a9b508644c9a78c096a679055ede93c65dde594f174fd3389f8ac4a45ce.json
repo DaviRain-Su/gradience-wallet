@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO audit_logs (wallet_id, api_key_id, action, context_json, decision, prev_hash, current_hash) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "db3b0a9b508644c9a78c096a679055ede93c65dde594f174fd3389f8ac4a45ce"
+}

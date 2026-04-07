@@ -552,3 +552,232 @@ AI Gateway 复用 Gradience 已有的策略引擎，新增规则类型：
 ---
 
 *本文档为 Phase 3 设计草案。核心思路：**复用 Gradience Wallet 已建的策略引擎 + 支付 + 审计基础设施，向上扩展为 AI Agent 的付费调用网关。** Agent 不需要知道自己的 LLM 调用花了多少钱——Gradience 帮你管、帮你付、帮你审计。*
+
+---
+
+## 12. MPP 集成 — 统一 Web2 服务支付
+
+### 12.1 问题
+x402 适合链上原生服务，但绝大多数 Web2 API (天气、新闻、搜索、数据) 没有原生支付能力。MPP 提供了解决方案：通过 HTTP 402 + challenge/credential/receipt 流，让任何 API 都能被 Agent 付费调用。
+
+### 12.2 架构
+
+```
+┌─────────────────────────────────────────────┐
+│           Gradience 统一支付层              │
+│                                             │
+│  Agent 请求任何 API (Web2 或 Web3)           │
+│      │                                      │
+│      ├── 链原生 API ──→ x402 自动支付       │
+│      ├── Web2 API   ──→ MPP challenge/cred  │
+│      └── LLM 调用   ──→ AI Gateway 内置计费  │
+│                                             │
+│  所有路径 → 策略评估 → 余额扣减 → 审计       │
+└─────────────────────────────────────────────┘
+```
+
+### 12.3 MPP 自动支付流程 (Agent 无感知)
+
+```
+Agent (不知道 MPP, 只知道发 HTTPS 请求)
+    │
+    │  GET https://weather-api.com/forecast?city=London
+    ▼
+Gradience HTTP Proxy (拦截所有出站请求)
+    │
+    ├── 转发请求到 weather-api.com
+    │
+    ├── 检测 402 响应 → 解析 WWW-Authenticate 头
+    │   challenge: {price: "0.001 USDC", network: "tempo"}
+    │
+    ├── 策略检查: 0.001 USDC < per_request_limit → ✓
+    │
+    ├── 签名: 用 OWS Vault 生成 credential
+    │   credential = sign(challenge, agent_wallet_key)
+    │
+    ├── 重放请求 + MPP-credential header
+    │
+    └── 收到响应 + receipt
+        ├── 验证 receipt 有效性
+        ├── 扣 Agent 余额: -0.001 USDC
+        ├── 记录 audit_log: web_api_call
+        └── 返回数据给 Agent (Agent 完全无感知)
+```
+
+### 12.4 Gradience Proxy 实现 (Rust)
+
+```rust
+/// HTTP Proxy — 自动处理 x402 和 MPP 支付
+pub struct PaymentProxy {
+    wallet: Arc<OwsAdapter>,
+    policy_engine: Arc<PolicyEngine>,
+    balances: Arc<BalanceManager>,
+}
+
+impl PaymentProxy {
+    pub async fn proxy_request(
+        &self,
+        agent_token: &str,
+        request: HttpRequest,
+    ) -> Result<HttpResponse, ProxyError> {
+        // 1. 转发原始请求
+        let response = self.forward(&request).await?;
+
+        match response.status() {
+            // 2a. HTTP 402 → 需要支付
+            StatusCode::PAYMENT_REQUIRED => {
+                // 解析 x402 或 MPP challenge
+                let challenge = Challenge::from_headers(&response.headers())?;
+                
+                // 策略评估
+                self.policy_engine.evaluate(agent_token, &challenge)?;
+                
+                // 余额检查 + 冻结
+                self.balances.freeze(agent_token, challenge.amount)?;
+                
+                // 签名 credential
+                let credential = self.wallet.sign_challenge(&challenge)?;
+                
+                // 重放请求 + payment header
+                let mut retry = request.clone();
+                retry.headers.insert(challenge.auth_header(credential));
+                
+                let final_response = self.forward(&retry).await?;
+                
+                // 扣费 + 审计
+                self.balances.settle(agent_token, challenge.amount)?;
+                self.log_payment(agent_token, &challenge).await?;
+                
+                Ok(final_response)
+            }
+            
+            // 2b. 正常响应 → 直接返回
+            _ => Ok(response),
+        }
+    }
+}
+```
+
+### 12.5 MCP + MPP 集成
+
+MPP 已提交 IETF 支持 **MCP 作为传输** (draft-payment-transport-mcp-00)。这意味着：
+
+```
+MCP Client (Agent) ── MCP Tool Call ──→ MCP Server (Web2 服务)
+                                              │
+                                              ↓
+                                       MCP 返回 402 error
+                                              │
+                                   Gradience MCP Middleware
+                                   (自动拦截、付费、重试)
+                                              │
+                                       MCP 返回正常结果
+```
+
+Gradience MCP 可以自动处理所有支持 MPP 的 MCP tool server 的收费：
+
+```rust
+// gradience-mcp/src/middleware/mpp.rs
+pub struct MppMiddleware {
+    wallet: Arc<OwsAdapter>,
+    policy: Arc<PolicyEngine>,
+    balance: Arc<BalanceManager>,
+}
+
+#[async_trait]
+impl Middleware for MppMiddleware {
+    async fn on_error(
+        &self,
+        ctx: ToolCallContext,
+        error: McpError,
+    ) -> Result<ToolCallResult, McpError> {
+        // 检测 MPP 402 错误
+        if let McpError::PaymentRequired(ref challenge) = error {
+            // 自动处理支付 + 重试
+            let credential = self.sign(&challenge)?;
+            let retry_result = ctx.retry_with_credential(&credential).await?;
+            
+            // 扣费 + 审计
+            self.deduct(&ctx, &challenge).await?;
+            
+            return Ok(retry_result);
+        }
+        
+        Err(error)
+    }
+}
+```
+
+### 12.6 支持的 Web2 服务类型
+
+| 服务类别 | 示例 | MPP 接入方式 |
+|---|---|---|
+| **数据 API** | Weather, News, Stock Data | 服务实现 MPP + Gradience Proxy |
+| **AI/ML API** | Image Gen, Translation, OCR | Gateway 内置计费 |
+| **搜索/知识** | Web Search, Knowledge Graph | MPP 或 Gradience 代理 |
+| **Dev Tools** | GitHub, CI/CD, Monitoring | MPP session (批量微支付) |
+
+### 12.7 MPP vs x402 选择策略
+
+Gradience 支付路由器自动选择：
+
+```rust
+pub enum PaymentRoute {
+    /// 链上原生 → x402 (零手续费, 任何钱包)
+    X402 { chain: ChainId, token: String },
+    
+    /// Web2 服务 → MPP (支持 Stripe fiat + stablecoin)
+    Mpp { network: String, amount: USDC },
+    
+    /// LLM 调用 → Gateway 内置计费
+    Gateway { model: String },
+    
+    /// HashKey 生态 → HSP (native)
+    Hsp { service: String },
+}
+
+impl PaymentRouter {
+    fn route(&self, request: &HttpRequest) -> PaymentRoute {
+        let headers = &request.headers;
+        
+        if headers.contains("WWW-Authenticate: MPP") {
+            PaymentRoute::Mpp { 
+                network: extract_network(headers), 
+                amount: extract_price(headers) 
+            }
+        } else if headers.contains("X-Pay-Requirements") {
+            // x402
+            PaymentRoute::X402 { 
+                chain: parse_chain(headers), 
+                token: parse_token(headers)
+            }
+        } else if is_llm_endpoint(request) {
+            PaymentRoute::Gateway { model: extract_model(request) }
+        } else {
+            // 默认: Gateway 代理 + 内置计费
+            PaymentRoute::Gateway { model: "proxy".into() }
+        }
+    }
+}
+```
+
+---
+
+## 13. 更新后的 Hackathon 展示路径
+
+整合 MPP 后，Demo 更全面：
+
+| 步骤 | 展示内容 | 协议 |
+|---|---|---|
+| 1 | 用户充值 $100 AI Balance | USDC |
+| 2 | Agent 调用 Claude Sonnet 4 (编程) | AI Gateway 内置 |
+| 3 | Agent 调用天气 API (Web2) | MPP challenge/credential |
+| 4 | Agent 做 DEX swap (DeFi) | x402 |
+| 5 | Dashboard 显示完整审计 | Merkle 锚定 HashKey |
+
+**Pitch 核心信息**: 
+> "Gradience 是 Agent 的通用支付层。无论 Agent 调的是 Claude、天气 API、还是链上 DEX——一个钱包、一套策略、完整审计。"
+
+---
+
+*2026-04-07 追加: MPP Web2 服务支付集成*
