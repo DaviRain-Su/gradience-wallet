@@ -1,4 +1,17 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+function getApiBase(): string {
+  if (typeof window === "undefined") return "http://localhost:8080";
+  const env = process.env.NEXT_PUBLIC_API_URL;
+  if (env) return env;
+  const saved = localStorage.getItem("gradience_api_base");
+  if (saved) return saved;
+  return "http://localhost:8080";
+}
+
+export function setApiBase(url: string) {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("gradience_api_base", url);
+  }
+}
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -7,7 +20,8 @@ function getToken(): string | null {
 
 export async function apiPost(path: string, body: unknown) {
   const token = getToken();
-  const res = await fetch(`${API_BASE}${path}`, {
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -24,7 +38,8 @@ export async function apiPost(path: string, body: unknown) {
 
 export async function apiGet(path: string) {
   const token = getToken();
-  const res = await fetch(`${API_BASE}${path}`, {
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
     method: "GET",
     headers: {
       "Content-Type": "application/json",

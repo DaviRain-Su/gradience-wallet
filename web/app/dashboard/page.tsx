@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, setApiBase } from "@/lib/api";
 
 interface Wallet {
   id: string;
@@ -39,6 +39,16 @@ export default function Dashboard() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  const [apiBase, setApiBaseState] = useState("");
+  const [showApiConfig, setShowApiConfig] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("gradience_api_base") || "http://localhost:8080";
+      setApiBaseState(saved);
+      setShowApiConfig(window.location.protocol === "https:" && saved.startsWith("http:"));
+    }
+  }, []);
 
   async function fetchWallets() {
     try {
@@ -87,6 +97,28 @@ export default function Dashboard() {
           {loading ? "Creating..." : "Create Wallet"}
         </button>
       </div>
+
+      {showApiConfig && (
+        <div className="mb-4 border rounded p-3 bg-yellow-50">
+          <p className="text-sm text-yellow-800 mb-2">
+            You are on HTTPS but your local API is HTTP. Please enter your local API tunnel URL (e.g. ngrok HTTPS) or switch to local dev mode.
+          </p>
+          <div className="flex gap-2">
+            <input
+              className="border rounded px-2 py-1 flex-1 text-sm"
+              placeholder="https://your-ngrok-url.ngrok-free.app"
+              value={apiBase}
+              onChange={(e) => setApiBaseState(e.target.value)}
+            />
+            <button
+              onClick={() => { setApiBase(apiBase); setShowApiConfig(false); setMsg("API base updated. Refreshing..."); window.location.reload(); }}
+              className="bg-black text-white px-3 py-1 rounded text-sm"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
 
       {msg && <p className="text-red-500 text-sm mb-4">{msg}</p>}
 
