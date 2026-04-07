@@ -102,13 +102,29 @@ async fn register_start(
     }
 
     let user_id = Uuid::new_v4();
-    let exclude = state
-        .credentials
-        .lock()
+
+    let mut creds = state.credentials.lock().await;
+    let exclude = if let Some(pk) = creds.get(&username) {
+        vec![pk.cred_id().clone()]
+    } else {
+        let email = format!("{}@gradience.local", username);
+        let row = sqlx::query_as::<_, (Vec<u8>,)>(
+            "SELECT pc.credential_id FROM passkey_credentials pc JOIN users u ON u.id = pc.user_id WHERE u.email = ?"
+        )
+        .bind(&email)
+        .fetch_optional(&state.db)
         .await
-        .get(&username)
-        .map(|pk| vec![pk.cred_id().clone()])
-        .unwrap_or_default();
+        .map_err(|e| {
+            warn!("db load credential_id error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+        if let Some((cred_id,)) = row {
+            vec![webauthn_rs::prelude::CredentialID::from(cred_id)]
+        } else {
+            vec![]
+        }
+    };
+    drop(creds);
 
     let (ccr, reg_state) = state
         .webauthn
@@ -203,13 +219,36 @@ async fn login_start(
     Json(body): Json<LoginStartReq>,
 ) -> Result<Json<LoginStartResp>, StatusCode> {
     let username = body.username.trim().to_lowercase();
-    let allowed = state
-        .credentials
-        .lock()
+
+    let mut creds = state.credentials.lock().await;
+    let allowed = if let Some(pk) = creds.get(&username) {
+        vec![pk.clone()]
+    } else {
+        let email = format!("{}@gradience.local", username);
+        let row = sqlx::query_as::<_, (Vec<u8>,)>(
+            "SELECT pc.credential_pk FROM passkey_credentials pc JOIN users u ON u.id = pc.user_id WHERE u.email = ?"
+        )
+        .bind(&email)
+        .fetch_optional(&state.db)
         .await
-        .get(&username)
-        .map(|pk| vec![pk.clone()])
-        .unwrap_or_default();
+        .map_err(|e| {
+            warn!("db load passkey error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+        if let Some((cred_pk,)) = row {
+            let pk: webauthn_rs::prelude::Passkey = serde_json::from_slice(&cred_pk)
+                .map_err(|e| {
+                    warn!("passkey deserialize error: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+            creds.insert(username.clone(), pk.clone());
+            vec![pk]
+        } else {
+            vec![]
+        }
+    };
+    drop(creds);
 
     if allowed.is_empty() {
         return Err(StatusCode::NOT_FOUND);
