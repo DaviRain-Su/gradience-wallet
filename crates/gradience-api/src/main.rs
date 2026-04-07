@@ -463,11 +463,28 @@ async fn wallet_fund(
     };
     let (eval, core_policies) = evaluate_wallet_policy(
         &state.db, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+
+    let mut approval_id = None;
     if eval.decision == gradience_core::policy::engine::Decision::Deny {
         let _ = gradience_core::audit::service::log_wallet_action(
             &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": body.to, "amount": body.amount}).to_string(), "deny",
         ).await;
         return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+    }
+    if eval.decision == gradience_core::policy::engine::Decision::Warn {
+        let aid = uuid::Uuid::new_v4().to_string();
+        let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+        let request_json = serde_json::json!({
+            "action": "fund",
+            "wallet_id": wallet_id,
+            "to": body.to,
+            "amount": body.amount,
+            "chain": chain,
+        }).to_string();
+        let _ = gradience_db::queries::create_policy_approval(
+            &state.db, &aid, &policy_id, &wallet_id, &request_json
+        ).await;
+        approval_id = Some(aid);
     }
 
     let rpc_url = if chain == "base" {
@@ -513,7 +530,13 @@ async fn wallet_fund(
         &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": body.to, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allow",
     ).await;
 
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({ "tx_hash": result.tx_hash }))))
+    let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
+    if let Some(aid) = approval_id {
+        resp["approval_id"] = aid.into();
+        resp["warning"] = true.into();
+        resp["reasons"] = eval.reasons.into();
+    }
+    Ok((StatusCode::OK, axum::Json(resp)))
 }
 
 #[derive(Deserialize)]
@@ -574,11 +597,29 @@ async fn wallet_sign(
     };
     let (eval, core_policies) = evaluate_wallet_policy(
         &state.db, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+
+    let mut approval_id = None;
     if eval.decision == gradience_core::policy::engine::Decision::Deny {
         let _ = gradience_core::audit::service::log_wallet_action(
             &state.db, &wallet_id, None, "sign", &serde_json::json!({"to": body.to, "amount": body.amount}).to_string(), "deny",
         ).await;
         return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+    }
+    if eval.decision == gradience_core::policy::engine::Decision::Warn {
+        let aid = uuid::Uuid::new_v4().to_string();
+        let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+        let request_json = serde_json::json!({
+            "action": "sign",
+            "wallet_id": wallet_id,
+            "to": body.to,
+            "amount": body.amount,
+            "data": body.data.as_deref().unwrap_or(""),
+            "chain": body.chain,
+        }).to_string();
+        let _ = gradience_db::queries::create_policy_approval(
+            &state.db, &aid, &policy_id, &wallet_id, &request_json
+        ).await;
+        approval_id = Some(aid);
     }
     let mut rlp = rlp::RlpStream::new_list(9);
     rlp.append(&nonce);
@@ -609,7 +650,74 @@ async fn wallet_sign(
         &state.db, &wallet_id, None, "sign", &serde_json::json!({"to": body.to, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allow",
     ).await;
 
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({ "tx_hash": result.tx_hash }))))
+    let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
+    if let Some(aid) = approval_id {
+        resp["approval_id"] = aid.into();
+        resp["warning"] = true.into();
+        resp["reasons"] = eval.reasons.into();
+    }
+    Ok((StatusCode::OK, axum::Json(resp)))
+}
+
+// ==================== Policy Approval Handlers ====================
+
+async fn list_policy_approvals(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    // For demo, list all pending approvals across all wallets
+    let rows = gradience_db::queries::list_all_pending_policy_approvals(&state.db)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let list: Vec<_> = rows.into_iter().map(|a| serde_json::json!({
+        "id": a.id,
+        "policy_id": a.policy_id,
+        "wallet_id": a.wallet_id,
+        "status": a.status,
+        "request_json": a.request_json,
+        "expires_at": a.expires_at.to_rfc3339(),
+        "created_at": a.created_at.to_rfc3339(),
+    })).collect();
+
+    Ok(Json(list))
+}
+
+async fn approve_policy_approval(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(approval_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    gradience_db::queries::update_policy_approval_status(
+        &state.db, &approval_id, "approved", Some(&session.username),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
+}
+
+async fn reject_policy_approval(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(approval_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    gradience_db::queries::update_policy_approval_status(
+        &state.db, &approval_id, "rejected", Some(&session.username),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::OK)
 }
 
 #[derive(Serialize)]
@@ -1036,6 +1144,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/mcp/get_balance", post(mcp_get_balance))
         .route("/api/workspaces", get(list_workspaces).post(create_workspace))
         .route("/api/workspaces/:id/members", get(list_workspace_members).post(invite_workspace_member))
+        .route("/api/policy-approvals", get(list_policy_approvals))
+        .route("/api/policy-approvals/:id/approve", post(approve_policy_approval))
+        .route("/api/policy-approvals/:id/reject", post(reject_policy_approval))
         .route("/health", get(|| async { "ok" }))
         .layer(
             tower_http::cors::CorsLayer::new()

@@ -104,9 +104,15 @@ impl PolicyEngine {
                         }
                     }
                     Rule::SpendLimit { max, .. } => {
-                        if ctx.transaction.value.parse::<u64>().unwrap_or(0) > max.parse::<u64>().unwrap_or(0) {
+                        let val = ctx.transaction.value.parse::<u64>().unwrap_or(0);
+                        let limit = max.parse::<u64>().unwrap_or(u64::MAX);
+                        if val > limit {
                             reasons.push("spend limit exceeded".into());
                             return Ok(EvalResult { decision: Decision::Deny, reasons });
+                        }
+                        if val > limit / 5 * 4 {
+                            reasons.push("spend limit threshold warning (80%)".into());
+                            return Ok(EvalResult { decision: Decision::Warn, reasons });
                         }
                     }
                     _ => {}

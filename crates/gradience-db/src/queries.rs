@@ -424,6 +424,72 @@ pub async fn seed_model_pricing(pool: &Pool<Sqlite>) -> Result<()> {
     Ok(())
 }
 
+// ========== Policy Approvals ==========
+pub async fn create_policy_approval(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    policy_id: &str,
+    wallet_id: &str,
+    request_json: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO policy_approvals (id, policy_id, wallet_id, request_json) VALUES (?, ?, ?, ?)",
+        id,
+        policy_id,
+        wallet_id,
+        request_json
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_policy_approval(pool: &Pool<Sqlite>, id: &str) -> Result<Option<PolicyApproval>> {
+    let row = sqlx::query_as::<_, PolicyApproval>(
+        "SELECT id, policy_id, wallet_id, request_json, status, approved_by, approved_at, expires_at, created_at FROM policy_approvals WHERE id = ?"
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn list_pending_policy_approvals(pool: &Pool<Sqlite>, wallet_id: &str) -> Result<Vec<PolicyApproval>> {
+    let rows = sqlx::query_as::<_, PolicyApproval>(
+        "SELECT id, policy_id, wallet_id, request_json, status, approved_by, approved_at, expires_at, created_at FROM policy_approvals WHERE wallet_id = ? AND status = 'pending' ORDER BY created_at DESC"
+    )
+    .bind(wallet_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn list_all_pending_policy_approvals(pool: &Pool<Sqlite>) -> Result<Vec<PolicyApproval>> {
+    let rows = sqlx::query_as::<_, PolicyApproval>(
+        "SELECT id, policy_id, wallet_id, request_json, status, approved_by, approved_at, expires_at, created_at FROM policy_approvals WHERE status = 'pending' ORDER BY created_at DESC"
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn update_policy_approval_status(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    status: &str,
+    approved_by: Option<&str>,
+) -> Result<()> {
+    sqlx::query!(
+        "UPDATE policy_approvals SET status = ?, approved_by = ?, approved_at = datetime('now') WHERE id = ?",
+        status,
+        approved_by,
+        id
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 // ========== Anchor ==========
 pub async fn list_unanchored_logs(pool: &Pool<Sqlite>, limit: i64) -> Result<Vec<AuditLog>> {
     let logs = sqlx::query_as::<_, AuditLog>(

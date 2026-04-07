@@ -44,6 +44,15 @@ async fn main() -> anyhow::Result<()> {
             PolicyCommands::Set { wallet_id, file } => {
                 commands::policy::set(&ctx, wallet_id, file).await
             }
+            PolicyCommands::Approve { approval_id } => {
+                commands::policy::approve(&ctx, approval_id).await
+            }
+            PolicyCommands::Reject { approval_id } => {
+                commands::policy::reject(&ctx, approval_id).await
+            }
+            PolicyCommands::ListApprovals { wallet_id } => {
+                commands::policy::list_approvals(&ctx, wallet_id).await
+            }
         },
         Commands::ApiKey { cmd } => match cmd {
             ApiKeyCommands::Create { wallet_id, name } => {

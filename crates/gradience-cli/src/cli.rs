@@ -111,6 +111,18 @@ pub enum PolicyCommands {
         #[arg(long)]
         file: String,
     },
+    /// Approve a policy warning ticket
+    Approve {
+        approval_id: String,
+    },
+    /// Reject a policy warning ticket
+    Reject {
+        approval_id: String,
+    },
+    /// List pending policy approvals
+    ListApprovals {
+        wallet_id: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
