@@ -460,6 +460,47 @@ async fn wallet_addresses(
     Ok(Json(result))
 }
 
+#[derive(Serialize)]
+struct PortfolioResp {
+    chain_id: String,
+    address: String,
+    native_balance: String,
+    assets: Vec<gradience_core::portfolio::discovery::TokenAsset>,
+}
+
+async fn wallet_portfolio(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+) -> Result<Json<Vec<PortfolioResp>>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut result = Vec::new();
+    let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", "https://mainnet.base.org")
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let svc = gradience_core::portfolio::discovery::TokenDiscoveryService::new();
+
+    for a in addrs {
+        if a.chain_id.starts_with("eip155:") {
+            let native = client.get_balance(&a.address).await.unwrap_or_default();
+            let assets = svc.discover(&a.chain_id, &a.address).await.unwrap_or_default();
+            result.push(PortfolioResp {
+                chain_id: a.chain_id,
+                address: a.address,
+                native_balance: native,
+                assets,
+            });
+        }
+    }
+
+    Ok(Json(result))
+}
+
 #[derive(Deserialize)]
 struct FundReq {
     to: String,
@@ -1463,6 +1504,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallets", get(list_wallets).post(create_wallet))
         .route("/api/wallets/:id/balance", get(wallet_balance))
         .route("/api/wallets/:id/addresses", get(wallet_addresses))
+        .route("/api/wallets/:id/portfolio", get(wallet_portfolio))
         .route("/api/wallets/:id/fund", post(wallet_fund))
         .route("/api/wallets/:id/sign", post(wallet_sign))
         .route("/api/wallets/:id/swap", post(wallet_swap))

@@ -14,15 +14,27 @@ interface Wallet {
   updated_at: string;
 }
 
-interface Balance {
-  chain_id: string;
-  address: string;
-  balance: string;
-}
-
 interface Address {
   chain_id: string;
   address: string;
+}
+
+interface Portfolio {
+  chain_id: string;
+  address: string;
+  native_balance: string;
+  assets: TokenAsset[];
+}
+
+interface TokenAsset {
+  chain_id: string;
+  address: string;
+  token_address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  balance: string;
+  balance_formatted: string;
 }
 
 interface Tx {
@@ -143,7 +155,7 @@ export default function Dashboard() {
 }
 
 function WalletCard({ wallet }: { wallet: Wallet }) {
-  const [balances, setBalances] = useState<Balance[]>([]);
+  const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
@@ -164,7 +176,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [swapLoading, setSwapLoading] = useState(false);
 
   useEffect(() => {
-    apiGet(`/api/wallets/${wallet.id}/balance`).then((r) => r.json().then(setBalances)).catch((e) => console.error("balance fetch failed", e));
+    apiGet(`/api/wallets/${wallet.id}/portfolio`).then((r) => r.json().then(setPortfolio)).catch((e) => console.error("portfolio fetch failed", e));
     apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json().then(setAddresses)).catch((e) => {
       console.error("addresses fetch failed", e);
       setMsg(`Addresses load failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -180,8 +192,8 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       const data = await res.json();
       setMsg(`Funded! Tx: ${data.tx_hash}`);
       setShowFund(false);
-      const b = await apiGet(`/api/wallets/${wallet.id}/balance`).then((r) => r.json());
-      setBalances(b);
+      const p = await apiGet(`/api/wallets/${wallet.id}/portfolio`).then((r) => r.json());
+      setPortfolio(p);
       const t = await apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json());
       setTxs(t);
     } catch (e: unknown) {
@@ -257,6 +269,13 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     if (!addressMap.has(a.chain_id)) addressMap.set(a.chain_id, a.address);
   });
 
+  function parseNativeBalance(hex: string) {
+    const val = parseInt(hex || "0x0", 16);
+    if (val === 0) return "0 ETH";
+    const eth = val / 1e18;
+    return `${eth.toFixed(6)} ETH`;
+  }
+
   function copy(text: string) {
     navigator.clipboard.writeText(text).then(() => {
       setMsg("Copied!");
@@ -307,12 +326,27 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
 
       <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Balances</p>
-        {balances.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
-        <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {balances.map((b) => (
-            <div key={b.chain_id} className="text-sm rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
-              <span className="font-medium">{b.chain_id}</span>
-              <span className="font-mono ml-2">{b.balance}</span>
+        {portfolio.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
+        <div className="mt-2 grid grid-cols-1 gap-3">
+          {portfolio.map((p) => (
+            <div key={p.chain_id} className="rounded-lg p-3" style={{ backgroundColor: "var(--muted)" }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "var(--card)", color: "var(--primary)", border: "1px solid var(--border)" }}>
+                  {formatChainName(p.chain_id)}
+                </span>
+                <span className="text-xs font-mono" style={{ color: "var(--muted-foreground)" }}>{parseNativeBalance(p.native_balance)}</span>
+              </div>
+              {p.assets.length > 0 && (
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {p.assets.map((asset) => (
+                    <div key={asset.token_address} className="rounded px-2 py-1.5 text-sm" style={{ backgroundColor: "var(--card)" }}>
+                      <div className="font-medium">{asset.symbol}</div>
+                      <div className="text-xs font-mono" style={{ color: "var(--muted-foreground)" }}>{asset.balance_formatted}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {p.assets.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No token assets on this chain.</p>}
             </div>
           ))}
         </div>

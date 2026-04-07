@@ -10,6 +10,7 @@ pub mod audit;
 pub mod ows;
 pub mod rpc;
 pub mod team;
+pub mod portfolio;
 
 pub use error::{GradienceError, Result};
 

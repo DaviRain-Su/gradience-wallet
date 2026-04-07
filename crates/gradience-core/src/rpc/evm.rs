@@ -48,6 +48,17 @@ impl EvmRpcClient {
             .map_err(|e| GradienceError::Http(format!("invalid nonce hex: {}", e)))
     }
 
+    pub async fn eth_call(&self, to: &str, data: &str) -> Result<String> {
+        let params = json!({
+            "to": to,
+            "data": data,
+        });
+        let resp = self.call("eth_call", vec![params, json!("latest")]).await?;
+        resp.as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| GradienceError::Http("invalid eth_call response".into()))
+    }
+
     async fn call(&self,
         method: &str,
         params: Vec<serde_json::Value>,
