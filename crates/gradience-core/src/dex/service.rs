@@ -22,14 +22,68 @@ impl DexService {
     /// Mock quote for demo. In production, wire 1inch / Jupiter Quote API.
     pub async fn get_quote(
         &self,
-        _wallet_id: &str,
+        wallet_id: &str,
         from: &str,
         to: &str,
         amount: &str,
+        chain_num: u64,
     ) -> Result<SwapQuote> {
         if from.eq_ignore_ascii_case(to) {
             return Err(GradienceError::InvalidCredential("same token swap".into()));
         }
+
+        // Try 1inch quote if API key is present
+        if let Ok(key) = std::env::var("ONEINCH_API_KEY") {
+            let client = super::oneinch::OneInchClient::new(key);
+            match client.quote(chain_num, from, to, amount).await {
+                Ok(q) => {
+                    return Ok(SwapQuote {
+                        from_token: from.into(),
+                        to_token: to.into(),
+                        from_amount: amount.into(),
+                        to_amount: q.to_amount,
+                        price_impact: q.price_impact,
+                        provider: "1inch".into(),
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("1inch quote failed: {}, falling back to estimate", e);
+                }
+            }
+        }
+
+        // Fallback: Uniswap V3 QuoterV2 via eth_call
+        let rpc_url = rpc_url_for_chain(chain_num);
+        let client = crate::rpc::evm::EvmRpcClient::new("evm", rpc_url)?;
+        let cfg = super::uniswap::router_for_chain(chain_num);
+        if let Some(quoter) = cfg.quoter {
+            let amount_u = amount.parse::<u128>().unwrap_or(0);
+            let data = super::uniswap::encode_quote_exact_input_single(
+                from, to, 3000, amount_u, 0
+            )?;
+            match client.eth_call(&quoter, &format!("0x{}", hex::encode(&data))
+            ).await {
+                Ok(resp) => {
+                    let hex = resp.trim_start_matches("0x");
+                    if hex.len() >= 64 {
+                        let out = u128::from_str_radix(&hex[hex.len()-64..], 16).unwrap_or(0);
+                        return Ok(SwapQuote {
+                            from_token: from.into(),
+                            to_token: to.into(),
+                            from_amount: amount.into(),
+                            to_amount: format!("{}", out),
+                            price_impact: "0.30%".into(),
+                            provider: "uniswap-v3-quoter".into(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Uniswap quoter failed: {}, using estimate", e);
+                }
+            }
+        }
+
+        // Ultimate fallback: heuristic estimate (0.997 of input in same-decimal assumption)
         let amount_f64: f64 = amount.parse().unwrap_or(0.0);
         let out = amount_f64 * 0.997;
         Ok(SwapQuote {
@@ -38,7 +92,7 @@ impl DexService {
             from_amount: amount.into(),
             to_amount: format!("{:.6}", out),
             price_impact: "0.30%".into(),
-            provider: "mock-aggregator".into(),
+            provider: "estimate".into(),
         })
     }
 
@@ -75,15 +129,10 @@ impl DexService {
             });
         }
 
-        // Fallback: Uniswap V3 exactInputSingle on Base
-        if chain_num != 8453 {
-            return Err(GradienceError::Validation(
-                "fallback Uniswap V3 only available on Base (8453)".into(),
-            ));
-        }
-
+        // Fallback: Uniswap V3 exactInputSingle (multi-chain)
         let amount_hex = format!("0x{:x}", amount.parse::<u128>().unwrap_or(0));
-        let min_out = "0x0"; // demo: accept any output
+        // For demo, 0 minOut. In production derive from quote with slippage.
+        let min_out = "0x0";
         let sqrt_price_limit = "0x0";
         let uni = super::uniswap::encode_exact_input_single(
             from_token,
@@ -93,6 +142,7 @@ impl DexService {
             &amount_hex,
             min_out,
             sqrt_price_limit,
+            chain_num,
         )?;
 
         Ok(Transaction {
@@ -101,5 +151,16 @@ impl DexService {
             data: uni.data.clone(),
             raw_hex: hex::encode(&uni.data),
         })
+    }
+}
+
+fn rpc_url_for_chain(chain_num: u64) -> &'static str {
+    match chain_num {
+        8453 => "https://mainnet.base.org",
+        1 => "https://eth.llamarpc.com",
+        42161 => "https://arb1.arbitrum.io/rpc",
+        10 => "https://mainnet.optimism.io",
+        56 => "https://bsc-dataseed.bnbchain.org",
+        _ => "https://eth.llamarpc.com",
     }
 }

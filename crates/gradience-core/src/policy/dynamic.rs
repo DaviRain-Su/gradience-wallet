@@ -55,6 +55,35 @@ impl RiskSignalCache {
     }
 }
 
+/// Fetch real risk signals from CoinGecko (market) and Forta (threats).
+pub async fn fetch_signals(cache: RiskSignalCache, interval_sec: u64) {
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_sec));
+    loop {
+        interval.tick().await;
+
+        // CoinGecko market fear score
+        let market_score = crate::policy::market::fetch_market_fear_score()
+            .await
+            .map(|s| s.market_fear_score)
+            .unwrap_or(50.0);
+
+        // Forta threat score
+        let forta_score = crate::policy::forta::fetch_forta_threat_score()
+            .await
+            .map(|s| s.threat_score)
+            .unwrap_or(50.0);
+
+        tracing::info!(
+            "Dynamic signals updated: market_fear={}, forta_threat={}",
+            market_score, forta_score
+        );
+
+        // Use a wildcard wallet key so any wallet can be checked against the latest global signal.
+        cache.set("*", "chainalysis", market_score);
+        cache.set("*", "forta", forta_score);
+    }
+}
+
 /// Mock fetcher that generates random risk signals for demo purposes.
 pub async fn mock_fetch_signals(cache: RiskSignalCache, interval_sec: u64) {
     use rand::Rng;
@@ -62,9 +91,8 @@ pub async fn mock_fetch_signals(cache: RiskSignalCache, interval_sec: u64) {
     loop {
         interval.tick().await;
         let mut rng = rand::thread_rng();
-        let forta = rng.gen::<f64>();
-        let chainalysis = rng.gen::<f64>();
-        // Use a wildcard wallet key so any wallet can be checked against the latest global signal.
+        let forta = rng.gen::<f64>() * 100.0;
+        let chainalysis = rng.gen::<f64>() * 100.0;
         cache.set("*", "forta", forta);
         cache.set("*", "chainalysis", chainalysis);
     }

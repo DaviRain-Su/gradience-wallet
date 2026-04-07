@@ -3,7 +3,7 @@ use anyhow::Result;
 
 pub async fn quote(_ctx: &AppContext, wallet_id: String, from: String, to: String, amount: String) -> Result<()> {
     let svc = gradience_core::dex::service::DexService::new();
-    let q = svc.get_quote(&wallet_id, &from, &to, &amount).await?;
+    let q = svc.get_quote(&wallet_id, &from, &to, &amount, 8453).await?;
     println!("Quote from {}: swap {} {} -> {} {}
       Price impact: {}", q.provider, q.from_amount, q.from_token, q.to_amount, q.to_token, q.price_impact);
     Ok(())

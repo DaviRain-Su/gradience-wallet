@@ -1397,6 +1397,43 @@ async fn create_policy(
     Ok((StatusCode::CREATED, axum::Json(serde_json::json!({ "policy_id": policy_id }))))
 }
 
+#[derive(Serialize)]
+struct PolicyResp {
+    id: String,
+    name: String,
+    wallet_id: Option<String>,
+    workspace_id: Option<String>,
+    rules_json: String,
+    status: String,
+    created_at: String,
+}
+
+async fn list_wallet_policies(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+) -> Result<Json<Vec<PolicyResp>>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
+
+    let rows = gradience_db::queries::list_active_policies_by_wallet(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let policies = rows.into_iter().map(|p| PolicyResp {
+        id: p.id,
+        name: p.name,
+        wallet_id: p.wallet_id,
+        workspace_id: p.workspace_id,
+        rules_json: p.rules_json,
+        status: p.status,
+        created_at: p.created_at.to_rfc3339(),
+    }).collect();
+
+    Ok(Json(policies))
+}
+
 // ==================== AI Gateway Handlers ====================
 
 #[derive(Deserialize)]
@@ -1776,13 +1813,27 @@ async fn main() -> anyhow::Result<()> {
         risk_cache: risk_cache.clone(),
     });
 
-    tokio::spawn(gradience_core::policy::dynamic::mock_fetch_signals(
-        risk_cache,
-        std::env::var("RISK_FETCH_INTERVAL_SEC")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(60),
-    ));
+    let use_mock_risk = std::env::var("USE_MOCK_RISK")
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    if use_mock_risk {
+        tokio::spawn(gradience_core::policy::dynamic::mock_fetch_signals(
+            risk_cache,
+            std::env::var("RISK_FETCH_INTERVAL_SEC")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(60),
+        ));
+    } else {
+        tokio::spawn(gradience_core::policy::dynamic::fetch_signals(
+            risk_cache,
+            std::env::var("RISK_FETCH_INTERVAL_SEC")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(300),
+        ));
+    }
 
     let app = Router::new()
         .route("/api/auth/passkey/register/start", post(register_start))
@@ -1808,7 +1859,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallets/:id/transactions", get(wallet_transactions))
         .route("/api/wallets/:id/anchor", post(wallet_anchor))
         .route("/api/wallets/:id/api-keys", get(list_api_keys).post(create_api_key))
-        .route("/api/wallets/:id/policies", post(create_policy))
+        .route("/api/wallets/:id/policies", get(list_wallet_policies).post(create_policy))
         .route("/api/ai/topup", post(ai_topup))
         .route("/api/ai/balance/:wallet_id", get(ai_balance))
         .route("/api/ai/generate", post(ai_generate))
