@@ -1,0 +1,21 @@
+[package]
+name = "gradience-sdk-node"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+napi = { version = "2", features = ["full"] }
+napi-derive = "2"
+gradience-core = { path = "../gradience-core" }
+gradience-db = { path = "../gradience-db" }
+anyhow.workspace = true
+tokio.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+dirs = "5"
+
+[dependencies.ows-lib]
+git = "https://github.com/open-wallet-standard/core"

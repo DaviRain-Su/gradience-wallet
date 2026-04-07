@@ -104,13 +104,16 @@ pub fn handle_sign_transaction(params: serde_json::Value) -> anyhow::Result<serd
         anyhow::Result::Ok((policies, nonce, gp))
     })?;
 
+    let parser = gradience_core::policy::intent::IntentParser::new();
+    let intent = parser.parse(&tx, chain_id).ok();
+
     let engine = PolicyEngine;
     let ctx = EvalContext {
         wallet_id: wallet_id.into(),
         api_key_id: "mcp-key".into(),
         chain_id: chain_id.into(),
         transaction: tx,
-        intent: None,
+        intent,
         timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
     };
 

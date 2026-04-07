@@ -30,6 +30,7 @@ struct AppState {
     auth_challenges: Mutex<HashMap<String, PasskeyAuthentication>>,
     credentials: Mutex<HashMap<String, Passkey>>,
     sessions: Mutex<HashMap<String, Session>>,
+    risk_cache: gradience_core::policy::dynamic::RiskSignalCache,
 }
 
 fn auth_token(headers: &axum::http::HeaderMap) -> Option<String> {
@@ -385,14 +386,14 @@ struct FundReq {
 }
 
 async fn evaluate_wallet_policy(
-    db: &Pool<Sqlite>,
+    state: &AppState,
     wallet_id: &str,
     chain_id: &str,
     transaction: gradience_core::ows::adapter::Transaction,
 ) -> Result<(gradience_core::policy::engine::EvalResult, Vec<gradience_core::policy::engine::Policy>), StatusCode> {
     use gradience_core::policy::engine::{PolicyEngine, EvalContext};
 
-    let db_policies = gradience_db::queries::list_active_policies_by_wallet(db, wallet_id)
+    let db_policies = gradience_db::queries::list_active_policies_by_wallet(&state.db, wallet_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -400,13 +401,16 @@ async fn evaluate_wallet_policy(
         .filter_map(|p| gradience_core::policy::engine::Policy::try_from_db(p).ok())
         .collect();
 
+    let parser = gradience_core::policy::intent::IntentParser::new();
+    let intent = parser.parse(&transaction, chain_id).ok();
+
     let engine = PolicyEngine;
     let ctx = EvalContext {
         wallet_id: wallet_id.into(),
         api_key_id: "web".into(),
         chain_id: chain_id.into(),
         transaction: transaction.clone(),
-        intent: None,
+        intent,
         timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
     };
 
@@ -417,10 +421,29 @@ async fn evaluate_wallet_policy(
     if result.decision == gradience_core::policy::engine::Decision::Allow {
         let amount_wei = transaction.value.parse::<u128>().unwrap_or(0);
         let spend_eval = gradience_core::policy::spending::evaluate_spending_limits(
-            db, wallet_id, chain_id, amount_wei, &core_policies
+            &state.db, wallet_id, chain_id, amount_wei, &core_policies
         ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         if spend_eval.decision == gradience_core::policy::engine::Decision::Deny {
             result = spend_eval;
+        }
+    }
+
+    if result.decision == gradience_core::policy::engine::Decision::Allow {
+        for policy in &core_policies {
+            if policy.status != "active" { continue; }
+            for rule in &policy.rules {
+                if let gradience_core::policy::engine::Rule::DynamicRisk { max_forta, max_chainalysis } = rule {
+                    match state.risk_cache.evaluate("*", *max_forta, *max_chainalysis) {
+                        Ok((true, reasons)) => {
+                            return Ok((gradience_core::policy::engine::EvalResult {
+                                decision: gradience_core::policy::engine::Decision::Deny,
+                                reasons,
+                            }, core_policies));
+                        }
+                        _ => {}
+                    }
+                }
+            }
         }
     }
 
@@ -462,7 +485,7 @@ async fn wallet_fund(
         raw_hex: format!("0x{}", hex::encode(body.to.trim_start_matches("0x"))),
     };
     let (eval, core_policies) = evaluate_wallet_policy(
-        &state.db, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+        &state, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
 
     let mut approval_id = None;
     if eval.decision == gradience_core::policy::engine::Decision::Deny {
@@ -596,7 +619,7 @@ async fn wallet_sign(
         raw_hex: format!("0x{}", hex::encode(&data_bytes)),
     };
     let (eval, core_policies) = evaluate_wallet_policy(
-        &state.db, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+        &state, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
 
     let mut approval_id = None;
     if eval.decision == gradience_core::policy::engine::Decision::Deny {
@@ -1134,6 +1157,7 @@ async fn main() -> anyhow::Result<()> {
     let vault_dir = data_dir.join("vault");
     std::fs::create_dir_all(&vault_dir)?;
 
+    let risk_cache = gradience_core::policy::dynamic::RiskSignalCache::new();
     let state = Arc::new(AppState {
         db,
         webauthn,
@@ -1143,7 +1167,16 @@ async fn main() -> anyhow::Result<()> {
         auth_challenges: Mutex::new(HashMap::new()),
         credentials: Mutex::new(HashMap::new()),
         sessions: Mutex::new(HashMap::new()),
+        risk_cache: risk_cache.clone(),
     });
+
+    tokio::spawn(gradience_core::policy::dynamic::mock_fetch_signals(
+        risk_cache,
+        std::env::var("RISK_FETCH_INTERVAL_SEC")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(60),
+    ));
 
     let app = Router::new()
         .route("/api/auth/passkey/register/start", post(register_start))

@@ -21,6 +21,8 @@ gradience-db = { path = "../gradience-db" }
 rlp.workspace = true
 reqwest.workspace = true
 secp256k1.workspace = true
+rand = "0.8"
+tokio.workspace = true
 
 [dependencies.ows-core]
 git = "https://github.com/open-wallet-standard/core"

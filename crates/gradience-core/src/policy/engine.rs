@@ -27,6 +27,8 @@ pub enum Rule {
     TimeWindow { start_hour: u8, end_hour: u8, timezone: String },
     MaxTokensPerCall { limit: u64 },
     ModelWhitelist { models: Vec<String> },
+    IntentRisk { max_risk: f64 },
+    DynamicRisk { max_forta: f64, max_chainalysis: f64 },
 }
 
 #[derive(Debug, Clone)]
@@ -113,6 +115,20 @@ impl PolicyEngine {
                         if val > limit / 5 * 4 {
                             reasons.push("spend limit threshold warning (80%)".into());
                             return Ok(EvalResult { decision: Decision::Warn, reasons });
+                        }
+                    }
+                    Rule::IntentRisk { max_risk } => {
+                        if let Some(ref intent) = ctx.intent {
+                            if let Some(risk) = intent.risk_score {
+                                if risk > *max_risk {
+                                    reasons.push(format!("intent risk {} exceeds max {}", risk, max_risk));
+                                    return Ok(EvalResult { decision: Decision::Deny, reasons });
+                                }
+                                if risk > max_risk * 0.8 {
+                                    reasons.push(format!("intent risk {} is high (threshold {})", risk, max_risk));
+                                    return Ok(EvalResult { decision: Decision::Warn, reasons });
+                                }
+                            }
                         }
                     }
                     _ => {}
