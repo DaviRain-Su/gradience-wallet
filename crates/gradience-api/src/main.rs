@@ -897,7 +897,43 @@ async fn main() -> anyhow::Result<()> {
                 .allow_methods(tower_http::cors::Any)
                 .allow_headers(tower_http::cors::Any),
         )
-        .with_state(state);
+        .with_state(Arc::clone(&state));
+
+    let anchor_state = Arc::clone(&state);
+    tokio::spawn(async move {
+        let interval_sec: u64 = std::env::var("ANCHOR_INTERVAL_SEC")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(300);
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(interval_sec));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            match gradience_core::audit::anchor::AnchorService::from_env() {
+                Ok(Some(svc)) => {
+                    match gradience_db::queries::list_unanchored_logs(&anchor_state.db, 1000).await {
+                        Ok(logs) if !logs.is_empty() => {
+                            let mut seen = std::collections::HashSet::new();
+                            for log in logs {
+                                if seen.insert(log.wallet_id.clone()) {
+                                    match svc.anchor_unanchored_logs(
+                                        &anchor_state.db, &log.wallet_id, 100
+                                    ).await {
+                                        Ok(Some(tx_hash)) => info!("Auto-anchored wallet {} tx {}", log.wallet_id, tx_hash),
+                                        Ok(None) => {},
+                                        Err(e) => warn!("Auto-anchor failed for {}: {}", log.wallet_id, e),
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => warn!("AnchorService init error: {}", e),
+            }
+        }
+    });
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
     info!("Gradience API listening on {}", listener.local_addr()?);

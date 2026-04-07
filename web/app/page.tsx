@@ -15,8 +15,8 @@ export default function Home() {
     try {
       await registerPasskey(username, passphrase);
       router.push("/dashboard");
-    } catch (e: any) {
-      setMsg(`Register failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Register failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -25,8 +25,8 @@ export default function Home() {
       await loginPasskey(username);
       setStep("unlock");
       setMsg("");
-    } catch (e: any) {
-      setMsg(`Login failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Login failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -34,8 +34,8 @@ export default function Home() {
     try {
       await unlockVault(passphrase);
       router.push("/dashboard");
-    } catch (e: any) {
-      setMsg(`Unlock failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Unlock failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

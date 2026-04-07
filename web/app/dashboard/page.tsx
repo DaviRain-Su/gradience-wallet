@@ -45,8 +45,8 @@ export default function Dashboard() {
       const res = await apiGet("/api/wallets");
       const data = await res.json();
       setWallets(data);
-    } catch (e: any) {
-      setMsg(`Failed to load wallets: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Failed to load wallets: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -61,8 +61,8 @@ export default function Dashboard() {
       await apiPost("/api/wallets", { name });
       setName("");
       await fetchWallets();
-    } catch (e: any) {
-      setMsg(`Create failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setLoading(false);
     }
@@ -127,8 +127,8 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       setBalances(b);
       const t = await apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json());
       setTxs(t);
-    } catch (e: any) {
-      setMsg(`Fund failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Fund failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -139,8 +139,8 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       setShowKey(false);
       const k = await apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json());
       setKeys(k);
-    } catch (e: any) {
-      setMsg(`API key failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`API key failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -155,8 +155,8 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       }
       const t = await apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json());
       setTxs(t);
-    } catch (e: any) {
-      setMsg(`Anchor failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Anchor failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 

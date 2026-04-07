@@ -7,15 +7,15 @@ export default function AiGateway() {
   const [walletId, setWalletId] = useState("");
   const [amount, setAmount] = useState("1000000");
   const [prompt, setPrompt] = useState("Summarize blockchain wallet security in one sentence.");
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<{ type: string; data: unknown } | null>(null);
   const [msg, setMsg] = useState("");
 
   async function handleTopup() {
     try {
       await apiPost("/api/ai/topup", { wallet_id: walletId, token: "USDC", amount_raw: amount });
       setMsg("Topup successful");
-    } catch (e: any) {
-      setMsg(`Topup failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Topup failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -24,8 +24,8 @@ export default function AiGateway() {
       const res = await apiGet(`/api/ai/balance/${walletId}?token=USDC`);
       const data = await res.json();
       setResult({ type: "balance", data });
-    } catch (e: any) {
-      setMsg(`Balance failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Balance failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -39,8 +39,8 @@ export default function AiGateway() {
       });
       const data = await res.json();
       setResult({ type: "generate", data });
-    } catch (e: any) {
-      setMsg(`Generate failed: ${e.message}`);
+    } catch (e: unknown) {
+      setMsg(`Generate failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -81,16 +81,16 @@ export default function AiGateway() {
       {result?.type === "balance" && (
         <div className="border rounded p-4">
           <p className="font-medium">Balance (raw)</p>
-          <p className="font-mono">{result.data.balance_raw}</p>
+          <p className="font-mono">{(result.data as { balance_raw?: string }).balance_raw}</p>
         </div>
       )}
 
       {result?.type === "generate" && (
         <div className="border rounded p-4 space-y-2">
           <p className="font-medium">Response</p>
-          <p className="text-sm">{result.data.content}</p>
+          <p className="text-sm">{(result.data as { content?: string }).content}</p>
           <p className="text-xs text-gray-500">
-            Tokens: {result.data.input_tokens} in / {result.data.output_tokens} out | Cost: {result.data.cost_raw} | Status: {result.data.status}
+            Tokens: {(result.data as { input_tokens?: number }).input_tokens} in / {(result.data as { output_tokens?: number }).output_tokens} out | Cost: {(result.data as { cost_raw?: string }).cost_raw} | Status: {(result.data as { status?: string }).status}
           </p>
         </div>
       )}
