@@ -977,6 +977,28 @@ async fn mcp_get_balance(
     Ok((StatusCode::OK, axum::Json(resp)))
 }
 
+async fn health_check(
+    State(state): State<Arc<AppState>>,
+) -> Result<axum::Json<serde_json::Value>, StatusCode> {
+    let db_healthy = sqlx::query("SELECT 1").fetch_one(&state.db).await.is_ok();
+    let vault_exists = state.vault_dir.exists();
+    let anchor_ready = gradience_core::audit::anchor::AnchorService::from_env()
+        .map(|o| o.is_some())
+        .unwrap_or(false);
+
+    let status = if db_healthy && vault_exists { "ok" } else { "degraded" };
+
+    Ok(axum::Json(serde_json::json!({
+        "status": status,
+        "version": std::env!("CARGO_PKG_VERSION"),
+        "checks": {
+            "database": db_healthy,
+            "vault_dir": vault_exists,
+            "anchor_configured": anchor_ready,
+        }
+    })))
+}
+
 // ==================== Workspace Handlers ====================
 
 #[derive(Deserialize)]
@@ -1147,7 +1169,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/policy-approvals", get(list_policy_approvals))
         .route("/api/policy-approvals/:id/approve", post(approve_policy_approval))
         .route("/api/policy-approvals/:id/reject", post(reject_policy_approval))
-        .route("/health", get(|| async { "ok" }))
+        .route("/health", get(health_check))
         .layer(
             tower_http::cors::CorsLayer::new()
                 .allow_origin(tower_http::cors::Any)
@@ -1192,8 +1214,25 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    info!("Gradience API listening on {}", listener.local_addr()?);
+    let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into());
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+
+    info!("============================================================");
+    info!("Gradience API v{}", std::env!("CARGO_PKG_VERSION"));
+    info!("============================================================");
+    info!("Listening on        : {}", listener.local_addr()?);
+    info!("DATABASE_URL        : {}", db_path);
+    info!("GRADIENCE_DATA_DIR  : {}", data_dir.display());
+    info!("ORIGIN / RP_ID      : {} / {}", origin, rp_id);
+    info!("ANCHOR_INTERVAL_SEC : {}s", std::env::var("ANCHOR_INTERVAL_SEC").unwrap_or_else(|_| "300".into()));
+    match gradience_core::audit::anchor::AnchorService::from_env() {
+        Ok(Some(_)) => info!("Anchor Service      : enabled (contract ready)"),
+        Ok(None)    => warn!("Anchor Service      : disabled (missing ANCHOR_RPC_URL)"),
+        Err(e)      => warn!("Anchor Service      : config error ({})", e),
+    }
+    info!("CORS                : allow_any=true");
+    info!("============================================================");
+
     axum::serve(listener, app).await?;
     Ok(())
 }
