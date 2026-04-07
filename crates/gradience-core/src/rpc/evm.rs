@@ -40,6 +40,14 @@ impl EvmRpcClient {
             .ok_or_else(|| GradienceError::Http("invalid gasPrice response".into()))
     }
 
+    pub async fn get_transaction_count(&self, address: &str) -> Result<u64> {
+        let resp = self.call("eth_getTransactionCount", vec![json!(address), json!("latest")]).await?;
+        let hex = resp.as_str()
+            .ok_or_else(|| GradienceError::Http("invalid nonce response".into()))?;
+        u64::from_str_radix(hex.trim_start_matches("0x"), 16)
+            .map_err(|e| GradienceError::Http(format!("invalid nonce hex: {}", e)))
+    }
+
     async fn call(&self,
         method: &str,
         params: Vec<serde_json::Value>,

@@ -3,7 +3,7 @@ mod commands;
 mod context;
 
 use clap::Parser;
-use cli::{Cli, Commands, AuthCommands, AgentCommands, PolicyCommands};
+use cli::{Cli, Commands, AuthCommands, AgentCommands, PolicyCommands, ApiKeyCommands};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -22,7 +22,7 @@ async fn main() -> anyhow::Result<()> {
         data_dir.join("gradience.db").to_string_lossy().trim_start_matches('/')
     );
 
-    let ctx = context::AppContext::new(&db_path, vault_dir).await?;
+    let ctx = context::AppContext::new(&db_path, data_dir, vault_dir).await?;
 
     match cli.command {
         Commands::Auth { cmd } => match cmd {
@@ -36,13 +36,24 @@ async fn main() -> anyhow::Result<()> {
             AgentCommands::Balance { wallet_id, chain } => {
                 commands::agent::balance(&ctx, wallet_id, chain).await
             }
-            AgentCommands::Fund { wallet_id, amount, chain } => {
-                commands::agent::fund(&ctx, wallet_id, amount, chain).await
+            AgentCommands::Fund { wallet_id, amount, chain, to } => {
+                commands::agent::fund(&ctx, wallet_id, amount, chain, to).await
             }
         },
         Commands::Policy { cmd } => match cmd {
             PolicyCommands::Set { wallet_id, file } => {
                 commands::policy::set(&ctx, wallet_id, file).await
+            }
+        },
+        Commands::ApiKey { cmd } => match cmd {
+            ApiKeyCommands::Create { wallet_id, name } => {
+                commands::api_key::create(&ctx, wallet_id, name).await
+            }
+            ApiKeyCommands::Revoke { key_id } => {
+                commands::api_key::revoke(&ctx, key_id).await
+            }
+            ApiKeyCommands::List { wallet_id } => {
+                commands::api_key::list(&ctx, wallet_id).await
             }
         },
     }

@@ -131,6 +131,16 @@ pub async fn get_api_key_by_hash(pool: &Pool<Sqlite>, hash: &[u8]) -> Result<Opt
     Ok(key)
 }
 
+pub async fn list_api_keys_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str) -> Result<Vec<ApiKey>> {
+    let keys = sqlx::query_as::<_, ApiKey>(
+        "SELECT id, wallet_id, name, key_hash, permissions, expires_at, last_used_at, created_at FROM api_keys WHERE wallet_id = ? ORDER BY created_at DESC"
+    )
+    .bind(wallet_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(keys)
+}
+
 pub async fn revoke_api_key(pool: &Pool<Sqlite>, id: &str) -> Result<()> {
     sqlx::query!(
         "UPDATE api_keys SET expires_at = datetime('now') WHERE id = ?",

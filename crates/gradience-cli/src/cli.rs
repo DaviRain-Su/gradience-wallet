@@ -25,6 +25,11 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: PolicyCommands,
     },
+    /// Manage API keys
+    ApiKey {
+        #[command(subcommand)]
+        cmd: ApiKeyCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -50,12 +55,14 @@ pub enum AgentCommands {
         #[arg(long)]
         chain: Option<String>,
     },
-    /// Fund wallet (demo/mock)
+    /// Send funds from wallet
     Fund {
         wallet_id: String,
         amount: String,
         #[arg(long)]
         chain: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
     },
 }
 
@@ -66,5 +73,23 @@ pub enum PolicyCommands {
         wallet_id: String,
         #[arg(long)]
         file: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ApiKeyCommands {
+    /// Create an API key for a wallet
+    Create {
+        wallet_id: String,
+        #[arg(long)]
+        name: String,
+    },
+    /// Revoke an API key
+    Revoke {
+        key_id: String,
+    },
+    /// List API keys for a wallet
+    List {
+        wallet_id: String,
     },
 }

@@ -12,9 +12,9 @@ pub async fn login(ctx: &AppContext) -> Result<()> {
     if passphrase.len() < 12 {
         anyhow::bail!("Passphrase must be at least 12 characters");
     }
-    // Validate by init vault
     let vault = ctx.ows.init_vault(passphrase).await?;
     drop(vault);
-    println!("Vault unlocked successfully.");
+    ctx.write_passphrase(passphrase)?;
+    println!("Vault unlocked successfully. Session saved.");
     Ok(())
 }
