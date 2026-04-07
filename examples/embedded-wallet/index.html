@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Embedded Gradience Wallet Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    iframe { border: 0; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen p-6">
+  <div class="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="space-y-6">
+      <h1 class="text-2xl font-bold text-indigo-400">Third-Party dApp Demo</h1>
+      <p class="text-sm text-gray-400">
+        This page embeds the Gradience Wallet via iframe and communicates over postMessage.
+      </p>
+
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+        <h2 class="font-semibold text-gray-200">1. Connect</h2>
+        <button onclick="sendConnect()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm">Connect Wallet</button>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+        <h2 class="font-semibold text-gray-200">2. Read-Only</h2>
+        <button onclick="sendGetBalance()" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 px-4 py-2 rounded text-sm">Get Balance</button>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+        <h2 class="font-semibold text-gray-200">3. Sign Transaction</h2>
+        <div class="grid grid-cols-2 gap-2">
+          <input id="txTo" type="text" placeholder="To address" value="0x0000000000000000000000000000000000000000" class="bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm" />
+          <input id="txValue" type="text" placeholder="Value" value="0.001" class="bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm" />
+        </div>
+        <button onclick="sendSignTx()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded text-sm">Request Signature</button>
+      </div>
+
+      <div id="result" class="hidden bg-gray-900 border border-gray-800 rounded-lg p-4">
+        <h2 class="font-semibold text-gray-200 mb-2">Result</h2>
+        <pre id="resultBody" class="text-xs font-mono text-gray-300 whitespace-pre-wrap break-all"></pre>
+      </div>
+
+      <div id="log" class="font-mono text-xs text-gray-400 bg-gray-900 border border-gray-800 rounded-lg p-4 min-h-[6rem]"></div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden h-[600px]">
+      <iframe id="walletFrame" src="http://localhost:3000/embed" class="w-full h-full"></iframe>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const walletOrigin = 'http://localhost:3000';
+
+    function log(msg) {
+      const el = $('log');
+      el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function generateId() {
+      return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    }
+
+    function showResult(obj) {
+      $('result').classList.remove('hidden');
+      $('resultBody').textContent = JSON.stringify(obj, null, 2);
+    }
+
+    function sendToWallet(method, params = {}) {
+      const iframe = $('walletFrame');
+      const id = generateId();
+      const msg = { id, method, params };
+      iframe.contentWindow.postMessage(msg, walletOrigin);
+      log(`Sent: ${method}`);
+      return id;
+    }
+
+    function sendConnect() {
+      sendToWallet('connect');
+    }
+
+    function sendGetBalance() {
+      sendToWallet('get_balance');
+    }
+
+    function sendSignTx() {
+      const to = $('txTo').value.trim();
+      const value = $('txValue').value.trim();
+      sendToWallet('sign_transaction', {
+        chainId: 'eip155:8453',
+        transaction: { to, value, data: '0x' }
+      });
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.origin !== walletOrigin) return;
+      log(`Received from wallet: ${JSON.stringify(event.data)}`);
+      showResult(event.data);
+    });
+  </script>
+</body>
+</html>

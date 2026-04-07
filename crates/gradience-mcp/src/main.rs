@@ -1,3 +1,4 @@
+mod args;
 mod mcp;
 mod server;
 mod tools;

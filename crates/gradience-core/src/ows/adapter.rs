@@ -10,6 +10,14 @@ pub enum PolicyAction {
     Deny,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdapterKind {
+    Local,
+    Cloud,
+    Hardware,
+    Remote,
+}
+
 #[derive(Debug, Clone)]
 pub struct Transaction {
     pub to: Option<String>,
@@ -48,6 +56,8 @@ pub struct GradienceApiKey {
 
 #[async_trait]
 pub trait OwsAdapter: Send + Sync {
+    fn adapter_kind(&self) -> AdapterKind;
+
     async fn init_vault(
         &self,
         passphrase: &str,

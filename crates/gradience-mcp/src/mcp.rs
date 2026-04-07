@@ -63,6 +63,17 @@ pub struct Tool {
     pub input_schema: serde_json::Value,
 }
 
+impl Tool {
+    pub fn with_schema<T: schemars::JsonSchema>(name: &str, description: &str) -> Self {
+        let schema = schemars::schema_for!(T);
+        Self {
+            name: name.into(),
+            description: description.into(),
+            input_schema: serde_json::to_value(schema).unwrap_or_else(|_| serde_json::json!({})),
+        }
+    }
+}
+
 impl JsonRpcResponse {
     pub fn success(id: Option<serde_json::Value>, result: serde_json::Value) -> Self {
         Self { jsonrpc: "2.0".into(), id, result: Some(result), error: None }

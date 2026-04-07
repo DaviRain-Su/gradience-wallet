@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gradience Basic Wallet Example</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen p-6">
+  <div class="max-w-2xl mx-auto space-y-6">
+    <h1 class="text-2xl font-bold text-indigo-400">Gradience Wallet — Basic Example</h1>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+      <h2 class="font-semibold text-gray-200">1. Connect</h2>
+      <div class="flex gap-2">
+        <input id="apiBase" type="text" value="http://localhost:8080" class="flex-1 bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm" />
+        <input id="token" type="password" placeholder="JWT token (from login)" class="flex-1 bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm" />
+      </div>
+      <p class="text-xs text-gray-400">Tip: Login via the main web UI, then copy the JWT from localStorage.</p>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+      <h2 class="font-semibold text-gray-200">2. Create Wallet</h2>
+      <div class="flex gap-2">
+        <input id="walletName" type="text" placeholder="Wallet name" class="flex-1 bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm" />
+        <button onclick="createWallet()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm">Create</button>
+      </div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="font-semibold text-gray-200">3. Wallets</h2>
+        <button onclick="fetchWallets()" class="text-sm bg-gray-800 hover:bg-gray-700 border border-gray-700 px-3 py-1 rounded">Refresh</button>
+      </div>
+      <div id="wallets" class="space-y-3"></div>
+    </div>
+
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 space-y-3">
+      <h2 class="font-semibold text-gray-200">4. Quick Fund</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <select id="fundWallet" class="bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm">
+          <option value="">Select wallet</option>
+        </select>
+        <input id="fundTo" type="text" placeholder="Recipient address" class="bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm" />
+        <input id="fundAmount" type="text" placeholder="Amount (ETH)" value="0.001" class="bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm" />
+      </div>
+      <button onclick="fundWallet()" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded text-sm">Send</button>
+    </div>
+
+    <div id="log" class="font-mono text-xs text-gray-400 bg-gray-900 border border-gray-800 rounded-lg p-4 min-h-[6rem]"></div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    function log(msg) {
+      const el = $('log');
+      el.textContent += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function apiBase() { return $('apiBase').value.trim() || 'http://localhost:8080'; }
+    function headers() {
+      const h = { 'Content-Type': 'application/json' };
+      const t = $('token').value.trim();
+      if (t) h['Authorization'] = `Bearer ${t}`;
+      return h;
+    }
+
+    async function createWallet() {
+      const name = $('walletName').value.trim();
+      if (!name) return log('Please enter a wallet name.');
+      try {
+        const res = await fetch(`${apiBase()}/api/wallets`, {
+          method: 'POST', headers: headers(), body: JSON.stringify({ name })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        log(`Created wallet: ${data.id}`);
+        $('walletName').value = '';
+        fetchWallets();
+      } catch (e) {
+        log(`Create error: ${e.message}`);
+      }
+    }
+
+    async function fetchWallets() {
+      try {
+        const res = await fetch(`${apiBase()}/api/wallets`, { headers: headers() });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        renderWallets(data);
+        updateFundSelect(data);
+        log(`Loaded ${data.length} wallet(s)`);
+      } catch (e) {
+        log(`Fetch error: ${e.message}`);
+      }
+    }
+
+    function renderWallets(wallets) {
+      const container = $('wallets');
+      container.innerHTML = '';
+      if (!wallets.length) {
+        container.innerHTML = '<p class="text-sm text-gray-500">No wallets found.</p>';
+        return;
+      }
+      wallets.forEach(w => {
+        const el = document.createElement('div');
+        el.className = 'border border-gray-800 rounded p-3 bg-gray-950';
+        el.innerHTML = `
+          <div class="flex justify-between">
+            <span class="font-medium text-gray-200">${w.name}</span>
+            <span class="text-xs font-mono text-gray-500">${w.id}</span>
+          </div>
+          <div class="mt-2 text-sm text-gray-400 balances" data-id="${w.id}">Loading balances...</div>
+        `;
+        container.appendChild(el);
+        loadBalances(w.id);
+      });
+    }
+
+    async function loadBalances(walletId) {
+      try {
+        const res = await fetch(`${apiBase()}/api/wallets/${walletId}/portfolio`, { headers: headers() });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        const lines = data.map(p => {
+          const native = parseInt(p.native_balance || '0x0', 16) / 1e18;
+          const assets = p.assets.map(a => `${a.symbol}: ${a.balance_formatted}`).join(', ');
+          return `<div class="mt-1"><span class="text-indigo-400">${p.chain_id}</span> — ${native.toFixed(6)} ETH ${assets ? '| ' + assets : ''}</div>`;
+        }).join('');
+        const el = document.querySelector(`.balances[data-id="${walletId}"]`);
+        if (el) el.innerHTML = lines || 'No balances.';
+      } catch (e) {
+        const el = document.querySelector(`.balances[data-id="${walletId}"]`);
+        if (el) el.textContent = 'Balance load failed';
+      }
+    }
+
+    function updateFundSelect(wallets) {
+      const sel = $('fundWallet');
+      sel.innerHTML = '<option value="">Select wallet</option>';
+      wallets.forEach(w => {
+        const opt = document.createElement('option');
+        opt.value = w.id;
+        opt.textContent = w.name;
+        sel.appendChild(opt);
+      });
+    }
+
+    async function fundWallet() {
+      const walletId = $('fundWallet').value;
+      const to = $('fundTo').value.trim();
+      const amount = $('fundAmount').value.trim();
+      if (!walletId || !to || !amount) return log('Please fill all fund fields.');
+      try {
+        const res = await fetch(`${apiBase()}/api/wallets/${walletId}/fund`, {
+          method: 'POST', headers: headers(), body: JSON.stringify({ to, amount, chain: 'base' })
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        log(`Funded! Tx: ${data.tx_hash}`);
+        fetchWallets();
+      } catch (e) {
+        log(`Fund error: ${e.message}`);
+      }
+    }
+
+    fetchWallets();
+  </script>
+</body>
+</html>

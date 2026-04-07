@@ -47,19 +47,12 @@ fn resolve_rpc(chain_id: &str) -> &str {
     }
 }
 
-pub fn handle_sign_transaction(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
-    let wallet_id = params.get("walletId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
-    let chain_id = params.get("chainId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing chainId"))?;
-    let tx_obj = params.get("transaction")
-        .ok_or_else(|| anyhow::anyhow!("missing transaction"))?;
-
-    let to = tx_obj.get("to").and_then(|v| v.as_str()).unwrap_or("");
-    let value = tx_obj.get("value").and_then(|v| v.as_str()).unwrap_or("0");
-    let data_hex = tx_obj.get("data").and_then(|v| v.as_str()).unwrap_or("0x");
+pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let chain_id = &args.chain_id;
+    let to = &args.transaction.to;
+    let value = &args.transaction.value;
+    let data_hex = args.transaction.data.as_deref().unwrap_or("0x");
     let data = hex::decode(data_hex.trim_start_matches("0x")).unwrap_or_default();
 
     let tx = Transaction {
@@ -156,13 +149,9 @@ pub fn handle_sign_transaction(params: serde_json::Value) -> anyhow::Result<serd
     }
 }
 
-pub fn handle_get_balance(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
-    let wallet_id = params.get("walletId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
-    let chain_id = params.get("chainId")
-        .and_then(|v| v.as_str())
-        .unwrap_or("eip155:8453");
+pub fn handle_get_balance(args: crate::args::GetBalanceArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let chain_id = args.chain_id.as_deref().unwrap_or("eip155:8453");
 
     let rpc_url = resolve_rpc(chain_id);
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
@@ -194,22 +183,12 @@ pub fn handle_get_balance(params: serde_json::Value) -> anyhow::Result<serde_jso
     }))
 }
 
-pub fn handle_swap(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
-    let wallet_id = params.get("walletId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
-    let from_token = params.get("from")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing from"))?;
-    let to_token = params.get("to")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing to"))?;
-    let amount = params.get("amount")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing amount"))?;
-    let chain = params.get("chain")
-        .and_then(|v| v.as_str())
-        .unwrap_or("base");
+pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let from_token = &args.from;
+    let to_token = &args.to;
+    let amount = &args.amount;
+    let chain = args.chain.as_deref().unwrap_or("base");
     let chain_num = if chain.contains("8453") || chain == "base" { 8453u64 } else { 1u64 };
     let chain_id_str = format!("eip155:{}", chain_num);
 
@@ -266,22 +245,12 @@ pub fn handle_swap(params: serde_json::Value) -> anyhow::Result<serde_json::Valu
     }
 }
 
-pub fn handle_pay(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
-    let wallet_id = params.get("walletId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
-    let recipient = params.get("recipient")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing recipient"))?;
-    let amount = params.get("amount")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing amount"))?;
-    let token = params.get("token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
-    let chain = params.get("chain")
-        .and_then(|v| v.as_str())
-        .unwrap_or("base");
+pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let recipient = &args.recipient;
+    let amount = &args.amount;
+    let token = args.token.as_deref().unwrap_or("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+    let chain = args.chain.as_deref().unwrap_or("base");
 
     let (passphrase, vault_dir) = get_vault_config()?;
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
@@ -316,19 +285,11 @@ pub fn handle_pay(params: serde_json::Value) -> anyhow::Result<serde_json::Value
     }
 }
 
-pub fn handle_llm_generate(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
-    let wallet_id = params.get("walletId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
-    let provider = params.get("provider")
-        .and_then(|v| v.as_str())
-        .unwrap_or("anthropic");
-    let model = params.get("model")
-        .and_then(|v| v.as_str())
-        .unwrap_or("claude-3-5-sonnet");
-    let prompt = params.get("prompt")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing prompt"))?;
+pub fn handle_llm_generate(args: crate::args::LlmGenerateArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let provider = args.provider.as_deref().unwrap_or("anthropic");
+    let model = args.model.as_deref().unwrap_or("claude-3-5-sonnet");
+    let prompt = &args.prompt;
 
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
@@ -353,13 +314,9 @@ pub fn handle_llm_generate(params: serde_json::Value) -> anyhow::Result<serde_js
     }
 }
 
-pub fn handle_ai_balance(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
-    let wallet_id = params.get("walletId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
-    let token = params.get("token")
-        .and_then(|v| v.as_str())
-        .unwrap_or("USDC");
+pub fn handle_ai_balance(args: crate::args::AiBalanceArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let token = args.token.as_deref().unwrap_or("USDC");
 
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
@@ -379,7 +336,7 @@ pub fn handle_ai_balance(params: serde_json::Value) -> anyhow::Result<serde_json
     }))
 }
 
-pub fn handle_ai_models(_params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+pub fn handle_ai_models() -> anyhow::Result<serde_json::Value> {
     Ok(json!({
         "models": [
             { "provider": "anthropic", "model": "claude-3-5-sonnet", "priceInput": "3000000", "priceOutput": "15000000" },

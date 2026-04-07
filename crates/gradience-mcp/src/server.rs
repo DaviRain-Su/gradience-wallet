@@ -1,3 +1,4 @@
+use crate::args::*;
 use crate::mcp::*;
 use serde_json::json;
 use std::io::{self, BufRead, Write};
@@ -49,101 +50,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
         }
         "tools/list" => {
             let tools = vec![
-                crate::mcp::Tool {
-                    name: "sign_transaction".into(),
-                    description: "Sign a blockchain transaction".into(),
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {
-                            "walletId": { "type": "string" },
-                            "chainId": { "type": "string" },
-                            "transaction": {
-                                "type": "object",
-                                "properties": {
-                                    "to": { "type": "string" },
-                                    "value": { "type": "string" },
-                                    "data": { "type": "string" }
-                                }
-                            }
-                        },
-                        "required": ["walletId", "chainId", "transaction"]
-                    }),
-                },
-                crate::mcp::Tool {
-                    name: "get_balance".into(),
-                    description: "Get wallet balance".into(),
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {
-                            "walletId": { "type": "string" },
-                            "chainId": { "type": "string" }
-                        },
-                        "required": ["walletId"]
-                    }),
-                },
-                crate::mcp::Tool {
-                    name: "swap".into(),
-                    description: "Execute DEX swap".into(),
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {
-                            "walletId": { "type": "string" },
-                            "from": { "type": "string" },
-                            "to": { "type": "string" },
-                            "amount": { "type": "string" }
-                        },
-                        "required": ["walletId", "from", "to", "amount"]
-                    }),
-                },
-                crate::mcp::Tool {
-                    name: "pay".into(),
-                    description: "Execute x402 payment".into(),
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {
-                            "walletId": { "type": "string" },
-                            "recipient": { "type": "string" },
-                            "amount": { "type": "string" },
-                            "token": { "type": "string" },
-                            "chain": { "type": "string" }
-                        },
-                        "required": ["walletId", "recipient", "amount"]
-                    }),
-                },
-                crate::mcp::Tool {
-                    name: "llm_generate".into(),
-                    description: "Generate text via AI Gateway".into(),
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {
-                            "walletId": { "type": "string" },
-                            "provider": { "type": "string" },
-                            "model": { "type": "string" },
-                            "prompt": { "type": "string" }
-                        },
-                        "required": ["walletId", "prompt"]
-                    }),
-                },
-                crate::mcp::Tool {
-                    name: "ai_balance".into(),
-                    description: "Query AI Gateway balance".into(),
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {
-                            "walletId": { "type": "string" },
-                            "token": { "type": "string" }
-                        },
-                        "required": ["walletId"]
-                    }),
-                },
-                crate::mcp::Tool {
-                    name: "ai_models".into(),
-                    description: "List available LLM models and pricing".into(),
-                    input_schema: json!({
-                        "type": "object",
-                        "properties": {}
-                    }),
-                },
+                Tool::with_schema::<SignTxArgs>("sign_transaction", "Sign a blockchain transaction"),
+                Tool::with_schema::<GetBalanceArgs>("get_balance", "Get wallet balance"),
+                Tool::with_schema::<SwapArgs>("swap", "Execute DEX swap"),
+                Tool::with_schema::<PayArgs>("pay", "Execute x402 payment"),
+                Tool::with_schema::<LlmGenerateArgs>("llm_generate", "Generate text via AI Gateway"),
+                Tool::with_schema::<AiBalanceArgs>("ai_balance", "Query AI Gateway balance"),
+                Tool::with_schema::<AiModelsArgs>("ai_models", "List available LLM models and pricing"),
             ];
             let result = ToolsListResult { tools };
             Ok(JsonRpcResponse::success(req.id, serde_json::to_value(result)?))
@@ -152,39 +65,57 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
             let params = req.params.unwrap_or(json!({}));
             let name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or(json!({}));
-            
+
             let result = match name {
-                "sign_transaction" => match crate::tools::handle_sign_transaction(args) {
-                    Ok(v) => v,
-                    Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
-                },
-                "get_balance" => match crate::tools::handle_get_balance(args) {
-                    Ok(v) => v,
-                    Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
-                },
-                "swap" => match crate::tools::handle_swap(args) {
-                    Ok(v) => v,
-                    Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
-                },
-                "pay" => match crate::tools::handle_pay(args) {
-                    Ok(v) => v,
-                    Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
-                },
-                "llm_generate" => match crate::tools::handle_llm_generate(args) {
-                    Ok(v) => v,
-                    Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
-                },
-                "ai_balance" => match crate::tools::handle_ai_balance(args) {
-                    Ok(v) => v,
-                    Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
-                },
-                "ai_models" => match crate::tools::handle_ai_models(args) {
+                "sign_transaction" => {
+                    let a: SignTxArgs = serde_json::from_value(args)?;
+                    match crate::tools::handle_sign_transaction(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "get_balance" => {
+                    let a: GetBalanceArgs = serde_json::from_value(args)?;
+                    match crate::tools::handle_get_balance(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "swap" => {
+                    let a: SwapArgs = serde_json::from_value(args)?;
+                    match crate::tools::handle_swap(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "pay" => {
+                    let a: PayArgs = serde_json::from_value(args)?;
+                    match crate::tools::handle_pay(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "llm_generate" => {
+                    let a: LlmGenerateArgs = serde_json::from_value(args)?;
+                    match crate::tools::handle_llm_generate(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "ai_balance" => {
+                    let a: AiBalanceArgs = serde_json::from_value(args)?;
+                    match crate::tools::handle_ai_balance(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "ai_models" => match crate::tools::handle_ai_models() {
                     Ok(v) => v,
                     Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                 },
                 _ => return Ok(JsonRpcResponse::error(req.id, -32601, format!("Unknown tool: {}", name))),
             };
-            
+
             Ok(JsonRpcResponse::success(req.id, json!({
                 "content": [{ "type": "text", "text": result.to_string() }]
             })))

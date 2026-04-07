@@ -17,6 +17,7 @@ use webauthn_rs::prelude::*;
 
 #[derive(Clone)]
 struct Session {
+    user_id: String,
     username: String,
     passphrase: Option<String>,
 }
@@ -1342,7 +1343,9 @@ async fn wallet_anchor(
 async fn mcp_sign_transaction(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let resp = gradience_mcp::tools::handle_sign_transaction(body)
+    let args: gradience_mcp::args::SignTxArgs = serde_json::from_value(body)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let resp = gradience_mcp::tools::handle_sign_transaction(args)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok((StatusCode::OK, axum::Json(resp)))
 }
@@ -1350,7 +1353,9 @@ async fn mcp_sign_transaction(
 async fn mcp_get_balance(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let resp = gradience_mcp::tools::handle_get_balance(body)
+    let args: gradience_mcp::args::GetBalanceArgs = serde_json::from_value(body)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let resp = gradience_mcp::tools::handle_get_balance(args)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok((StatusCode::OK, axum::Json(resp)))
 }

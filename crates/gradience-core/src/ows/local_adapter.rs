@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{GradienceError, Result};
 use crate::wallet::manager::{WalletDescriptor, AccountDescriptor};
 use crate::ows::adapter::{
-    OwsAdapter, Transaction, SignedTransaction, DerivationParams,
+    OwsAdapter, AdapterKind, Transaction, SignedTransaction, DerivationParams,
     GradienceApiKey, PolicyAction,
 };
 use crate::ows::vault::VaultHandle;
@@ -26,6 +26,10 @@ fn map_ows_err(e: ows_lib::OwsLibError) -> GradienceError {
 
 #[async_trait]
 impl OwsAdapter for LocalOwsAdapter {
+    fn adapter_kind(&self) -> AdapterKind {
+        AdapterKind::Local
+    }
+
     async fn init_vault(
         &self,
         passphrase: &str,
