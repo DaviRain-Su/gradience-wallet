@@ -378,6 +378,32 @@ async fn wallet_balance(
     Ok(Json(balances))
 }
 
+#[derive(Serialize)]
+struct AddressResp {
+    chain_id: String,
+    address: String,
+}
+
+async fn wallet_addresses(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+) -> Result<Json<Vec<AddressResp>>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let result: Vec<_> = addrs.into_iter().map(|a| AddressResp {
+        chain_id: a.chain_id,
+        address: a.address,
+    }).collect();
+
+    Ok(Json(result))
+}
+
 #[derive(Deserialize)]
 struct FundReq {
     to: String,
@@ -1380,6 +1406,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/unlock", post(unlock))
         .route("/api/wallets", get(list_wallets).post(create_wallet))
         .route("/api/wallets/:id/balance", get(wallet_balance))
+        .route("/api/wallets/:id/addresses", get(wallet_addresses))
         .route("/api/wallets/:id/fund", post(wallet_fund))
         .route("/api/wallets/:id/sign", post(wallet_sign))
         .route("/api/wallets/:id/swap", post(wallet_swap))

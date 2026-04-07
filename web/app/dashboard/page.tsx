@@ -19,6 +19,11 @@ interface Balance {
   balance: string;
 }
 
+interface Address {
+  chain_id: string;
+  address: string;
+}
+
 interface Tx {
   id: number;
   action: string;
@@ -138,8 +143,10 @@ export default function Dashboard() {
 
 function WalletCard({ wallet }: { wallet: Wallet }) {
   const [balances, setBalances] = useState<Balance[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [newApiKeyToken, setNewApiKeyToken] = useState<string | null>(null);
   const [showFund, setShowFund] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [showSwap, setShowSwap] = useState(false);
@@ -157,6 +164,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
 
   useEffect(() => {
     apiGet(`/api/wallets/${wallet.id}/balance`).then((r) => r.json().then(setBalances)).catch(() => {});
+    apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json().then(setAddresses)).catch(() => {});
     apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json().then(setTxs)).catch(() => {});
     apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json().then(setKeys)).catch(() => {});
   }, [wallet.id]);
@@ -182,9 +190,11 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   async function handleCreateKey() {
     setKeyLoading(true);
     try {
-      await apiPost(`/api/wallets/${wallet.id}/api-keys`, { name: keyName });
+      const res = await apiPost(`/api/wallets/${wallet.id}/api-keys`, { name: keyName });
+      const data = await res.json();
       setKeyName("");
       setShowKey(false);
+      setNewApiKeyToken(data.raw_token || null);
       const k = await apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json());
       setKeys(k);
     } catch (e: unknown) {
@@ -239,9 +249,18 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   }
 
   const addressMap = new Map<string, string>();
-  balances.forEach((b) => {
-    if (!addressMap.has(b.chain_id)) addressMap.set(b.chain_id, b.address);
+  addresses.forEach((a) => {
+    if (!addressMap.has(a.chain_id)) addressMap.set(a.chain_id, a.address);
   });
+
+  function formatChain(chainId: string) {
+    if (chainId === "eip155:8453") return "Base";
+    if (chainId === "eip155:1") return "Ethereum";
+    if (chainId === "eip155:137") return "Polygon";
+    if (chainId === "eip155:42161") return "Arbitrum";
+    if (chainId === "eip155:10") return "Optimism";
+    return chainId;
+  }
 
   function copy(text: string) {
     navigator.clipboard.writeText(text).then(() => {
@@ -273,14 +292,19 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Addresses</p>
         {addressMap.size === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No addresses loaded.</p>}
-        <div className="mt-2 space-y-2">
+        <div className="mt-2 grid grid-cols-1 gap-2">
           {Array.from(addressMap.entries()).map(([chain, addr]) => (
-            <div key={chain} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>{chain}</p>
-                <p className="text-sm font-mono truncate">{addr}</p>
+            <div key={chain} className="rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
+              <div className="flex items-center gap-2">
+                <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "var(--card)", color: "var(--primary)", border: "1px solid var(--border)" }}>
+                  {formatChain(chain)}
+                </span>
+                <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>{chain}</span>
               </div>
-              <button onClick={() => copy(addr)} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>Copy</button>
+              <div className="flex items-center justify-between gap-3 mt-1">
+                <p className="text-sm font-mono break-all" style={{ color: "var(--foreground)" }}>{addr}</p>
+                <button onClick={() => copy(addr)} className="shrink-0 text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>Copy</button>
+              </div>
             </div>
           ))}
         </div>
@@ -314,8 +338,20 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
 
       <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>API Keys</p>
-        {keys.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No API keys.</p>}
-        <div className="flex flex-wrap gap-2 mt-1">
+
+        {newApiKeyToken && (
+          <div className="mt-2 rounded-lg px-3 py-2" style={{ backgroundColor: "#D6EAF8", border: "1px solid #AED6F1" }}>
+            <p className="text-xs font-medium" style={{ color: "#1F618D" }}>New API Key created — copy it now, it will not be shown again:</p>
+            <div className="flex items-center gap-2 mt-1">
+              <code className="text-sm font-mono break-all" style={{ color: "#1F618D" }}>{newApiKeyToken}</code>
+              <button onClick={() => copy(newApiKeyToken)} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>Copy</button>
+              <button onClick={() => setNewApiKeyToken(null)} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }}>Hide</button>
+            </div>
+          </div>
+        )}
+
+        {keys.length === 0 && !newApiKeyToken && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No API keys.</p>}
+        <div className="flex flex-wrap gap-2 mt-2">
           {keys.map((k) => (
             <span key={k.id} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }}>
               {k.name} {k.expired && "(revoked)"}
