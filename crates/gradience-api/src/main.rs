@@ -592,6 +592,85 @@ async fn create_policy(
     Ok((StatusCode::CREATED, axum::Json(serde_json::json!({ "policy_id": policy_id }))))
 }
 
+// ==================== AI Gateway Handlers ====================
+
+#[derive(Deserialize)]
+struct TopupReq {
+    wallet_id: String,
+    token: String,
+    amount_raw: String,
+}
+
+async fn ai_topup(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<TopupReq>,
+) -> Result<StatusCode, StatusCode> {
+    let svc = gradience_core::ai::gateway::AiGatewayService::new();
+    svc.topup(&state.db, &body.wallet_id, &body.token, &body.amount_raw)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(StatusCode::OK)
+}
+
+async fn ai_balance(
+    State(state): State<Arc<AppState>>,
+    Path(wallet_id): Path<String>,
+    axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = params.get("token").map(|s| s.as_str()).unwrap_or("USDC");
+    let svc = gradience_core::ai::gateway::AiGatewayService::new();
+    let bal = svc.get_balance(&state.db, &wallet_id, token)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({ "balance_raw": bal }))))
+}
+
+#[derive(Deserialize)]
+struct GenerateReq {
+    wallet_id: String,
+    provider: String,
+    model: String,
+    prompt: String,
+}
+
+async fn ai_generate(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<GenerateReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let svc = gradience_core::ai::gateway::AiGatewayService::new();
+    let resp = svc.llm_generate(
+        &state.db,
+        &body.wallet_id,
+        None,
+        &body.provider,
+        &body.model,
+        &body.prompt,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    #[derive(Serialize)]
+    struct GenerateResp {
+        content: String,
+        input_tokens: i64,
+        output_tokens: i64,
+        cost_raw: String,
+        status: String,
+    }
+
+    Ok((StatusCode::OK, axum::Json(GenerateResp {
+        content: resp.content,
+        input_tokens: resp.input_tokens,
+        output_tokens: resp.output_tokens,
+        cost_raw: resp.cost_raw,
+        status: resp.status,
+    })))
+}
+
 // ==================== Main ====================
 
 #[tokio::main]
@@ -636,6 +715,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallets/:id/transactions", get(wallet_transactions))
         .route("/api/wallets/:id/api-keys", get(list_api_keys).post(create_api_key))
         .route("/api/wallets/:id/policies", post(create_policy))
+        .route("/api/ai/topup", post(ai_topup))
+        .route("/api/ai/balance/:wallet_id", get(ai_balance))
+        .route("/api/ai/generate", post(ai_generate))
         .route("/health", get(|| async { "ok" }))
         .layer(
             tower_http::cors::CorsLayer::new()

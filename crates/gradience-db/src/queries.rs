@@ -1,7 +1,7 @@
 use crate::models::*;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use sqlx::{Pool, Sqlite};
+use sqlx::{Pool, Row, Sqlite};
 
 // ========== Users ==========
 pub async fn create_user(pool: &Pool<Sqlite>, id: &str, email: &str) -> Result<()> {
@@ -277,4 +277,89 @@ pub async fn get_spending(
     .fetch_optional(pool)
     .await?;
     Ok(st)
+}
+
+// ========== AI Balances ==========
+pub async fn get_ai_balance(pool: &Pool<Sqlite>, wallet_id: &str, token: &str) -> Result<Option<AiBalance>> {
+    let bal = sqlx::query_as::<_, AiBalance>(
+        "SELECT wallet_id, token, balance_raw, updated_at FROM ai_balances WHERE wallet_id = ? AND token = ?"
+    )
+    .bind(wallet_id)
+    .bind(token)
+    .fetch_optional(pool)
+    .await?;
+    Ok(bal)
+}
+
+pub async fn upsert_ai_balance(pool: &Pool<Sqlite>, wallet_id: &str, token: &str, balance_raw: &str) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO ai_balances (wallet_id, token, balance_raw, updated_at) VALUES (?, ?, ?, datetime('now')) ON CONFLICT(wallet_id, token) DO UPDATE SET balance_raw = excluded.balance_raw, updated_at = excluded.updated_at"
+    )
+    .bind(wallet_id)
+    .bind(token)
+    .bind(balance_raw)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// ========== LLM Call Logs ==========
+pub async fn insert_llm_call_log(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+    api_key_id: Option<&str>,
+    provider: &str,
+    model: &str,
+    input_tokens: i64,
+    output_tokens: i64,
+    cached_tokens: Option<i64>,
+    cost_raw: &str,
+    duration_ms: i32,
+    status: &str,
+) -> Result<i64> {
+    let row = sqlx::query(
+        "INSERT INTO llm_call_logs (wallet_id, api_key_id, provider, model, input_tokens, output_tokens, cached_tokens, cost_raw, duration_ms, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id"
+    )
+    .bind(wallet_id)
+    .bind(api_key_id)
+    .bind(provider)
+    .bind(model)
+    .bind(input_tokens)
+    .bind(output_tokens)
+    .bind(cached_tokens)
+    .bind(cost_raw)
+    .bind(duration_ms)
+    .bind(status)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.get("id"))
+}
+
+// ========== Model Pricing ==========
+pub async fn get_model_pricing(pool: &Pool<Sqlite>, provider: &str, model: &str) -> Result<Option<ModelPricing>> {
+    let pricing = sqlx::query_as::<_, ModelPricing>(
+        "SELECT id, provider, model, input_per_m, output_per_m, cache_per_m, currency, effective_from, effective_to FROM model_pricing WHERE provider = ? AND model = ? AND (effective_to IS NULL OR effective_to > datetime('now')) ORDER BY effective_from DESC LIMIT 1"
+    )
+    .bind(provider)
+    .bind(model)
+    .fetch_optional(pool)
+    .await?;
+    Ok(pricing)
+}
+
+pub async fn seed_model_pricing(pool: &Pool<Sqlite>) -> Result<()> {
+    // Anthropic Claude 3.5 Sonnet mock pricing
+    sqlx::query(
+        "INSERT OR IGNORE INTO model_pricing (id, provider, model, input_per_m, output_per_m, cache_per_m, currency, effective_from) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+    )
+    .bind(1i64)
+    .bind("anthropic")
+    .bind("claude-3-5-sonnet")
+    .bind(3000000i64) // $3 per 1M tokens
+    .bind(15000000i64) // $15 per 1M tokens
+    .bind(375000i64) // $0.375 per 1M cached tokens
+    .bind("USDC")
+    .execute(pool)
+    .await?;
+    Ok(())
 }
