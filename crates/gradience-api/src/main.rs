@@ -1340,6 +1340,11 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "sqlite:./gradience.db?mode=rwc".to_string());
     let db = sqlx::SqlitePool::connect(&db_path).await?;
 
+    let migrations_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../crates/gradience-db/migrations");
+    let migrator = sqlx::migrate::Migrator::new(migrations_path).await?;
+    migrator.run(&db).await?;
+
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());

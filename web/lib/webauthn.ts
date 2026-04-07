@@ -5,7 +5,7 @@ export async function registerPasskey(username: string, passphrase: string) {
   const startRes = await apiPost("/api/auth/passkey/register/start", { username });
   const { challenge } = await startRes.json();
 
-  const credential = await create({ publicKey: challenge });
+  const credential = await create(challenge);
 
   const finishRes = await apiPost("/api/auth/passkey/register/finish", {
     username,
@@ -21,7 +21,7 @@ export async function loginPasskey(username: string) {
   const startRes = await apiPost("/api/auth/passkey/login/start", { username });
   const { challenge } = await startRes.json();
 
-  const credential = await get({ publicKey: challenge });
+  const credential = await get(challenge);
 
   const finishRes = await apiPost("/api/auth/passkey/login/finish", {
     username,
