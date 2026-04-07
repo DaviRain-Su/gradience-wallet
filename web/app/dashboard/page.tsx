@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, setApiBase } from "@/lib/api";
+import { formatChainName } from "@/lib/chains";
 
 interface Wallet {
   id: string;
@@ -253,15 +254,6 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     if (!addressMap.has(a.chain_id)) addressMap.set(a.chain_id, a.address);
   });
 
-  function formatChain(chainId: string) {
-    if (chainId === "eip155:8453") return "Base";
-    if (chainId === "eip155:1") return "Ethereum";
-    if (chainId === "eip155:137") return "Polygon";
-    if (chainId === "eip155:42161") return "Arbitrum";
-    if (chainId === "eip155:10") return "Optimism";
-    return chainId;
-  }
-
   function copy(text: string) {
     navigator.clipboard.writeText(text).then(() => {
       setMsg("Copied!");
@@ -297,7 +289,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
             <div key={chain} className="rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
               <div className="flex items-center gap-2">
                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "var(--card)", color: "var(--primary)", border: "1px solid var(--border)" }}>
-                  {formatChain(chain)}
+                  {formatChainName(chain)}
                 </span>
                 <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>{chain}</span>
               </div>
