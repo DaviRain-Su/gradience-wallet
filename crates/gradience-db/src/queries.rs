@@ -223,7 +223,7 @@ pub async fn insert_audit_log(
 
 pub async fn list_audit_logs_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str, limit: i64) -> Result<Vec<AuditLog>> {
     let logs = sqlx::query_as::<_, AuditLog>(
-        "SELECT id, wallet_id, api_key_id, action, context_json, intent_json, decision, decision_reason, dynamic_factors, tx_hash, anchor_tx_hash, anchor_root, prev_hash, current_hash, created_at FROM audit_logs WHERE wallet_id = ? ORDER BY created_at DESC LIMIT ?"
+        "SELECT id, wallet_id, api_key_id, action, context_json, intent_json, decision, decision_reason, dynamic_factors, tx_hash, anchor_tx_hash, anchor_root, anchor_leaf_index, prev_hash, current_hash, created_at FROM audit_logs WHERE wallet_id = ? ORDER BY created_at DESC LIMIT ?"
     )
     .bind(wallet_id)
     .bind(limit)
@@ -362,4 +362,83 @@ pub async fn seed_model_pricing(pool: &Pool<Sqlite>) -> Result<()> {
     .execute(pool)
     .await?;
     Ok(())
+}
+
+// ========== Anchor ==========
+pub async fn list_unanchored_logs(pool: &Pool<Sqlite>, limit: i64) -> Result<Vec<AuditLog>> {
+    let logs = sqlx::query_as::<_, AuditLog>(
+        "SELECT id, wallet_id, api_key_id, action, context_json, intent_json, decision, decision_reason, dynamic_factors, tx_hash, anchor_tx_hash, anchor_root, anchor_leaf_index, prev_hash, current_hash, created_at FROM audit_logs WHERE anchor_tx_hash IS NULL ORDER BY id LIMIT ?"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(logs)
+}
+
+pub async fn list_unanchored_audit_logs_for_wallet(pool: &Pool<Sqlite>, wallet_id: &str, limit: i64) -> Result<Vec<AuditLog>> {
+    let logs = sqlx::query_as::<_, AuditLog>(
+        "SELECT id, wallet_id, api_key_id, action, context_json, intent_json, decision, decision_reason, dynamic_factors, tx_hash, anchor_tx_hash, anchor_root, anchor_leaf_index, prev_hash, current_hash, created_at FROM audit_logs WHERE wallet_id = ? AND anchor_tx_hash IS NULL ORDER BY id LIMIT ?"
+    )
+    .bind(wallet_id)
+    .bind(limit)
+    .fetch_all(pool)
+    .await?;
+    Ok(logs)
+}
+
+pub async fn mark_logs_anchored(
+    pool: &Pool<Sqlite>,
+    ids: &[i64],
+    root: &str,
+    tx_hash: &str,
+) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    // SQLite does not support array parameters; use repeated OR for small batches
+    let placeholders: Vec<String> = ids.iter().map(|id| id.to_string()).collect();
+    let sql = format!(
+        "UPDATE audit_logs SET anchor_root = ?, anchor_tx_hash = ? WHERE id IN ({})",
+        placeholders.join(",")
+    );
+    sqlx::query(&sql)
+        .bind(root)
+        .bind(tx_hash)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn insert_anchor_batch(
+    pool: &Pool<Sqlite>,
+    root: &str,
+    prev_root: Option<&str>,
+    log_start_index: i64,
+    log_end_index: i64,
+    leaf_count: i32,
+    tx_hash: &str,
+    block_number: Option<i64>,
+) -> Result<i64> {
+    let row = sqlx::query(
+        "INSERT INTO anchor_batches (root, prev_root, log_start_index, log_end_index, leaf_count, tx_hash, block_number) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id"
+    )
+    .bind(root)
+    .bind(prev_root)
+    .bind(log_start_index)
+    .bind(log_end_index)
+    .bind(leaf_count)
+    .bind(tx_hash)
+    .bind(block_number)
+    .fetch_one(pool)
+    .await?;
+    Ok(row.get("id"))
+}
+
+pub async fn get_latest_anchor_batch(pool: &Pool<Sqlite>) -> Result<Option<AnchorBatch>> {
+    let batch = sqlx::query_as::<_, AnchorBatch>(
+        "SELECT id, root, prev_root, log_start_index, log_end_index, leaf_count, tx_hash, block_number, anchored_at FROM anchor_batches ORDER BY anchored_at DESC LIMIT 1"
+    )
+    .fetch_optional(pool)
+    .await?;
+    Ok(batch)
 }

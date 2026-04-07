@@ -1253,6 +1253,7 @@ dependencies = [
  "axum",
  "gradience-core",
  "gradience-db",
+ "gradience-mcp",
  "hex",
  "ows-lib",
  "rlp",

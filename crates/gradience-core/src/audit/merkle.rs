@@ -1,4 +1,4 @@
-use sha3::{Sha3_256, Digest};
+use sha3::{Keccak256, Digest};
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
@@ -66,7 +66,7 @@ pub fn verify_proof(root: [u8; 32], leaf: [u8; 32], proof: &[[u8; 32]]) -> bool 
 }
 
 fn hash_pair(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
-    let mut hasher = Sha3_256::new();
+    let mut hasher = Keccak256::new();
     if left <= right {
         hasher.update(left);
         hasher.update(right);
@@ -78,7 +78,7 @@ fn hash_pair(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 }
 
 pub fn keccak256(data: &[u8]) -> [u8; 32] {
-    let mut hasher = Sha3_256::new();
+    let mut hasher = Keccak256::new();
     hasher.update(data);
     hasher.finalize().as_slice().try_into().unwrap()
 }

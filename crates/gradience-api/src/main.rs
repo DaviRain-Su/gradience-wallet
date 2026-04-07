@@ -455,6 +455,84 @@ async fn wallet_fund(
     Ok((StatusCode::OK, axum::Json(FundResp { tx_hash: result.tx_hash })))
 }
 
+#[derive(Deserialize)]
+struct SignReq {
+    chain: String,
+    to: String,
+    amount: String,
+    data: Option<String>,
+}
+
+async fn wallet_sign(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+    Json(body): Json<SignReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+
+    let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut addr = None;
+    for a in &addrs {
+        if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+            addr = Some(a.address.clone());
+            break;
+        }
+    }
+    let _from_addr = addr.ok_or(StatusCode::NOT_FOUND)?;
+
+    let eth_f64: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let wei = (eth_f64 * 1e18) as u128;
+
+    let rpc_url = if body.chain == "base" {
+        "https://mainnet.base.org"
+    } else {
+        "https://eth.llamarpc.com"
+    };
+
+    let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = client.get_transaction_count(&body.to).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price_hex = client.get_gas_price().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let chain_num = if body.chain == "base" { 8453u64 } else { 1u64 };
+    let to_bytes = hex::decode(body.to.trim_start_matches("0x")).unwrap_or_default();
+    let data_bytes = hex::decode(body.data.as_deref().unwrap_or("").trim_start_matches("0x")).unwrap_or_default();
+    let mut rlp = rlp::RlpStream::new_list(9);
+    rlp.append(&nonce);
+    rlp.append(&gas_price);
+    rlp.append(&21000u64);
+    rlp.append(&to_bytes);
+    rlp.append(&wei);
+    rlp.append(&data_bytes);
+    rlp.append(&chain_num);
+    rlp.append(&0u8);
+    rlp.append(&0u8);
+    let tx_hex = format!("0x{}", hex::encode(&rlp.out()));
+
+    let result = ows_lib::sign_and_send(
+        &wallet_id,
+        &body.chain,
+        &tx_hex,
+        Some(&passphrase),
+        None,
+        Some(rpc_url),
+        Some(&state.vault_dir),
+    ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    #[derive(Serialize)]
+    struct SignResp {
+        tx_hash: String,
+    }
+    Ok((StatusCode::OK, axum::Json(SignResp { tx_hash: result.tx_hash })))
+}
+
 #[derive(Serialize)]
 struct TxResp {
     id: i64,
@@ -671,6 +749,46 @@ async fn ai_generate(
     })))
 }
 
+async fn wallet_anchor(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let svc = gradience_core::audit::anchor::AnchorService::from_env()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let Some(svc) = svc else {
+        return Ok((StatusCode::SERVICE_UNAVAILABLE, axum::Json(serde_json::json!({"error": "ANCHOR_RPC_URL not configured"}))));
+    };
+
+    let tx_hash = svc.anchor_unanchored_logs(&state.db, &wallet_id, 100)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    match tx_hash {
+        Some(hash) => Ok((StatusCode::OK, axum::Json(serde_json::json!({ "tx_hash": hash })))),
+        None => Ok((StatusCode::OK, axum::Json(serde_json::json!({ "message": "No unanchored logs" })))),
+    }
+}
+
+async fn mcp_sign_transaction(
+    Json(body): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let resp = gradience_mcp::tools::handle_sign_transaction(body)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok((StatusCode::OK, axum::Json(resp)))
+}
+
+async fn mcp_get_balance(
+    Json(body): Json<serde_json::Value>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let resp = gradience_mcp::tools::handle_get_balance(body)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok((StatusCode::OK, axum::Json(resp)))
+}
+
 // ==================== Main ====================
 
 #[tokio::main]
@@ -712,12 +830,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallets", get(list_wallets).post(create_wallet))
         .route("/api/wallets/:id/balance", get(wallet_balance))
         .route("/api/wallets/:id/fund", post(wallet_fund))
+        .route("/api/wallets/:id/sign", post(wallet_sign))
         .route("/api/wallets/:id/transactions", get(wallet_transactions))
+        .route("/api/wallets/:id/anchor", post(wallet_anchor))
         .route("/api/wallets/:id/api-keys", get(list_api_keys).post(create_api_key))
         .route("/api/wallets/:id/policies", post(create_policy))
         .route("/api/ai/topup", post(ai_topup))
         .route("/api/ai/balance/:wallet_id", get(ai_balance))
         .route("/api/ai/generate", post(ai_generate))
+        .route("/api/mcp/sign_transaction", post(mcp_sign_transaction))
+        .route("/api/mcp/get_balance", post(mcp_get_balance))
         .route("/health", get(|| async { "ok" }))
         .layer(
             tower_http::cors::CorsLayer::new()

@@ -126,6 +126,7 @@ pub struct AuditLog {
     pub tx_hash: Option<String>,
     pub anchor_tx_hash: Option<String>,
     pub anchor_root: Option<String>,
+    pub anchor_leaf_index: Option<i64>,
     pub prev_hash: String,
     pub current_hash: String,
     pub created_at: DateTime<Utc>,
