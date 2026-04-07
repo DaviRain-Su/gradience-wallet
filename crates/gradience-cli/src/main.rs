@@ -3,7 +3,7 @@ mod commands;
 mod context;
 
 use clap::Parser;
-use cli::{Cli, Commands, AuthCommands, AgentCommands, PolicyCommands, ApiKeyCommands};
+use cli::{Cli, Commands, AuthCommands, AgentCommands, PolicyCommands, ApiKeyCommands, DexCommands, AuditCommands, TeamCommands, AiCommands, McpCommands};
 use std::path::PathBuf;
 
 #[tokio::main]
@@ -54,6 +54,47 @@ async fn main() -> anyhow::Result<()> {
             }
             ApiKeyCommands::List { wallet_id } => {
                 commands::api_key::list(&ctx, wallet_id).await
+            }
+        },
+        Commands::Dex { cmd } => match cmd {
+            DexCommands::Quote { wallet_id, from, to, amount } => {
+                commands::dex::quote(&ctx, wallet_id, from, to, amount).await
+            }
+            DexCommands::Swap { wallet_id, from, to, amount } => {
+                commands::dex::swap(&ctx, wallet_id, from, to, amount).await
+            }
+        },
+        Commands::Audit { cmd } => match cmd {
+            AuditCommands::List { wallet_id } => {
+                commands::audit::list(&ctx, wallet_id).await
+            }
+            AuditCommands::Verify { wallet_id } => {
+                commands::audit::verify(&ctx, wallet_id).await
+            }
+        },
+        Commands::Team { cmd } => match cmd {
+            TeamCommands::CreateWorkspace { name } => {
+                commands::team::create_workspace(&ctx, name).await
+            }
+            TeamCommands::Invite { workspace_id, user_email, role } => {
+                commands::team::invite(&ctx, workspace_id, user_email, role).await
+            }
+        },
+        Commands::Ai { cmd } => match cmd {
+            AiCommands::Balance { wallet_id } => {
+                commands::ai::balance(&ctx, wallet_id).await
+            }
+            AiCommands::Generate { wallet_id, prompt } => {
+                commands::ai::generate(&ctx, wallet_id, prompt).await
+            }
+        },
+        Commands::Mcp { cmd } => match cmd {
+            McpCommands::Serve => commands::mcp::serve().await,
+            McpCommands::SignTx { wallet_id, chain_id, to, amount } => {
+                commands::mcp::sign_tx(&ctx, wallet_id, chain_id, to, amount).await
+            }
+            McpCommands::Balance { wallet_id, chain_id } => {
+                commands::mcp::balance(&ctx, wallet_id, chain_id).await
             }
         },
     }

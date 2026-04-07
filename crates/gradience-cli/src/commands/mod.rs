@@ -2,3 +2,8 @@ pub mod auth;
 pub mod agent;
 pub mod policy;
 pub mod api_key;
+pub mod dex;
+pub mod audit;
+pub mod team;
+pub mod ai;
+pub mod mcp;

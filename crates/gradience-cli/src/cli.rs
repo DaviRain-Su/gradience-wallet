@@ -30,6 +30,31 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: ApiKeyCommands,
     },
+    /// DEX operations (quote and swap)
+    Dex {
+        #[command(subcommand)]
+        cmd: DexCommands,
+    },
+    /// Audit log queries and verification
+    Audit {
+        #[command(subcommand)]
+        cmd: AuditCommands,
+    },
+    /// Team and workspace management
+    Team {
+        #[command(subcommand)]
+        cmd: TeamCommands,
+    },
+    /// AI Gateway commands
+    Ai {
+        #[command(subcommand)]
+        cmd: AiCommands,
+    },
+    /// MCP server management
+    Mcp {
+        #[command(subcommand)]
+        cmd: McpCommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -91,5 +116,88 @@ pub enum ApiKeyCommands {
     /// List API keys for a wallet
     List {
         wallet_id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum DexCommands {
+    /// Get swap quote
+    Quote {
+        wallet_id: String,
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: String,
+        #[arg(long)]
+        amount: String,
+    },
+    /// Execute swap
+    Swap {
+        wallet_id: String,
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: String,
+        #[arg(long)]
+        amount: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuditCommands {
+    /// List audit logs for a wallet
+    List {
+        wallet_id: String,
+    },
+    /// Verify audit chain integrity
+    Verify {
+        wallet_id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum TeamCommands {
+    /// Create a workspace
+    CreateWorkspace {
+        #[arg(long)]
+        name: String,
+    },
+    /// Invite member to workspace
+    Invite {
+        workspace_id: String,
+        user_email: String,
+        #[arg(long, value_enum)]
+        role: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AiCommands {
+    /// Query AI balance
+    Balance {
+        wallet_id: String,
+    },
+    /// Generate text via LLM
+    Generate {
+        wallet_id: String,
+        prompt: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum McpCommands {
+    /// Start the MCP stdio server
+    Serve,
+    /// Sign a transaction via MCP tool
+    SignTx {
+        wallet_id: String,
+        chain_id: String,
+        to: String,
+        amount: String,
+    },
+    /// Get balance via MCP tool
+    Balance {
+        wallet_id: String,
+        chain_id: String,
     },
 }

@@ -1281,6 +1281,7 @@ dependencies = [
  "dirs",
  "gradience-core",
  "gradience-db",
+ "gradience-mcp",
  "hex",
  "ows-lib",
  "predicates",
