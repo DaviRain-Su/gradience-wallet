@@ -5,6 +5,7 @@ members = [
     "crates/gradience-mcp",
     "crates/gradience-cli",
     "crates/gradience-db",
+    "crates/gradience-api",
 ]
 
 [workspace.dependencies]
