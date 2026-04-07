@@ -1,4 +1,7 @@
 target
 .gradience
 gradience.db
+vault/
+*.session
+.env
 

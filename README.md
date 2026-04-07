@@ -9,12 +9,15 @@ Gradience enables users to create passkey-backed identities, manage multi-chain 
 ## Core Features
 
 - **OWS-Native Vault**: Genuine integration with `ows-lib` and `ows-signer` for local mnemonic generation, encrypted wallet storage, and multi-chain signing.
-- **Policy Engine**: Dual-layer policy system — Gradience smart evaluation + OWS native policy enforcement.
-- **API Key Access**: Issue scoped API keys (`ows_key_...`) for agents, with HKDF-based key derivation and built-in key revocation.
-- **MCP Server**: A stdio JSON-RPC MCP server exposing `sign_transaction` and `get_balance` tools.
-- **EVM RPC Client**: Direct integration with EVM-compatible chains (Base, HashKey Chain, Ethereum).
+- **Policy Engine**: Multi-layer policy system — Spend limits, Intent analysis, Dynamic risk signals, Time windows, Chain/Contract whitelist.
+- **Web UI + Passkey**: Next.js frontend with WebAuthn passkey registration/login, local-first architecture.
+- **DEX Integration**: Real 1inch Swap API + Uniswap V3 fallback, executable via Web UI, CLI, and MCP.
+- **MCP Server**: JSON-RPC MCP server exposing `sign_transaction`, `get_balance`, `swap`, `pay`, `llm_generate`, `ai_balance`, `ai_models` tools.
+- **AI Gateway**: Pre-paid LLM generation with cost tracking and reconciliation.
 - **Audit & Integrity**: HMAC-chained audit logs with Merkle tree anchoring for tamper detection.
-- **Hybrid Deployment**: Local SQLite for personal use, ready for PostgreSQL cloud sync.
+- **Multi-Platform SDKs**: Node.js (napi-rs) and Python SDKs for external integrations.
+- **Telegram Mini App**: TWA wallet UI with bot webhook support.
+- **Local-First**: SQLite + local vault; all data stays on your device, fully self-hostable.
 
 ---
 
@@ -23,7 +26,7 @@ Gradience enables users to create passkey-backed identities, manage multi-chain 
 ### Prerequisites
 
 - Rust 1.80+ / Cargo
-- `sqlx-cli` (optional, for database migrations)
+- Node.js 18+ / npm
 
 ### Build
 
@@ -31,7 +34,28 @@ Gradience enables users to create passkey-backed identities, manage multi-chain 
 cargo build --workspace
 ```
 
-### Run CLI
+### Start Web UI (Local-First)
+
+The easiest way to use Gradience is to run both the API server and the web UI locally with a single command.
+
+**Option A — Shell script**
+```bash
+./start-local.sh
+```
+
+**Option B — Rust CLI**
+```bash
+cargo run --bin gradience -- start
+```
+
+Both will:
+1. Start the API server on `http://localhost:8080`
+2. Start the Next.js dev server on `http://localhost:3000`
+3. Open your browser automatically
+
+Then use Passkey to register / log in, create wallets, fund, swap, and anchor transactions through the web UI.
+
+### CLI Usage
 
 ```bash
 cargo run --bin gradience -- --help
@@ -41,6 +65,9 @@ cargo run --bin gradience -- agent create --name demo
 
 # Check balance on Base
 cargo run --bin gradience -- agent balance <wallet-id> --chain base
+
+# Execute a real DEX swap
+cargo run --bin gradience -- dex swap <wallet-id> --from 0x8335... --to 0x4200... --amount 1
 ```
 
 ### Run MCP Server
@@ -62,13 +89,18 @@ cargo test --workspace
 ```
 gradience-wallet/
 ├── crates/
-│   ├── gradience-core/      # Domain logic: OWS adapter, policy engine, audit, signing, RPC
+│   ├── gradience-core/      # Domain logic: OWS adapter, policy engine, audit, signing, RPC, DEX
 │   ├── gradience-cli/       # Command-line wallet (clap)
 │   ├── gradience-db/        # SQLite/PostgreSQL layer with sqlx
-│   └── gradience-mcp/       # MCP stdio server and tool handlers
+│   ├── gradience-api/       # Axum REST API server
+│   ├── gradience-mcp/       # MCP stdio server and tool handlers
+│   └── gradience-sdk-node/  # Node.js NAPI bindings
 ├── contracts/               # Solidity contracts (Merkle anchor)
 ├── docs/                    # PRD, architecture, technical spec, tests spec
-├── web/                     # Web frontend (WIP)
+├── sdk/python/              # Python SDK
+├── web/                     # Next.js web frontend
+├── start-local.sh           # One-click local launcher (macOS/Linux)
+├── start-local.ps1          # One-click local launcher (Windows)
 └── .sqlx/                   # sqlx offline query metadata
 ```
 
@@ -97,10 +129,12 @@ gradience-wallet/
 
 - **Language**: Rust
 - **CLI**: `clap`
+- **Web**: Next.js + TypeScript + Tailwind CSS
 - **DB**: `sqlx` + SQLite (local) / PostgreSQL (cloud)
 - **Crypto**: `ows-lib` / `ows-signer` (OWS native), `secp256k1`, `rlp`
-- **Networking**: `reqwest`, `axum` (future gateway)
+- **Networking**: `reqwest`, `axum`
 - **MCP**: Custom JSON-RPC stdio server
+- **SDKs**: `napi-rs` (Node.js), Python `requests`
 
 ---
 

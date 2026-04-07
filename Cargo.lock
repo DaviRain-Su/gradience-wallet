@@ -1305,6 +1305,7 @@ dependencies = [
  "hex",
  "ows-lib",
  "predicates",
+ "reqwest",
  "rlp",
  "rpassword",
  "serde_json",

@@ -22,6 +22,11 @@ async fn main() -> anyhow::Result<()> {
         data_dir.join("gradience.db").to_string_lossy().trim_start_matches('/')
     );
 
+    match &cli.command {
+        Commands::Start => return commands::start::run().await,
+        _ => {}
+    }
+
     let ctx = context::AppContext::new(&db_path, data_dir, vault_dir).await?;
 
     match cli.command {
@@ -108,6 +113,9 @@ async fn main() -> anyhow::Result<()> {
         },
         Commands::Pay { wallet_id, recipient, amount, token, chain, deadline } => {
             commands::pay::x402(&ctx, wallet_id, recipient, amount, token, chain, deadline).await
+        }
+        Commands::Start => {
+            commands::start::run().await
         }
     }
 }

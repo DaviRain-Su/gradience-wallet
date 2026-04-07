@@ -67,6 +67,8 @@ pub enum Commands {
         #[arg(long)]
         deadline: Option<u64>,
     },
+    /// Start the local web UI and API server
+    Start,
 }
 
 #[derive(Subcommand, Debug)]

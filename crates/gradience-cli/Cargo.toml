@@ -23,6 +23,7 @@ gradience-db = { path = "../gradience-db" }
 gradience-mcp = { path = "../gradience-mcp" }
 hex.workspace = true
 rlp.workspace = true
+reqwest.workspace = true
 
 [dependencies.ows-lib]
 git = "https://github.com/open-wallet-standard/core"
