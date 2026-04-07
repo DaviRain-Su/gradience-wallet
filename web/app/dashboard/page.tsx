@@ -164,10 +164,13 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [swapLoading, setSwapLoading] = useState(false);
 
   useEffect(() => {
-    apiGet(`/api/wallets/${wallet.id}/balance`).then((r) => r.json().then(setBalances)).catch(() => {});
-    apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json().then(setAddresses)).catch(() => {});
-    apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json().then(setTxs)).catch(() => {});
-    apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json().then(setKeys)).catch(() => {});
+    apiGet(`/api/wallets/${wallet.id}/balance`).then((r) => r.json().then(setBalances)).catch((e) => console.error("balance fetch failed", e));
+    apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json().then(setAddresses)).catch((e) => {
+      console.error("addresses fetch failed", e);
+      setMsg(`Addresses load failed: ${e instanceof Error ? e.message : String(e)}`);
+    });
+    apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json().then(setTxs)).catch((e) => console.error("txs fetch failed", e));
+    apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json().then(setKeys)).catch((e) => console.error("keys fetch failed", e));
   }, [wallet.id]);
 
   async function handleFund() {
