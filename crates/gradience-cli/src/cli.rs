@@ -55,6 +55,18 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: McpCommands,
     },
+    /// Execute x402 payment
+    Pay {
+        wallet_id: String,
+        recipient: String,
+        amount: String,
+        #[arg(long)]
+        token: String,
+        #[arg(long)]
+        chain: Option<String>,
+        #[arg(long)]
+        deadline: Option<u64>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

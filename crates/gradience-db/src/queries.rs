@@ -25,6 +25,66 @@ pub async fn get_user_by_email(pool: &Pool<Sqlite>, email: &str) -> Result<Optio
     Ok(user)
 }
 
+// ========== Workspaces ==========
+pub async fn create_workspace(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    name: &str,
+    owner_id: &str,
+    plan: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO workspaces (id, name, owner_id, plan) VALUES (?, ?, ?, ?)",
+        id,
+        name,
+        owner_id,
+        plan
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_workspaces_by_owner(pool: &Pool<Sqlite>, owner_id: &str) -> Result<Vec<Workspace>> {
+    let rows = sqlx::query_as::<_, Workspace>(
+        "SELECT id, name, owner_id, plan, created_at FROM workspaces WHERE owner_id = ? ORDER BY created_at DESC"
+    )
+    .bind(owner_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn add_workspace_member(
+    pool: &Pool<Sqlite>,
+    workspace_id: &str,
+    user_id: &str,
+    role: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (?, ?, ?)",
+        workspace_id,
+        user_id,
+        role
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_workspace_members(
+    pool: &Pool<Sqlite>,
+    workspace_id: &str,
+) -> Result<Vec<WorkspaceMember>> {
+    let rows = sqlx::query_as::<_, WorkspaceMember>(
+        "SELECT workspace_id, user_id, role, invited_at FROM workspace_members WHERE workspace_id = ?"
+    )
+    .bind(workspace_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
 // ========== Wallets ==========
 pub async fn create_wallet(
     pool: &Pool<Sqlite>,

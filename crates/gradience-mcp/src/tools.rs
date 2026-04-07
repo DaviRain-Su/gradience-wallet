@@ -190,3 +190,151 @@ pub fn handle_get_balance(params: serde_json::Value) -> anyhow::Result<serde_jso
         "tokens": []
     }))
 }
+
+pub fn handle_swap(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = params.get("walletId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
+    let from = params.get("from")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing from"))?;
+    let to = params.get("to")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing to"))?;
+    let amount = params.get("amount")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing amount"))?;
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let tx_hash = rt.block_on(async {
+        let svc = gradience_core::dex::service::DexService::new();
+        svc.execute_swap(wallet_id, from, to, amount).await.ok()
+    });
+
+    match tx_hash {
+        Some(hash) => Ok(json!({"txHash": hash})),
+        None => Err(anyhow::anyhow!("swap execution failed")),
+    }
+}
+
+pub fn handle_pay(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = params.get("walletId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
+    let recipient = params.get("recipient")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing recipient"))?;
+    let amount = params.get("amount")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing amount"))?;
+    let token = params.get("token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+    let chain = params.get("chain")
+        .and_then(|v| v.as_str())
+        .unwrap_or("base");
+
+    let (passphrase, vault_dir) = get_vault_config()?;
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let tx_hash = rt.block_on(async {
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
+        let mut addr = None;
+        for a in addrs {
+            if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+                addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = addr?;
+
+        let svc = gradience_core::payment::x402::X402Service::new();
+        let deadline = (std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
+        let req = svc.create_requirement(recipient, amount, token, deadline).ok()?;
+        let sig = "dummy-signature-for-demo";
+        let mut payment = svc.sign_payment(req, sig).ok()?;
+        svc.settle_payment(&mut payment, wallet_id, &from_addr, chain, &passphrase, &vault_dir).await.ok()
+    });
+
+    match tx_hash {
+        Some(hash) => Ok(json!({"txHash": hash})),
+        None => Err(anyhow::anyhow!("x402 settlement failed")),
+    }
+}
+
+pub fn handle_llm_generate(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = params.get("walletId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
+    let provider = params.get("provider")
+        .and_then(|v| v.as_str())
+        .unwrap_or("anthropic");
+    let model = params.get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("claude-3-5-sonnet");
+    let prompt = params.get("prompt")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing prompt"))?;
+
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let result = rt.block_on(async {
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+        let svc = gradience_core::ai::gateway::AiGatewayService::new();
+        svc.llm_generate(&db, wallet_id, None, provider, model, prompt).await.ok()
+    });
+
+    match result {
+        Some(resp) => Ok(json!({
+            "content": resp.content,
+            "inputTokens": resp.input_tokens,
+            "outputTokens": resp.output_tokens,
+            "costRaw": resp.cost_raw,
+            "status": resp.status,
+        })),
+        None => Err(anyhow::anyhow!("llm generate failed")),
+    }
+}
+
+pub fn handle_ai_balance(params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = params.get("walletId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
+    let token = params.get("token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("USDC");
+
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let balance = rt.block_on(async {
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+        let svc = gradience_core::ai::gateway::AiGatewayService::new();
+        svc.get_balance(&db, wallet_id, token).await.ok()
+    });
+
+    Ok(json!({
+        "walletId": wallet_id,
+        "token": token,
+        "balanceRaw": balance.unwrap_or_else(|| "0".into()),
+    }))
+}
+
+pub fn handle_ai_models(_params: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    Ok(json!({
+        "models": [
+            { "provider": "anthropic", "model": "claude-3-5-sonnet", "priceInput": "3000000", "priceOutput": "15000000" },
+            { "provider": "openai", "model": "gpt-4o", "priceInput": "2500000", "priceOutput": "10000000" },
+        ]
+    }))
+}

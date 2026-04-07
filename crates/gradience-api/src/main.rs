@@ -869,6 +869,120 @@ async fn mcp_get_balance(
     Ok((StatusCode::OK, axum::Json(resp)))
 }
 
+// ==================== Workspace Handlers ====================
+
+#[derive(Deserialize)]
+struct CreateWorkspaceReq {
+    name: String,
+}
+
+async fn create_workspace(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<CreateWorkspaceReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let svc = gradience_core::team::workspace::WorkspaceService::new();
+    let workspace_id = svc.create_workspace(&state.db, name, "user-1")
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let _ = gradience_core::audit::service::log_wallet_action(
+        &state.db, "system", None, "create_workspace", &serde_json::json!({"workspace_id": workspace_id}).to_string(), "allow",
+    ).await;
+
+    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({ "workspace_id": workspace_id }))))
+}
+
+async fn list_workspaces(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let rows = gradience_db::queries::list_workspaces_by_owner(&state.db, "user-1")
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let list: Vec<_> = rows.into_iter().map(|w| serde_json::json!({
+        "id": w.id,
+        "name": w.name,
+        "owner_id": w.owner_id,
+        "plan": w.plan,
+        "created_at": w.created_at.to_rfc3339(),
+    })).collect();
+
+    Ok(Json(list))
+}
+
+#[derive(Deserialize)]
+struct InviteMemberReq {
+    email: String,
+    role: String,
+}
+
+async fn invite_workspace_member(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(workspace_id): Path<String>,
+    Json(body): Json<InviteMemberReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let role = gradience_core::team::workspace::WorkspaceRole::from_str(&body.role)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    // Ensure user exists
+    let user = gradience_db::queries::get_user_by_email(&state.db, &body.email).await.ok().flatten();
+    let user_id = match user {
+        Some(u) => u.id,
+        None => {
+            let uid = uuid::Uuid::new_v4().to_string();
+            gradience_db::queries::create_user(&state.db, &uid, &body.email).await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            uid
+        }
+    };
+
+    let svc = gradience_core::team::workspace::WorkspaceService::new();
+    svc.add_member(&state.db, &workspace_id, &user_id, role)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::CREATED)
+}
+
+async fn list_workspace_members(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(workspace_id): Path<String>,
+) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let rows = gradience_db::queries::list_workspace_members(&state.db, &workspace_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let list: Vec<_> = rows.into_iter().map(|m| serde_json::json!({
+        "workspace_id": m.workspace_id,
+        "user_id": m.user_id,
+        "role": m.role,
+        "invited_at": m.invited_at.to_rfc3339(),
+    })).collect();
+
+    Ok(Json(list))
+}
+
 // ==================== Main ====================
 
 #[tokio::main]
@@ -920,6 +1034,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ai/generate", post(ai_generate))
         .route("/api/mcp/sign_transaction", post(mcp_sign_transaction))
         .route("/api/mcp/get_balance", post(mcp_get_balance))
+        .route("/api/workspaces", get(list_workspaces).post(create_workspace))
+        .route("/api/workspaces/:id/members", get(list_workspace_members).post(invite_workspace_member))
         .route("/health", get(|| async { "ok" }))
         .layer(
             tower_http::cors::CorsLayer::new()

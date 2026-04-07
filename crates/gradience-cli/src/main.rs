@@ -97,5 +97,8 @@ async fn main() -> anyhow::Result<()> {
                 commands::mcp::balance(&ctx, wallet_id, chain_id).await
             }
         },
+        Commands::Pay { wallet_id, recipient, amount, token, chain, deadline } => {
+            commands::pay::x402(&ctx, wallet_id, recipient, amount, token, chain, deadline).await
+        }
     }
 }

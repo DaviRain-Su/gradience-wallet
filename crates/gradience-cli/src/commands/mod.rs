@@ -7,3 +7,4 @@ pub mod audit;
 pub mod team;
 pub mod ai;
 pub mod mcp;
+pub mod pay;
