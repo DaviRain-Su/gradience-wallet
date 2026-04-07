@@ -384,6 +384,36 @@ struct FundReq {
     chain: Option<String>,
 }
 
+async fn evaluate_wallet_policy(
+    db: &Pool<Sqlite>,
+    wallet_id: &str,
+    chain_id: &str,
+    transaction: gradience_core::ows::adapter::Transaction,
+) -> Result<gradience_core::policy::engine::EvalResult, StatusCode> {
+    use gradience_core::policy::engine::{PolicyEngine, EvalContext};
+
+    let policies = gradience_db::queries::list_active_policies_by_wallet(db, wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let engine = PolicyEngine;
+    let ctx = EvalContext {
+        wallet_id: wallet_id.into(),
+        api_key_id: "web".into(),
+        chain_id: chain_id.into(),
+        transaction,
+        intent: None,
+        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+    };
+
+    let core_policies: Vec<_> = policies.iter()
+        .filter_map(|p| gradience_core::policy::engine::Policy::try_from_db(p).ok())
+        .collect();
+    let policy_refs: Vec<_> = core_policies.iter().collect();
+    engine.evaluate(ctx, policy_refs)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+}
+
 async fn wallet_fund(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
@@ -408,8 +438,21 @@ async fn wallet_fund(
     }
     let from_addr = from_addr.ok_or(StatusCode::NOT_FOUND)?;
 
-    let eth_f64: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    let wei = (eth_f64 * 1e18) as u128;
+    let wei = gradience_core::eth_to_wei(&body.amount)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let chain_num = if chain == "base" { 8453u64 } else { 1u64 };
+    let tx = gradience_core::ows::adapter::Transaction {
+        to: Some(body.to.clone()),
+        value: body.amount.clone(),
+        data: vec![],
+        raw_hex: format!("0x{}", hex::encode(body.to.trim_start_matches("0x"))),
+    };
+    let eval = evaluate_wallet_policy(
+        &state.db, &wallet_id, &format!("eip155:{}", chain_num), tx).await?;
+    if eval.decision == gradience_core::policy::engine::Decision::Deny {
+        return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+    }
 
     let rpc_url = if chain == "base" {
         "https://mainnet.base.org"
@@ -424,7 +467,6 @@ async fn wallet_fund(
     let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let chain_num = if chain == "base" { 8453u64 } else { 1u64 };
     let to_bytes = hex::decode(body.to.trim_start_matches("0x")).unwrap_or_default();
     let mut rlp = rlp::RlpStream::new_list(9);
     rlp.append(&nonce);
@@ -448,11 +490,7 @@ async fn wallet_fund(
         Some(&state.vault_dir),
     ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    #[derive(Serialize)]
-    struct FundResp {
-        tx_hash: String,
-    }
-    Ok((StatusCode::OK, axum::Json(FundResp { tx_hash: result.tx_hash })))
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({ "tx_hash": result.tx_hash }))))
 }
 
 #[derive(Deserialize)]
@@ -485,8 +523,8 @@ async fn wallet_sign(
     }
     let _from_addr = addr.ok_or(StatusCode::NOT_FOUND)?;
 
-    let eth_f64: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
-    let wei = (eth_f64 * 1e18) as u128;
+    let wei = gradience_core::eth_to_wei(&body.amount)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let rpc_url = if body.chain == "base" {
         "https://mainnet.base.org"
@@ -504,6 +542,18 @@ async fn wallet_sign(
     let chain_num = if body.chain == "base" { 8453u64 } else { 1u64 };
     let to_bytes = hex::decode(body.to.trim_start_matches("0x")).unwrap_or_default();
     let data_bytes = hex::decode(body.data.as_deref().unwrap_or("").trim_start_matches("0x")).unwrap_or_default();
+
+    let tx = gradience_core::ows::adapter::Transaction {
+        to: Some(body.to.clone()),
+        value: body.amount.clone(),
+        data: data_bytes.clone(),
+        raw_hex: format!("0x{}", hex::encode(&data_bytes)),
+    };
+    let eval = evaluate_wallet_policy(
+        &state.db, &wallet_id, &format!("eip155:{}", chain_num), tx).await?;
+    if eval.decision == gradience_core::policy::engine::Decision::Deny {
+        return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+    }
     let mut rlp = rlp::RlpStream::new_list(9);
     rlp.append(&nonce);
     rlp.append(&gas_price);
@@ -530,7 +580,7 @@ async fn wallet_sign(
     struct SignResp {
         tx_hash: String,
     }
-    Ok((StatusCode::OK, axum::Json(SignResp { tx_hash: result.tx_hash })))
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({ "tx_hash": result.tx_hash }))))
 }
 
 #[derive(Serialize)]

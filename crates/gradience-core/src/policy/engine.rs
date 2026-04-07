@@ -62,6 +62,27 @@ pub struct EvalResult {
     pub reasons: Vec<String>,
 }
 
+impl Policy {
+    pub fn try_from_db(db_policy: &gradience_db::models::Policy) -> Result<Self> {
+        let value: serde_json::Value = serde_json::from_str(&db_policy.rules_json)
+            .map_err(|e| GradienceError::Validation(format!("invalid policy json: {}", e)))?;
+        let rules: Vec<Rule> = serde_json::from_value(value.get("rules").cloned().unwrap_or(serde_json::json!([])))
+            .map_err(|e| GradienceError::Validation(format!("invalid rules: {}", e)))?;
+        Ok(Self {
+            id: db_policy.id.clone(),
+            name: db_policy.name.clone(),
+            wallet_id: db_policy.wallet_id.clone(),
+            workspace_id: db_policy.workspace_id.clone(),
+            rules,
+            priority: db_policy.priority,
+            status: db_policy.status.clone(),
+            version: db_policy.version,
+            created_at: db_policy.created_at.to_rfc3339(),
+            updated_at: db_policy.updated_at.to_rfc3339(),
+        })
+    }
+}
+
 pub struct PolicyEngine;
 
 impl PolicyEngine {

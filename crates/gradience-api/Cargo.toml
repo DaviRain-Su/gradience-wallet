@@ -23,6 +23,7 @@ webauthn-rs = "0.5"
 url = "2"
 hex.workspace = true
 rlp.workspace = true
+chrono.workspace = true
 
 gradience-core = { path = "../gradience-core" }
 gradience-db = { path = "../gradience-db" }

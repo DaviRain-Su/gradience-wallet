@@ -22,4 +22,6 @@ pub enum GradienceError {
     Signature(String),
     #[error("Invalid credential: {0}")]
     InvalidCredential(String),
+    #[error("Validation error: {0}")]
+    Validation(String),
 }

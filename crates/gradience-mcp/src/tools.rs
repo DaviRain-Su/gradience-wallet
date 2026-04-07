@@ -68,6 +68,42 @@ pub fn handle_sign_transaction(params: serde_json::Value) -> anyhow::Result<serd
         data: data.clone(),
         raw_hex: data_hex.into(),
     };
+
+    let rt = tokio::runtime::Runtime::new()?;
+    let (policies, nonce, gas_price) = rt.block_on(async {
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+        let db = match sqlx::SqlitePool::connect(&db_path).await {
+            Ok(db) => db,
+            Err(_) => return anyhow::Result::<_>::Err(anyhow::anyhow!("db connect failed")),
+        };
+        let db_policies = gradience_db::queries::list_active_policies_by_wallet(&db, wallet_id).await.unwrap_or_default();
+        let policies: Vec<gradience_core::policy::engine::Policy> = db_policies.iter()
+            .filter_map(|p| gradience_core::policy::engine::Policy::try_from_db(p).ok())
+            .collect();
+
+        let rpc_url = resolve_rpc(chain_id);
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
+        let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+            .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
+        let mut from_addr = None;
+        for a in &addrs {
+            if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+                from_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let addr = from_addr.unwrap_or_default();
+        let nonce = client.get_transaction_count(&addr).await
+            .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
+        let gp_hex = client.get_gas_price().await
+            .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
+        let gp = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
+            .map_err(|e| anyhow::anyhow!("bad gas price: {}", e))?;
+        anyhow::Result::Ok((policies, nonce, gp))
+    })?;
+
     let engine = PolicyEngine;
     let ctx = EvalContext {
         wallet_id: wallet_id.into(),
@@ -78,57 +114,12 @@ pub fn handle_sign_transaction(params: serde_json::Value) -> anyhow::Result<serd
         timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
     };
 
-    let base_policy = Policy {
-        id: "demo".into(),
-        name: "demo".into(),
-        wallet_id: None,
-        workspace_id: None,
-        rules: vec![gradience_core::policy::engine::Rule::ChainWhitelist {
-            chain_ids: vec!["eip155:8453".into()],
-        }],
-        priority: 1,
-        status: "active".into(),
-        version: 1,
-        created_at: "".into(),
-        updated_at: "".into(),
-    };
-
-    let result = engine.evaluate(ctx, vec![&base_policy])?;
+    let policy_refs: Vec<&Policy> = policies.iter().collect();
+    let result = engine.evaluate(ctx, policy_refs)?;
 
     match result.decision {
         Decision::Allow => {
             let (passphrase, vault_dir) = get_vault_config()?;
-            let rpc_url = resolve_rpc(chain_id);
-
-            let rt = tokio::runtime::Runtime::new()?;
-            let (nonce, gas_price) = rt.block_on(async {
-                let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-                    .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
-                let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
-                let db = match sqlx::SqlitePool::connect(&db_path).await {
-                    Ok(db) => db,
-                    Err(_) => return anyhow::Result::Err(anyhow::anyhow!("db connect failed")),
-                };
-                let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
-
-                let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
-                    .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
-                let mut from_addr = None;
-                for a in &addrs {
-                    if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
-                        from_addr = Some(a.address.clone());
-                        break;
-                    }
-                }
-                let addr = from_addr.unwrap_or_default();
-                let nonce = client.get_transaction_count(&addr).await
-                    .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
-                let gp_hex = client.get_gas_price().await
-                    .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
-                let gp = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
-                    .map_err(|e| anyhow::anyhow!("bad gas price: {}", e))?;
-                anyhow::Result::Ok((nonce, gp))
-            })?;
 
             let chain_num = if chain_id.contains("8453") { 8453u64 } else { 1u64 };
             let value_raw: u128 = value.parse().unwrap_or(0);

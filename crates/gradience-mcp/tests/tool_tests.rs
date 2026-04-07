@@ -63,11 +63,10 @@ fn test_mcp_sign_tx_success() {
 }
 
 #[test]
-fn test_mcp_sign_tx_policy_denied() {
+fn test_mcp_sign_tx_missing_wallet_id() {
     let req = make_request("tools/call", json!({
         "name": "sign_transaction",
         "arguments": {
-            "walletId": "wallet-123",
             "chainId": "eip155:1",
             "transaction": {
                 "to": "0x...",
@@ -78,7 +77,7 @@ fn test_mcp_sign_tx_policy_denied() {
     }));
     let resp = handle_request(req).unwrap();
     assert!(resp.error.is_some());
-    assert!(resp.error.as_ref().unwrap().message.contains("POLICY_DENIED"));
+    assert!(resp.error.as_ref().unwrap().message.contains("missing walletId"));
 }
 
 #[test]
