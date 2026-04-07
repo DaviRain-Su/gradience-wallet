@@ -30,9 +30,10 @@
 | **链上 RPC** | JSON-RPC HTTP | 广播交易、查询余额/状态 |
 | **Passkey/WebAuthn** | 浏览器 API + `webauthn-rs` 验证 | 身份认证 |
 | **x402 服务** | HTTP API | Agent 自动支付 API 费用 |
+| **HashKey Chain** | EVM RPC (OP Stack) | Merkle 审计日志锚定 + 部署环境 (Hackathon)
 | **MPP (Tempo)** | HTTP + gRPC | 高频微支付 |
 | **Forta/Chainalysis** | HTTP/GraphQL API | 动态策略风险信号 |
-| **DEX 聚合器** | HTTP API (1inch/Jupiter/Cetus) | 获取最优交易路由 |
+| **DEX 聚合器** | HTTP API (1inch/Jupiter/Cetus/PancakeSwap/1inch X Layer) | 获取最优交易路由 |
 | **SMTP 服务** | HTTP API (Resend/SendGrid) | 邮件通知 |
 
 ---
@@ -91,19 +92,25 @@ gradience-wallet/
 │   │   │   │   ├── router.rs     # 最优路径选择
 │   │   │   │   ├── providers/    # DEX 提供商适配器
 │   │   │   │   │   ├── mod.rs
-│   │   │   │   │   ├── uniswap.rs
-│   │   │   │   │   ├── jupiter.rs
-│   │   │   │   │   └── cetus.rs
+│   │   │   │   │   ├── uniswap.rs      # EVM (Eth/Base/Arb/Polygon)
+│   │   │   │   │   ├── pancakeswap.rs  # BNB Chain (BSC)
+│   │   │   │   │   ├── jupiter.rs      # Solana
+│   │   │   │   │   └── cetus.rs        # Sui
 │   │   │   │   └── slippage.rs   # 滑点保护
 │   │   │   ├── payment/          # 支付协议
 │   │   │   │   ├── mod.rs
 │   │   │   │   ├── x402.rs       # x402 适配器
-│   │   │   │   ├── mpp.rs        # MPP 适配器
+│   │   │   │   ├── mpp.rs        # MPP 适配器 (Tempo/Stripe)
+│   │   │   │   ├── hsp.rs          # HSP 支付协议 (HashKey 支付服务)
 │   │   │   │   └── budget.rs     # 支付预算管理
 │   │   │   ├── audit/            # 审计日志
 │   │   │   │   ├── mod.rs
 │   │   │   │   ├── logger.rs     # 日志写入
-│   │   │   │   └── exporter.rs   # CSV/JSON 导出
+│   │   │   │   ├── exporter.rs   # CSV/JSON 导出
+│   │   │   │   └── anchor/       # Merkle 链上锚定 (HashKey Chain, v2.0)
+│   │   │   │       ├── merkle.rs       # Merkle tree 实现
+│   │   │   │       ├── service.rs      # 调度 + 链上提交
+│   │   │   │       └── verifier.rs     # proof 验证
 │   │   │   ├── ows/              # OWS 集成隔离层
 │   │   │   │   ├── mod.rs
 │   │   │   │   ├── adapter.rs    # 对 ows-core 的封装
@@ -111,10 +118,12 @@ gradience-wallet/
 │   │   │   │   └── signing.rs    # 签名流程封装
 │   │   │   ├── rpc/              # 链上交互
 │   │   │   │   ├── mod.rs
-│   │   │   │   ├── evm.rs        # EVM 链 RPC
+│   │   │   │   ├── evm.rs        # EVM (Eth/Base/BSC/X Layer/Arb/OP/Polygon…)
 │   │   │   │   ├── svm.rs        # Solana RPC
 │   │   │   │   ├── btc.rs        # Bitcoin RPC
-│   │   │   │   └── multi.rs      # 多链 RPC 管理器
+│   │   │   │   ├── stellar.rs    # Stellar/Soroban RPC (v1.5/Hackathon 专项)
+│   │   │   │   ├── hashkey.rs    # HashKey Chain RPC (EVM, Hackathon)
+│   │   │   │   └── multi.rs      # 多链 RPC 管理器 (CAIP-2 路由)
 │   │   │   └── team/             # 多租户/团队
 │   │   │       ├── mod.rs
 │   │   │       ├── workspace.rs  # 工作空间
@@ -169,6 +178,19 @@ gradience-wallet/
 │   │           ├── swap.rs
 │   │           └── pay.rs        # x402/MPP 支付
 │   │
+│   ├── gradience-skills/         # Agent Skill 定义 (平台适配)
+│   │   ├── cursor/
+│   │   │   └── skills/
+│   │   │       └── gradience-wallet.md    # Cursor: 教 Agent 如何安全使用钱包
+│   │   ├── openclaw/
+│   │   │   └── skills/
+│   │   │       └── gradience-wallet.yaml  # OpenClaw 专用
+│   │   ├── claude-code/
+│   │   │   └── .claude/
+│   │   │       └── skills/
+│   │   │           └── gradience-wallet.md # Claude Code 专用
+│   │   └── README.md            # 跨平台 Skill 指令规范
+│   │
 │   ├── gradience-sdk/            # SDK 包
 │   │   ├── Cargo.toml            # Rust SDK
 │   │   ├── node/                 # NAPI-RS Node.js 绑定
@@ -180,6 +202,15 @@ gradience-wallet/
 │   │       └── src/
 │   │
 │   └── gradience-db/             # 数据库迁移 + 模型
+│
+├── web/                          # Web Dashboard (React SPA)
+│   ├── package.json
+│   ├── src/
+│   │   ├── components/          # UI 组件
+│   │   ├── pages/               # 页面路由
+│   │   ├── hooks/               # React hooks
+│   │   └── api/                 # REST client (axios)
+│   └── public/                  # Telegram Mini App 复用同一套构建
 │       ├── Cargo.toml
 │       └── src/
 │           ├── migrations/       # SQLx 迁移文件
@@ -189,7 +220,7 @@ gradience-wallet/
 
 ### 2.2 动态信号缓存策略
 
-### 2.2.1 缓存层
+#### 2.2.1 缓存层
 
 | 部署模式 | 缓存实现 | TTL 默认值 |
 |---|---|---|
@@ -214,7 +245,7 @@ gradience-wallet/
 
 ---
 
-## 2.3 模块依赖关系
+### 2.3 模块依赖关系
 
 ```
 gradience-cli ───────┐
@@ -514,6 +545,7 @@ CREATE TABLE policies (
 -- 额度追踪 (daily_limit / monthly_limit)
 CREATE TABLE spending_trackers (
     wallet_id       UUID NOT NULL REFERENCES wallets(id) ON DELETE CASCADE,
+    workspace_id    UUID,                     -- 跨 Agent 预算共享 (v1.5)
     rule_type       TEXT NOT NULL,          -- daily | monthly
     token_address   TEXT NOT NULL,
     chain_id        TEXT NOT NULL,
@@ -553,7 +585,7 @@ CREATE TABLE audit_logs (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 支付记录
+-- 支付记录 (支付也受 spending_trackers / budget.rs 限额控制)
 CREATE TABLE payment_records (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     wallet_id       UUID NOT NULL REFERENCES wallets(id),
@@ -582,7 +614,49 @@ CREATE INDEX idx_passkey_user ON passkey_credentials(user_id);
 
 ---
 
-## 5. 部署架构
+## 5. 产品前端入口
+
+Gradience Wallet 面向用户的访问方式有多端，但核心操作统一：
+
+### 5.0 入口矩阵
+
+### 5.0 入口矩阵
+
+| 入口 | 技术 | 场景 | 覆盖 |
+|---|---|---|---|
+| **Web Dashboard** | React SPA + Tailwind | 完整管理：钱包/策略/Agent/API Key/审计 | 所有用户 (主要入口) |
+| **Telegram Mini App** | React SPA + @twa-dev/sdk | 轻量操作：快速支付/审批/余额/Bot 通知 | Telegram 10 亿用户 |
+| **CLI** | `clap` Rust | 高级用户/开发调试/CI 集成 | 开发者/运维 |
+| **Agent Skill** | MCP + 平台 Skill 文件 | Agent 自动使用钱包 (Claude Code/Cursor/OpenClaw) | AI Agent 自身 |
+
+**核心流程**：
+```
+用户登录 Web/Tg Mini App (Passkey 认证)
+    │
+    ├── 创建 Master Wallet (一条 mnemonic → 10 链地址)
+    ├── 配置策略 (限额/链白名单/合约白名单/意图分析)
+    ├── 创建 Agent API Key (每个 Agent 一个 Key + 绑定 Policy)
+    │
+    └── 分发 API Key Token 给 Agent
+        │
+        ├── 方式 1: 配置 Agent MCP → Agent 自动连接 Gradience MCP Server
+        ├── 方式 2: 配置 Agent Skill → Agent 读取 Skill 指令 + MCP tools
+        └── 方式 3: 环境变量 OWS_PASSPHRASE → Agent 直接调用 OWS CLI
+
+Agent 持有 Token 后的操作流:
+    Agent 发起签名/支付请求
+    │
+    ▼
+Gradience MCP Server (或 OWS CLI)
+    │  → 用 Token 查 API Key 文件
+    │  → 加载 Key 绑定的所有 Policy
+    │  → Policy Engine 评估 (AND 逻辑，任一 deny 则拒绝)
+    ├── allow → OWS 解密签名 → 链上广播
+    ├── deny  → 返回 POLICY_DENIED error (私钥从未接触)
+    └── warn  → 通知用户审批 (Web/Tg 弹窗)
+```
+
+---
 
 ### 5.1 本地部署 (MVP: CLI + MCP)
 
@@ -659,6 +733,108 @@ gradience-mcp serve  # MCP 服务器启动，供 Claude Code 等 Agent 使用
 | **企业 (Enterprise)** | SSO (SAML/OIDC) | 可选 HSM | 企业自托管 MCP | 企业自建 PostgreSQL + Redis | 合规要求高, 大规模 Agent 池 |
 
 **云端不存私钥原则不变** — 即使是企业部署，Vault 也由企业自己的安全基础设施管理（HSM/安全存储），Gradience 只提供策略管理和审计功能。个人用户的 Vault 始终在本地设备。
+
+> **签名始终在用户/企业控制的 Vault 中完成。** 云端 API Server 可以接收策略评估请求并转发签名请求，但私钥解密和签名操作永远在本地 MCP/Vault 中执行。
+
+### 5.5 Telegram 集成（Mini App + Bot）
+
+Telegram 拥有 10 亿+ 用户，Mini Apps 是最轻量、最自然的 Gradience 前端入口。
+
+**架构映射**：
+| Telegram 组件 | 对应 Gradience 模块 | 说明 |
+|---|---|---|
+| **Telegram Mini App (TMA)** | Web Dashboard (React SPA) | 近乎零改动复用，只需加 @twa-dev/sdk |
+| **Telegram Bot** | gradience-mcp (MCP tools) | 命令式交互，映射到 CLI 命令 |
+| **Telegram Passkey** | Passkey/WebAuthn 身份认证 | Telegram 原生支持生物识别/PIN |
+| **Bot 通知** | WebSocket `ws.rs` | 实时推送审批/warn/交易状态 |
+
+**Mini App 实现**：
+```
+Telegram 用户点击 Bot 按钮
+    │
+    ▼
+Telegram 打开 WebView (Mini App)
+    │  → 加载 https://app.gradience.io (React SPA)
+    │  → @twa-dev/sdk 获取 tg_user_id + 主题
+    │  → Telegram Passkey 身份认证
+    ▼
+React Dashboard (完整钱包管理界面)
+    │  → 调用 gradience-api (REST)
+    │  → 策略引擎 / 意图分析 / 审计
+    │  → WebSocket 实时推送
+    ▼
+用户执行支付/swap/sign → 策略评估 → OWS 签名 → 链上广播
+```
+
+**Bot 快捷命令**：
+```
+/policy      — 查看当前策略
+/wallet      — 打开 Mini App（完整钱包界面）
+/pay         — 快捷支付 (x402/MPP)
+/approve     — 审批 warn 请求
+/audit       — 最近审计日志摘要
+/agent       — Agent 状态 / Reputation
+```
+
+**Hackathon 加分**：Telegram Mini App 是最直观的 Demo 展示方式，用户无需离开 Telegram 即可完成完整 Agent 钱包操作流程。
+
+---
+### 5.6 BNB Chain (BSC) 专项支持
+
+BNB Chain 是完全 EVM 兼容链（Chain ID: 56, 测试网: 97），与 Ethereum/Base/Arbitrum 使用同一套 RPC 接口。支持 BSC 几乎零工作量：
+
+| 组件 | 说明 |
+|---|---|
+| **RPC** | 复用 `rpc/evm.rs`，新增 Chain Config (`eip155:56`, `https://bsc-dataseed.bnbchain.org`) |
+| **地址派生** | BIP-44: `m/44'/60'/...` (与 Ethereum 相同路径) |
+| **签名** | ECDSA secp256k1，完全复用 OWS EVM signer |
+| **DEX** | PancakeSwap (`pancakeswap.rs`) — BSC 最主流 AMM |
+| **Token 标准** | BEP-20 ↔ ERC-20 完全兼容 |
+| **区块时间** | ~3s, 低 Gas — 适合 Agent 高频操作 |
+| **策略引擎** | 合约白名单、限额规则完全复用 EVM 逻辑 |
+
+**PancakeSwap DEX Adapter**:
+- Swap 路由：通过 PancakeSwap V3 Router 合约获取最优路径
+- 报价 API：兼容已有的 DEX aggregator 接口 (`get_quote()`, `swap()`)
+- 支持 BNB/WBNB、BEP-20 token pairs
+
+HashKey Chain + BNB Chain + X Layer + Telegram Mini App 可同时作为 Hackathon 多链+多端演示环境 — 在 BSC 上跑通支付/DeFi (PancakeSwap)，在 X Layer 上跑通 x402 Agentic Payment (OKX Onchain OS)，在 HSK 上跑通 Merkle 审计锚定 (AuditAnchor 合约)，展示完整的"策略保护 + 合规可证明" Agent 钱包平台。
+
+
+### 5.7 X Layer (OKX 生态) 专项支持
+
+X Layer 是 OKX 基于 Polygon CDK + AggLayer 构建的 zkEVM L2，完全 EVM 兼容，是 OKX Agentic Wallet 和 Onchain OS 的主战场。
+
+| 组件 | 说明 |
+|---|---|
+| **RPC** | 复用 `rpc/evm.rs`，新增 Chain Config (`eip155:196`, `https://xlayerrpc.okx.com`) |
+| **地址派生** | BIP-44: `m/44'/60'/...` (与 Ethereum 相同) |
+| **签名** | ECDSA secp256k1，完全复用 OWS EVM signer |
+| **x402 原生支持** | X Layer 深度集成 x402 (Onchain OS 原生支付协议) |
+| **Agentic 生态** | OKX Agentic Wallet + Onchain OS Skills — Gradience MCP 可直接对接 |
+| **区块时间** | < 1s, 近零 Gas — 极适合 Agent 高频小额支付 |
+| **策略引擎** | 合约白名单、限额规则完全复用 EVM 逻辑 |
+
+**Hackathon 匹配** (Build X, 截止 4 月 15 日):
+- 60K USDT 奖金池，Agentic Commerce 赛道
+- Gradience 定位："带智能 Policy 的 Agent 钱包编排平台" + x402 + Onchain OS
+- 最小 Demo: OWS Vault → X Layer 签名 → x402 支付 → 策略引擎评估 → 展示完整 Agent 安全支付闭环
+- 差异化优势: 多 Agent 编排 + Reputation 动态策略 + 审计 log (OKX 官方 Agentic Wallet 缺少治理层)
+
+---
+### 5.8 Stellar 专项支持（Hackathon 方向）
+
+OWS 的 signer trait 已支持多链扩展。Stellar 接入要点：
+
+| 组件 | 说明 |
+|---|---|
+| **签名** | Soroban Authorization Entry signing (与 EVM `signTypedData` 语义相似，OWS 已支持) |
+| **x402 支付** | Stellar 原生 facilitator + server-sponsored fees + one-way-channel contract |
+| **MPP** | Tempo 通过 CAP-38 (AMM) 支持 Stellar 路径支付 |
+| **CAIP-2** | `stellar:pubnet` / `stellar:testnet` |
+| **RPC** | Soroban-RPC (stellar/horizon) + OWS stellar adapter |
+
+Hackathon 最小可打 Demo 路径：OWS Vault → Stellar 签名 → 链上交易 → Policy Engine 审计，展示"Agent 在策略保护下执行链上操作"的完整闭环。
 
 ---
 
@@ -763,7 +939,13 @@ audit_logs 表每一行携带 HMAC 指纹:
 验证完整性: 从任意行回溯, 重新计算 HMAC 链。单条被改 → 后续全部不匹配。
 ```
 
-**v2.0 扩展**: 周期性将 audit_logs 的 Merkle root 锚定到链上（以太坊 L1），提供不可篡改的时间戳证明。
+**v2.0 扩展**: 周期性将 audit_logs 的 Merkle root 锚定到 **HashKey Chain** (EVM)，提供不可篡改的时间戳证明。详见 [appendix-merkle-anchor-design.md](appendix-merkle-anchor-design.md)。
+
+```solidity
+// HashKey Chain AuditAnchor 合约核心
+function anchor(bytes32 root, bytes32 prevRoot, uint256 start, uint256 end, uint256 count) external;
+function verifyProof(bytes32 root, bytes32 leaf, bytes32[] calldata proof) external pure returns (bool);
+```
 
 ---
 
@@ -849,7 +1031,7 @@ Agent 收到 tx_hash
 
 **决定**: 后端核心、CLI、MCP Server 全部使用 Rust。
 
-**背景**: OWS 核心 (`ows-core`) 是纯 Rust 实现。若用 Node.js 需通过 NAPI 调用 Rust，引入 FFI 序列化开销、跨语言调试复杂度、两套包管理。
+**背景**: OWS 核心 (`ows-core`) 是纯 Rust 实现。当前 ows-core v1.2.4 (2026-04)，已验证 policy executable 注册与 auth-entry signing 兼容性。若用 Node.js 需通过 NAPI 调用 Rust，引入 FFI 序列化开销、跨语言调试复杂度、两套包管理。
 
 **替代方案**:
 - Node.js + NAPI (NAPI 绑定到 ows-core)
@@ -933,9 +1115,10 @@ Agent 收到 tx_hash
 | **二进制大小** | < 20MB (压缩后) | 下载友好 |
 | **并发 (API Server)** | 1000 req/s (单实例) | 标准云实例 |
 | **审计日志写入** | 不阻塞主流程 | 异步写入 (tokio::spawn) |
-| **策略评估吞吐量** | 10,000 eval/s (单核) | 高频 Agent 场景 |
+| **策略评估吞吐量** | 10,000 eval/s (纯静态，单核) / 2,000+ eval/s (含动态信号) | 高频 Agent 场景
 | **MCP 冷启动** | < 500ms | 服务启动 + DB 连接 + Vault 初始化 |
 | **DB 迁移安全性** | 零停机 | sqlx 只增不改, 新字段需 NOT NULL DEFAULT, 迁移失败自动 rollback |
+| **锚定延迟** | < 30s 从日志写入到链上确认 | HashKey Chain 确认快 (~2s block time)
 
 ---
 
