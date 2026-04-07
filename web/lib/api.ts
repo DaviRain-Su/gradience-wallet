@@ -7,6 +7,10 @@ function getApiBase(): string {
   return "http://localhost:8080";
 }
 
+export function apiGetRawBase(): string {
+  return getApiBase();
+}
+
 export function setApiBase(url: string) {
   if (typeof window !== "undefined") {
     localStorage.setItem("gradience_api_base", url);

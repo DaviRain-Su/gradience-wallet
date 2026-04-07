@@ -1,5 +1,5 @@
 import { create, get } from "@github/webauthn-json";
-import { apiPost } from "./api";
+import { apiPost, apiGetRawBase } from "./api";
 
 export async function registerPasskey(username: string, passphrase: string) {
   const startRes = await apiPost("/api/auth/passkey/register/start", { username });
@@ -35,7 +35,8 @@ export async function loginPasskey(username: string) {
 export async function unlockVault(passphrase: string) {
   const token = localStorage.getItem("gradience_token");
   if (!token) throw new Error("No session");
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/unlock`, {
+  const base = apiGetRawBase();
+  const res = await fetch(`${base}/api/auth/unlock`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
