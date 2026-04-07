@@ -9,27 +9,37 @@ export default function AiGateway() {
   const [prompt, setPrompt] = useState("Summarize blockchain wallet security in one sentence.");
   const [result, setResult] = useState<{ type: string; data: unknown } | null>(null);
   const [msg, setMsg] = useState("");
+  const [topupLoading, setTopupLoading] = useState(false);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [generateLoading, setGenerateLoading] = useState(false);
 
   async function handleTopup() {
+    setTopupLoading(true);
     try {
       await apiPost("/api/ai/topup", { wallet_id: walletId, token: "USDC", amount_raw: amount });
       setMsg("Topup successful");
     } catch (e: unknown) {
       setMsg(`Topup failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTopupLoading(false);
     }
   }
 
   async function handleBalance() {
+    setBalanceLoading(true);
     try {
       const res = await apiGet(`/api/ai/balance/${walletId}?token=USDC`);
       const data = await res.json();
       setResult({ type: "balance", data });
     } catch (e: unknown) {
       setMsg(`Balance failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBalanceLoading(false);
     }
   }
 
   async function handleGenerate() {
+    setGenerateLoading(true);
     try {
       const res = await apiPost("/api/ai/generate", {
         wallet_id: walletId,
@@ -41,6 +51,8 @@ export default function AiGateway() {
       setResult({ type: "generate", data });
     } catch (e: unknown) {
       setMsg(`Generate failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setGenerateLoading(false);
     }
   }
 
@@ -62,8 +74,8 @@ export default function AiGateway() {
           onChange={(e) => setAmount(e.target.value)}
         />
         <div className="flex gap-2">
-          <button onClick={handleTopup} className="bg-black text-white px-4 py-2 rounded">Topup</button>
-          <button onClick={handleBalance} className="border px-4 py-2 rounded hover:bg-gray-100">Balance</button>
+          <button onClick={handleTopup} disabled={topupLoading} className="bg-black text-white px-4 py-2 rounded disabled:opacity-50">{topupLoading ? "Loading..." : "Topup"}</button>
+          <button onClick={handleBalance} disabled={balanceLoading} className="border px-4 py-2 rounded hover:bg-gray-100 disabled:opacity-50">{balanceLoading ? "Loading..." : "Balance"}</button>
         </div>
       </div>
 
@@ -73,7 +85,7 @@ export default function AiGateway() {
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <button onClick={handleGenerate} className="mt-2 bg-black text-white px-4 py-2 rounded">Generate</button>
+        <button onClick={handleGenerate} disabled={generateLoading} className="mt-2 bg-black text-white px-4 py-2 rounded disabled:opacity-50">{generateLoading ? "Generating..." : "Generate"}</button>
       </div>
 
       {msg && <p className="text-red-500 text-sm mb-4">{msg}</p>}

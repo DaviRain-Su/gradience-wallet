@@ -110,6 +110,9 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [fundAmount, setFundAmount] = useState("0.001");
   const [keyName, setKeyName] = useState("");
   const [msg, setMsg] = useState("");
+  const [fundLoading, setFundLoading] = useState(false);
+  const [keyLoading, setKeyLoading] = useState(false);
+  const [anchorLoading, setAnchorLoading] = useState(false);
 
   useEffect(() => {
     apiGet(`/api/wallets/${wallet.id}/balance`).then((r) => r.json().then(setBalances)).catch(() => {});
@@ -118,6 +121,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   }, [wallet.id]);
 
   async function handleFund() {
+    setFundLoading(true);
     try {
       const res = await apiPost(`/api/wallets/${wallet.id}/fund`, { to: fundTo, amount: fundAmount, chain: "base" });
       const data = await res.json();
@@ -129,10 +133,13 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       setTxs(t);
     } catch (e: unknown) {
       setMsg(`Fund failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setFundLoading(false);
     }
   }
 
   async function handleCreateKey() {
+    setKeyLoading(true);
     try {
       await apiPost(`/api/wallets/${wallet.id}/api-keys`, { name: keyName });
       setKeyName("");
@@ -141,10 +148,13 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       setKeys(k);
     } catch (e: unknown) {
       setMsg(`API key failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setKeyLoading(false);
     }
   }
 
   async function handleAnchor() {
+    setAnchorLoading(true);
     try {
       const res = await apiPost(`/api/wallets/${wallet.id}/anchor`, {});
       const data = await res.json();
@@ -157,6 +167,8 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       setTxs(t);
     } catch (e: unknown) {
       setMsg(`Anchor failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setAnchorLoading(false);
     }
   }
 
@@ -170,7 +182,9 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
         <div className="flex gap-2">
           <button onClick={() => setShowFund(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Fund</button>
           <button onClick={() => setShowKey(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">API Key</button>
-          <button onClick={handleAnchor} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Anchor</button>
+          <button onClick={handleAnchor} disabled={anchorLoading} className="text-sm border px-3 py-1 rounded hover:bg-gray-100 disabled:opacity-50">
+            {anchorLoading ? "Anchoring..." : "Anchor"}
+          </button>
         </div>
       </div>
 
@@ -214,7 +228,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
           <div className="flex gap-2">
             <input className="border rounded px-2 py-1 flex-1 text-sm" placeholder="To address" value={fundTo} onChange={(e) => setFundTo(e.target.value)} />
             <input className="border rounded px-2 py-1 w-24 text-sm" value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} />
-            <button onClick={handleFund} className="bg-black text-white px-3 py-1 rounded text-sm">Send</button>
+            <button onClick={handleFund} disabled={fundLoading} className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50">{fundLoading ? "Sending..." : "Send"}</button>
           </div>
         </div>
       )}
@@ -223,7 +237,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
         <div className="mt-4 border-t pt-3">
           <div className="flex gap-2">
             <input className="border rounded px-2 py-1 flex-1 text-sm" placeholder="Key name" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
-            <button onClick={handleCreateKey} className="bg-black text-white px-3 py-1 rounded text-sm">Create</button>
+            <button onClick={handleCreateKey} disabled={keyLoading} className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50">{keyLoading ? "Creating..." : "Create"}</button>
           </div>
         </div>
       )}

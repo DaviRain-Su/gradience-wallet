@@ -26,6 +26,9 @@ export default function WorkspacesPage() {
   const [members, setMembers] = useState<Member[]>([]);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("member");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [inviteLoading, setInviteLoading] = useState(false);
 
   async function fetchWorkspaces() {
     try {
@@ -43,34 +46,43 @@ export default function WorkspacesPage() {
 
   async function handleCreate() {
     if (!name.trim()) return;
+    setCreateLoading(true);
     try {
       await apiPost("/api/workspaces", { name });
       setName("");
       await fetchWorkspaces();
     } catch (e: unknown) {
       setMsg(`Create failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setCreateLoading(false);
     }
   }
 
   async function loadMembers(wsId: string) {
     setSelected(wsId);
+    setMembersLoading(true);
     try {
       const res = await apiGet(`/api/workspaces/${wsId}/members`);
       const data = await res.json();
       setMembers(data);
     } catch (e: unknown) {
       setMsg(`Members failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setMembersLoading(false);
     }
   }
 
   async function invite(wsId: string) {
     if (!email.trim()) return;
+    setInviteLoading(true);
     try {
       await apiPost(`/api/workspaces/${wsId}/members`, { email, role });
       setEmail("");
       await loadMembers(wsId);
     } catch (e: unknown) {
       setMsg(`Invite failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setInviteLoading(false);
     }
   }
 
@@ -87,9 +99,10 @@ export default function WorkspacesPage() {
         />
         <button
           onClick={handleCreate}
-          className="bg-black text-white px-4 py-2 rounded"
+          disabled={createLoading}
+          className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
         >
-          Create
+          {createLoading ? "Creating..." : "Create"}
         </button>
       </div>
 
@@ -109,9 +122,10 @@ export default function WorkspacesPage() {
               </div>
               <button
                 onClick={() => loadMembers(ws.id)}
-                className="text-sm border px-3 py-1 rounded hover:bg-gray-100"
+                disabled={membersLoading && selected === ws.id}
+                className="text-sm border px-3 py-1 rounded hover:bg-gray-100 disabled:opacity-50"
               >
-                Members
+                {membersLoading && selected === ws.id ? "Loading..." : "Members"}
               </button>
             </div>
 
@@ -147,9 +161,10 @@ export default function WorkspacesPage() {
                   </select>
                   <button
                     onClick={() => invite(ws.id)}
-                    className="bg-black text-white px-3 py-1 rounded text-sm"
+                    disabled={inviteLoading}
+                    className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50"
                   >
-                    Invite
+                    {inviteLoading ? "Inviting..." : "Invite"}
                   </button>
                 </div>
               </div>

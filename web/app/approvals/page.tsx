@@ -15,6 +15,7 @@ interface Approval {
 export default function ApprovalsPage() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [msg, setMsg] = useState("");
+  const [loadingId, setLoadingId] = useState<string | null>(null);
 
   async function fetchApprovals() {
     try {
@@ -31,12 +32,15 @@ export default function ApprovalsPage() {
   }, []);
 
   async function handleAction(id: string, action: "approve" | "reject") {
+    setLoadingId(id + action);
     try {
       await apiPost(`/api/policy-approvals/${id}/${action}`, {});
       setMsg(`${action === "approve" ? "Approved" : "Rejected"} ${id}`);
       await fetchApprovals();
     } catch (e: unknown) {
       setMsg(`Action failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoadingId(null);
     }
   }
 
@@ -60,15 +64,17 @@ export default function ApprovalsPage() {
               <div className="flex gap-2">
                 <button
                   onClick={() => handleAction(a.id, "approve")}
-                  className="text-sm bg-black text-white px-3 py-1 rounded"
+                  disabled={loadingId === a.id + "approve"}
+                  className="text-sm bg-black text-white px-3 py-1 rounded disabled:opacity-50"
                 >
-                  Approve
+                  {loadingId === a.id + "approve" ? "..." : "Approve"}
                 </button>
                 <button
                   onClick={() => handleAction(a.id, "reject")}
-                  className="text-sm border px-3 py-1 rounded hover:bg-gray-100"
+                  disabled={loadingId === a.id + "reject"}
+                  className="text-sm border px-3 py-1 rounded hover:bg-gray-100 disabled:opacity-50"
                 >
-                  Reject
+                  {loadingId === a.id + "reject" ? "..." : "Reject"}
                 </button>
               </div>
             </div>
