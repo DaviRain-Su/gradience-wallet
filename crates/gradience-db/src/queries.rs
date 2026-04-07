@@ -568,3 +568,89 @@ pub async fn get_latest_anchor_batch(pool: &Pool<Sqlite>) -> Result<Option<Ancho
     .await?;
     Ok(batch)
 }
+
+// ========== Recovery Codes ==========
+pub async fn create_recovery_code(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    user_id: &str,
+    code: &str,
+    purpose: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO recovery_codes (id, user_id, code, purpose) VALUES (?, ?, ?, ?)",
+        id,
+        user_id,
+        code,
+        purpose
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_valid_recovery_code(
+    pool: &Pool<Sqlite>,
+    user_id: &str,
+    code: &str,
+    purpose: &str,
+) -> Result<Option<RecoveryCode>> {
+    let row = sqlx::query_as::<_, RecoveryCode>(
+        "SELECT id, user_id, code, purpose, used_at, expires_at, created_at FROM recovery_codes WHERE user_id = ? AND code = ? AND purpose = ? AND used_at IS NULL AND expires_at > datetime('now') LIMIT 1"
+    )
+    .bind(user_id)
+    .bind(code)
+    .bind(purpose)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn mark_recovery_code_used(pool: &Pool<Sqlite>, id: &str) -> Result<()> {
+    sqlx::query!(
+        "UPDATE recovery_codes SET used_at = datetime('now') WHERE id = ?",
+        id
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// ========== OAuth Identities ==========
+pub async fn create_oauth_identity(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    user_id: &str,
+    provider: &str,
+    provider_user_id: &str,
+    email: Option<&str>,
+    metadata_json: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO oauth_identities (id, user_id, provider, provider_user_id, email, metadata_json) VALUES (?, ?, ?, ?, ?, ?)",
+        id,
+        user_id,
+        provider,
+        provider_user_id,
+        email,
+        metadata_json
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_oauth_identity(
+    pool: &Pool<Sqlite>,
+    provider: &str,
+    provider_user_id: &str,
+) -> Result<Option<OAuthIdentity>> {
+    let row = sqlx::query_as::<_, OAuthIdentity>(
+        "SELECT id, user_id, provider, provider_user_id, email, metadata_json, created_at, updated_at FROM oauth_identities WHERE provider = ? AND provider_user_id = ? LIMIT 1"
+    )
+    .bind(provider)
+    .bind(provider_user_id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}

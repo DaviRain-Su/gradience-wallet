@@ -62,6 +62,7 @@ struct RegisterFinishReq {
     username: String,
     credential: RegisterPublicKeyCredential,
     passphrase: String,
+    email: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -164,7 +165,18 @@ async fn register_finish(
         })?;
 
     let cred_json = serde_json::to_vec(&pk).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let email = format!("{}@gradience.local", username);
+    let email = body
+        .email
+        .as_deref()
+        .and_then(|e| {
+            let trimmed = e.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_lowercase())
+            }
+        })
+        .unwrap_or_else(|| format!("{}@gradience.local", username));
 
     let existing_user = gradience_db::queries::get_user_by_email(&state.db, &email)
         .await
@@ -310,6 +322,102 @@ async fn unlock(
     drop(vault);
     session.passphrase = Some(body.passphrase);
     Ok(StatusCode::OK)
+}
+
+// ==================== Recovery ====================
+
+#[derive(Deserialize)]
+struct RecoverInitiateReq {
+    username: String,
+}
+
+async fn recover_initiate(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RecoverInitiateReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let username = body.username.trim().to_lowercase();
+    let email = format!("{}@gradience.local", username);
+
+    let user = gradience_db::queries::get_user_by_email(&state.db, &email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user = user.ok_or(StatusCode::NOT_FOUND)?;
+    let code = format!("{:06}", rand::random::<u32>() % 1_000_000);
+    let id = uuid::Uuid::new_v4().to_string();
+    gradience_db::queries::create_recovery_code(&state.db, &id, &user.id, &code, "passkey_recovery")
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // Mock email delivery: log to console
+    info!("[MOCK EMAIL] To: {} | Recovery code: {}", email, code);
+
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({"sent": true, "mock": true}))))
+}
+
+#[derive(Deserialize)]
+struct RecoverVerifyReq {
+    username: String,
+    code: String,
+}
+
+async fn recover_verify(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RecoverVerifyReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let username = body.username.trim().to_lowercase();
+    let email = format!("{}@gradience.local", username);
+
+    let user = gradience_db::queries::get_user_by_email(&state.db, &email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user = user.ok_or(StatusCode::NOT_FOUND)?;
+    let row = gradience_db::queries::get_valid_recovery_code(&state.db, &user.id, &body.code, "passkey_recovery")
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    if let Some(rc) = row {
+        gradience_db::queries::mark_recovery_code_used(&state.db, &rc.id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let token = uuid::Uuid::new_v4().to_string();
+        state.sessions.lock().await.insert(token.clone(), Session {
+            username,
+            passphrase: None,
+        });
+        return Ok((StatusCode::OK, axum::Json(serde_json::json!({"token": token, "recovered": true}))));
+    }
+
+    Err(StatusCode::BAD_REQUEST)
+}
+
+// ==================== OAuth (Skeleton) ====================
+
+async fn oauth_start(
+    axum::extract::Path(provider): axum::extract::Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let auth_url = match provider.as_str() {
+        "google" => "https://accounts.google.com/o/oauth2/auth?client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:3000/api/auth/oauth/google/callback&response_type=code&scope=openid%20email",
+        "github" => "https://github.com/login/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:3000/api/auth/oauth/github/callback&scope=user:email",
+        _ => return Err(StatusCode::NOT_FOUND),
+    };
+    Ok((StatusCode::TEMPORARY_REDIRECT, [(axum::http::header::LOCATION, auth_url)]))
+}
+
+async fn oauth_callback(
+    axum::extract::Path(provider): axum::extract::Path<String>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let _code = params.get("code").cloned().unwrap_or_default();
+    info!("OAuth callback from {} with code {}", provider, _code);
+    // In production, exchange code for token, fetch user info, link/create user.
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({
+        "provider": provider,
+        "status": "skeleton",
+        "note": "Configure client_id/secret in production"
+    }))))
 }
 
 // ==================== Wallet DTOs ====================
@@ -1501,6 +1609,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/passkey/login/start", post(login_start))
         .route("/api/auth/passkey/login/finish", post(login_finish))
         .route("/api/auth/unlock", post(unlock))
+        .route("/api/auth/recover/initiate", post(recover_initiate))
+        .route("/api/auth/recover/verify", post(recover_verify))
+        .route("/api/auth/oauth/:provider/start", get(oauth_start))
+        .route("/api/auth/oauth/:provider/callback", get(oauth_callback))
         .route("/api/wallets", get(list_wallets).post(create_wallet))
         .route("/api/wallets/:id/balance", get(wallet_balance))
         .route("/api/wallets/:id/addresses", get(wallet_addresses))

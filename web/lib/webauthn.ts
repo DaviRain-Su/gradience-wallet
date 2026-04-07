@@ -1,7 +1,7 @@
 import { create, get } from "@github/webauthn-json";
 import { apiPost, apiGetRawBase } from "./api";
 
-export async function registerPasskey(username: string, passphrase: string) {
+export async function registerPasskey(username: string, passphrase: string, email?: string) {
   const startRes = await apiPost("/api/auth/passkey/register/start", { username });
   const { challenge } = await startRes.json();
 
@@ -11,6 +11,7 @@ export async function registerPasskey(username: string, passphrase: string) {
     username,
     credential,
     passphrase,
+    ...(email ? { email } : {}),
   });
   const { token } = await finishRes.json();
   localStorage.setItem("gradience_token", token);

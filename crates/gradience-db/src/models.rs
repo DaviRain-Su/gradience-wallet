@@ -194,3 +194,26 @@ pub struct ModelPricing {
     pub effective_from: DateTime<Utc>,
     pub effective_to: Option<DateTime<Utc>>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct RecoveryCode {
+    pub id: String,
+    pub user_id: String,
+    pub code: String,
+    pub purpose: String,
+    pub used_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct OAuthIdentity {
+    pub id: String,
+    pub user_id: String,
+    pub provider: String,
+    pub provider_user_id: String,
+    pub email: Option<String>,
+    pub metadata_json: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
