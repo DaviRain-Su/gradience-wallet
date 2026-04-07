@@ -198,25 +198,71 @@ pub fn handle_swap(params: serde_json::Value) -> anyhow::Result<serde_json::Valu
     let wallet_id = params.get("walletId")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("missing walletId"))?;
-    let from = params.get("from")
+    let from_token = params.get("from")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("missing from"))?;
-    let to = params.get("to")
+    let to_token = params.get("to")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("missing to"))?;
     let amount = params.get("amount")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("missing amount"))?;
+    let chain = params.get("chain")
+        .and_then(|v| v.as_str())
+        .unwrap_or("base");
+    let chain_num = if chain.contains("8453") || chain == "base" { 8453u64 } else { 1u64 };
+    let chain_id_str = format!("eip155:{}", chain_num);
+
+    let (passphrase, vault_dir) = get_vault_config()?;
+    let rpc_url = resolve_rpc(&chain_id_str);
 
     let rt = tokio::runtime::Runtime::new()?;
-    let tx_hash = rt.block_on(async {
-        let svc = gradience_core::dex::service::DexService::new();
-        svc.execute_swap(wallet_id, from, to, amount).await.ok()
+    let result = rt.block_on(async {
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+        let db = match sqlx::SqlitePool::connect(&db_path).await {
+            Ok(db) => db,
+            Err(_) => return anyhow::Result::<_>::Err(anyhow::anyhow!("db connect failed")),
+        };
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
+        let mut from_addr = None;
+        for a in &addrs {
+            if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+                from_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let addr = from_addr.ok_or_else(|| anyhow::anyhow!("wallet address not found"))?;
+
+        let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+            .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
+        let nonce = client.get_transaction_count(&addr).await
+            .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
+        let gp_hex = client.get_gas_price().await
+            .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
+        let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
+            .map_err(|_| anyhow::anyhow!("bad gas price"))?;
+
+        let dex = gradience_core::dex::service::DexService::new();
+        let tx = dex.build_swap_tx(&addr, from_token, to_token, amount, chain_num).await
+            .map_err(|e| anyhow::anyhow!("build swap tx failed: {}", e))?;
+
+        let to = tx.to.as_deref().unwrap_or("");
+        let value = tx.value.parse::<u128>().unwrap_or(0);
+        let data = tx.data;
+        let tx_hex = build_unsigned_tx(nonce, gas_price, to, value, &data, chain_num);
+
+        let res = ows_lib::sign_and_send(
+            wallet_id, chain, &tx_hex, Some(&passphrase), None, Some(rpc_url), Some(&vault_dir)
+        ).map_err(|e| anyhow::anyhow!("sign_and_send failed: {}", e))?;
+
+        anyhow::Result::Ok(res)
     });
 
-    match tx_hash {
-        Some(hash) => Ok(json!({"txHash": hash})),
-        None => Err(anyhow::anyhow!("swap execution failed")),
+    match result {
+        Ok(res) => Ok(json!({"txHash": res.tx_hash})),
+        Err(e) => Err(e),
     }
 }
 

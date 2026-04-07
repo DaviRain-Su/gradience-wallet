@@ -106,13 +106,18 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [showFund, setShowFund] = useState(false);
   const [showKey, setShowKey] = useState(false);
+  const [showSwap, setShowSwap] = useState(false);
   const [fundTo, setFundTo] = useState("");
   const [fundAmount, setFundAmount] = useState("0.001");
   const [keyName, setKeyName] = useState("");
+  const [swapFrom, setSwapFrom] = useState("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+  const [swapTo, setSwapTo] = useState("0x4200000000000000000000000000000000000006");
+  const [swapAmount, setSwapAmount] = useState("1");
   const [msg, setMsg] = useState("");
   const [fundLoading, setFundLoading] = useState(false);
   const [keyLoading, setKeyLoading] = useState(false);
   const [anchorLoading, setAnchorLoading] = useState(false);
+  const [swapLoading, setSwapLoading] = useState(false);
 
   useEffect(() => {
     apiGet(`/api/wallets/${wallet.id}/balance`).then((r) => r.json().then(setBalances)).catch(() => {});
@@ -172,6 +177,31 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     }
   }
 
+  async function handleSwap() {
+    setSwapLoading(true);
+    try {
+      const res = await apiPost(`/api/wallets/${wallet.id}/swap`, {
+        chain: "base",
+        from_token: swapFrom,
+        to_token: swapTo,
+        amount: swapAmount,
+      });
+      const data = await res.json();
+      if (data.error) {
+        setMsg(`Swap denied: ${data.error}`);
+      } else {
+        setMsg(`Swapped! Tx: ${data.tx_hash}`);
+        setShowSwap(false);
+        const t = await apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json());
+        setTxs(t);
+      }
+    } catch (e: unknown) {
+      setMsg(`Swap failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSwapLoading(false);
+    }
+  }
+
   return (
     <div className="border rounded p-4">
       <div className="flex justify-between items-start">
@@ -181,6 +211,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
         </div>
         <div className="flex gap-2">
           <button onClick={() => setShowFund(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Fund</button>
+          <button onClick={() => setShowSwap(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Swap</button>
           <button onClick={() => setShowKey(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">API Key</button>
           <button onClick={handleAnchor} disabled={anchorLoading} className="text-sm border px-3 py-1 rounded hover:bg-gray-100 disabled:opacity-50">
             {anchorLoading ? "Anchoring..." : "Anchor"}
@@ -238,6 +269,17 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
           <div className="flex gap-2">
             <input className="border rounded px-2 py-1 flex-1 text-sm" placeholder="Key name" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
             <button onClick={handleCreateKey} disabled={keyLoading} className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50">{keyLoading ? "Creating..." : "Create"}</button>
+          </div>
+        </div>
+      )}
+
+      {showSwap && (
+        <div className="mt-4 border-t pt-3">
+          <div className="flex gap-2 flex-wrap">
+            <input className="border rounded px-2 py-1 flex-1 text-sm min-w-[8rem]" placeholder="From token" value={swapFrom} onChange={(e) => setSwapFrom(e.target.value)} />
+            <input className="border rounded px-2 py-1 flex-1 text-sm min-w-[8rem]" placeholder="To token" value={swapTo} onChange={(e) => setSwapTo(e.target.value)} />
+            <input className="border rounded px-2 py-1 w-24 text-sm" value={swapAmount} onChange={(e) => setSwapAmount(e.target.value)} />
+            <button onClick={handleSwap} disabled={swapLoading} className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50">{swapLoading ? "Swapping..." : "Swap"}</button>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 use crate::error::{GradienceError, Result};
+use crate::ows::adapter::Transaction;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +19,7 @@ impl DexService {
         Self
     }
 
-    /// Placeholder quote — in production this would call 1inch / Jupiter / Cetus APIs.
+    /// Mock quote for demo. In production, wire 1inch / Jupiter Quote API.
     pub async fn get_quote(
         &self,
         _wallet_id: &str,
@@ -29,7 +30,6 @@ impl DexService {
         if from.eq_ignore_ascii_case(to) {
             return Err(GradienceError::InvalidCredential("same token swap".into()));
         }
-        // Mock conversion: assume 1:1 with 0.3% fee
         let amount_f64: f64 = amount.parse().unwrap_or(0.0);
         let out = amount_f64 * 0.997;
         Ok(SwapQuote {
@@ -42,18 +42,64 @@ impl DexService {
         })
     }
 
-    /// Placeholder swap execution — in production this would route to actual DEX contract calls.
-    pub async fn execute_swap(
+    /// Build a real unsigned swap transaction.
+    /// Tries 1inch Swap API first (requires ONEINCH_API_KEY env).
+    /// Falls back to raw Uniswap V3 exactInputSingle calldata.
+    pub async fn build_swap_tx(
         &self,
-        _wallet_id: &str,
-        from: &str,
-        to: &str,
+        from_addr: &str,
+        from_token: &str,
+        to_token: &str,
         amount: &str,
-    ) -> Result<String> {
-        let quote = self.get_quote(_wallet_id, from, to, amount).await?;
-        Ok(format!(
-            "SWAP_TX_{}_{}_{}",
-            quote.from_token, quote.to_token, uuid::Uuid::new_v4()
-        ))
+        chain_num: u64,
+    ) -> Result<Transaction> {
+        // Try 1inch if API key is present
+        if let Ok(key) = std::env::var("ONEINCH_API_KEY") {
+            let client = super::oneinch::OneInchClient::new(key);
+            let inch_tx = client
+                .swap(
+                    chain_num,
+                    from_token,
+                    to_token,
+                    amount,
+                    from_addr,
+                    1.0, // 1% slippage
+                )
+                .await?;
+            return Ok(Transaction {
+                to: Some(inch_tx.to),
+                value: inch_tx.value,
+                data: hex::decode(inch_tx.data.trim_start_matches("0x"))
+                    .unwrap_or_default(),
+                raw_hex: inch_tx.data,
+            });
+        }
+
+        // Fallback: Uniswap V3 exactInputSingle on Base
+        if chain_num != 8453 {
+            return Err(GradienceError::Validation(
+                "fallback Uniswap V3 only available on Base (8453)".into(),
+            ));
+        }
+
+        let amount_hex = format!("0x{:x}", amount.parse::<u128>().unwrap_or(0));
+        let min_out = "0x0"; // demo: accept any output
+        let sqrt_price_limit = "0x0";
+        let uni = super::uniswap::encode_exact_input_single(
+            from_token,
+            to_token,
+            3000, // 0.3% pool
+            from_addr,
+            &amount_hex,
+            min_out,
+            sqrt_price_limit,
+        )?;
+
+        Ok(Transaction {
+            to: Some(uni.to),
+            value: uni.value,
+            data: uni.data.clone(),
+            raw_hex: hex::encode(&uni.data),
+        })
     }
 }

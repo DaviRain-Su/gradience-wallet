@@ -682,6 +682,130 @@ async fn wallet_sign(
     Ok((StatusCode::OK, axum::Json(resp)))
 }
 
+#[derive(Deserialize)]
+struct SwapReq {
+    chain: String,
+    from_token: String,
+    to_token: String,
+    amount: String,
+}
+
+async fn wallet_swap(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+    Json(body): Json<SwapReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+
+    let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let mut addr = None;
+    for a in &addrs {
+        if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+            addr = Some(a.address.clone());
+            break;
+        }
+    }
+    let from_addr = addr.ok_or(StatusCode::NOT_FOUND)?;
+
+    let chain_num = if body.chain == "base" { 8453u64 } else { 1u64 };
+    let rpc_url = if body.chain == "base" {
+        "https://mainnet.base.org"
+    } else {
+        "https://eth.llamarpc.com"
+    };
+
+    let dex = gradience_core::dex::service::DexService::new();
+    let tx = dex.build_swap_tx(
+        &from_addr,
+        &body.from_token,
+        &body.to_token,
+        &body.amount,
+        chain_num,
+    ).await.map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let (eval, core_policies) = evaluate_wallet_policy(
+        &state, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+
+    let mut approval_id = None;
+    if eval.decision == gradience_core::policy::engine::Decision::Deny {
+        let _ = gradience_core::audit::service::log_wallet_action(
+            &state.db, &wallet_id, None, "swap",
+            &serde_json::json!({"from_token": body.from_token, "to_token": body.to_token, "amount": body.amount}).to_string(), "deny",
+        ).await;
+        return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+    }
+    if eval.decision == gradience_core::policy::engine::Decision::Warn {
+        let aid = uuid::Uuid::new_v4().to_string();
+        let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+        let request_json = serde_json::json!({
+            "action": "swap",
+            "wallet_id": wallet_id,
+            "from_token": body.from_token,
+            "to_token": body.to_token,
+            "amount": body.amount,
+            "chain": body.chain,
+        }).to_string();
+        let _ = gradience_db::queries::create_policy_approval(
+            &state.db, &aid, &policy_id, &wallet_id, &request_json
+        ).await;
+        approval_id = Some(aid);
+    }
+
+    // Estimate gas for the swap tx
+    let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = client.get_transaction_count(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price_hex = client.get_gas_price().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let to_bytes = hex::decode(tx.to.as_deref().unwrap_or("").trim_start_matches("0x")).unwrap_or_default();
+    let data_bytes = tx.data.clone();
+    let value_wei = tx.value.parse::<u128>().unwrap_or(0);
+
+    let mut rlp = rlp::RlpStream::new_list(9);
+    rlp.append(&nonce);
+    rlp.append(&gas_price);
+    rlp.append(&300000u64); // higher gas limit for DEX swaps
+    rlp.append(&to_bytes);
+    rlp.append(&value_wei);
+    rlp.append(&data_bytes);
+    rlp.append(&chain_num);
+    rlp.append(&0u8);
+    rlp.append(&0u8);
+    let tx_hex = format!("0x{}", hex::encode(&rlp.out()));
+
+    let result = ows_lib::sign_and_send(
+        &wallet_id,
+        &body.chain,
+        &tx_hex,
+        Some(&passphrase),
+        None,
+        Some(rpc_url),
+        Some(&state.vault_dir),
+    ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let _ = gradience_core::policy::spending::record_spending(
+        &state.db, &wallet_id, &format!("eip155:{}", chain_num), value_wei, &core_policies,
+    ).await;
+    let _ = gradience_core::audit::service::log_wallet_action(
+        &state.db, &wallet_id, None, "swap",
+        &serde_json::json!({"from_token": body.from_token, "to_token": body.to_token, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allow",
+    ).await;
+
+    let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
+    if let Some(aid) = approval_id {
+        resp["approval_id"] = aid.into();
+        resp["warning"] = true.into();
+        resp["reasons"] = eval.reasons.into();
+    }
+    Ok((StatusCode::OK, axum::Json(resp)))
+}
+
 // ==================== Policy Approval Handlers ====================
 
 async fn list_policy_approvals(
@@ -1253,6 +1377,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallets/:id/balance", get(wallet_balance))
         .route("/api/wallets/:id/fund", post(wallet_fund))
         .route("/api/wallets/:id/sign", post(wallet_sign))
+        .route("/api/wallets/:id/swap", post(wallet_swap))
         .route("/api/wallets/:id/transactions", get(wallet_transactions))
         .route("/api/wallets/:id/anchor", post(wallet_anchor))
         .route("/api/wallets/:id/api-keys", get(list_api_keys).post(create_api_key))
