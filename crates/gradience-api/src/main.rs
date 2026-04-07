@@ -148,10 +148,27 @@ async fn register_finish(
         })?;
 
     let cred_json = serde_json::to_vec(&pk).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let user_id = uuid::Uuid::new_v4().to_string();
-    gradience_db::queries::create_user(&state.db, &user_id, &format!("{}@gradience.local", username))
+    let email = format!("{}@gradience.local", username);
+
+    let existing_user = gradience_db::queries::get_user_by_email(&state.db, &email)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user_id = if let Some(user) = existing_user {
+        user.id
+    } else {
+        let new_id = uuid::Uuid::new_v4().to_string();
+        gradience_db::queries::create_user(&state.db, &new_id, &email)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        new_id
+    };
+
+    // Replace passkey credential for this user
+    let _ = sqlx::query("DELETE FROM passkey_credentials WHERE user_id = ?")
+        .bind(&user_id)
+        .execute(&state.db)
+        .await;
 
     sqlx::query(
         "INSERT INTO passkey_credentials (id, user_id, credential_id, credential_pk, counter, transports, device_name) VALUES (?, ?, ?, ?, ?, ?, ?)"
