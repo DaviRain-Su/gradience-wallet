@@ -453,6 +453,35 @@ async fn list_api_keys(
     Ok((StatusCode::OK, axum::Json(keys)))
 }
 
+// ==================== Policy Handlers ====================
+
+#[derive(Deserialize)]
+struct CreatePolicyReq {
+    content: String,
+}
+
+async fn create_policy(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+    Json(body): Json<CreatePolicyReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let policy_id = gradience_core::policy::service::create_policy_sync(
+        &state.db,
+        Some(&wallet_id),
+        None,
+        &body.content,
+        Some(&state.vault_dir),
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({ "policy_id": policy_id }))))
+}
+
 // ==================== Main ====================
 
 #[tokio::main]
@@ -494,6 +523,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallets", get(list_wallets).post(create_wallet))
         .route("/api/wallets/:id/balance", get(wallet_balance))
         .route("/api/wallets/:id/api-keys", get(list_api_keys).post(create_api_key))
+        .route("/api/wallets/:id/policies", post(create_policy))
         .route("/health", get(|| async { "ok" }))
         .layer(
             tower_http::cors::CorsLayer::new()

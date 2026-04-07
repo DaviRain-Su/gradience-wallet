@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gradience-core = { path = "../gradience-core" }
 anyhow.workspace = true
 chrono.workspace = true
 uuid.workspace = true
