@@ -144,6 +144,22 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     }
   }
 
+  async function handleAnchor() {
+    try {
+      const res = await apiPost(`/api/wallets/${wallet.id}/anchor`, {});
+      const data = await res.json();
+      if (data.tx_hash) {
+        setMsg(`Anchored! Tx: ${data.tx_hash}`);
+      } else {
+        setMsg(data.message || "No unanchored logs");
+      }
+      const t = await apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json());
+      setTxs(t);
+    } catch (e: any) {
+      setMsg(`Anchor failed: ${e.message}`);
+    }
+  }
+
   return (
     <div className="border rounded p-4">
       <div className="flex justify-between items-start">
@@ -154,6 +170,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
         <div className="flex gap-2">
           <button onClick={() => setShowFund(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Fund</button>
           <button onClick={() => setShowKey(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">API Key</button>
+          <button onClick={handleAnchor} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Anchor</button>
         </div>
       </div>
 
