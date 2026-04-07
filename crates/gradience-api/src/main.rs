@@ -377,6 +377,116 @@ async fn wallet_balance(
     Ok(Json(balances))
 }
 
+#[derive(Deserialize)]
+struct FundReq {
+    to: String,
+    amount: String,
+    chain: Option<String>,
+}
+
+async fn wallet_fund(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+    Json(body): Json<FundReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+
+    let chain = body.chain.unwrap_or_else(|| "base".into());
+    let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut from_addr = None;
+    for a in &addrs {
+        if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+            from_addr = Some(a.address.clone());
+            break;
+        }
+    }
+    let from_addr = from_addr.ok_or(StatusCode::NOT_FOUND)?;
+
+    let eth_f64: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+    let wei = (eth_f64 * 1e18) as u128;
+
+    let rpc_url = if chain == "base" {
+        "https://mainnet.base.org"
+    } else {
+        "https://eth.llamarpc.com"
+    };
+
+    let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = client.get_transaction_count(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price_hex = client.get_gas_price().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let chain_num = if chain == "base" { 8453u64 } else { 1u64 };
+    let to_bytes = hex::decode(body.to.trim_start_matches("0x")).unwrap_or_default();
+    let mut rlp = rlp::RlpStream::new_list(9);
+    rlp.append(&nonce);
+    rlp.append(&gas_price);
+    rlp.append(&21000u64);
+    rlp.append(&to_bytes);
+    rlp.append(&wei);
+    rlp.append(&Vec::<u8>::new());
+    rlp.append(&chain_num);
+    rlp.append(&0u8);
+    rlp.append(&0u8);
+    let tx_hex = format!("0x{}", hex::encode(&rlp.out()));
+
+    let result = ows_lib::sign_and_send(
+        &wallet_id,
+        &chain,
+        &tx_hex,
+        Some(&passphrase),
+        None,
+        Some(rpc_url),
+        Some(&state.vault_dir),
+    ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    #[derive(Serialize)]
+    struct FundResp {
+        tx_hash: String,
+    }
+    Ok((StatusCode::OK, axum::Json(FundResp { tx_hash: result.tx_hash })))
+}
+
+#[derive(Serialize)]
+struct TxResp {
+    id: i64,
+    action: String,
+    decision: String,
+    tx_hash: Option<String>,
+    created_at: String,
+}
+
+async fn wallet_transactions(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+) -> Result<Json<Vec<TxResp>>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let logs = gradience_db::queries::list_audit_logs_by_wallet(&state.db, &wallet_id, 50)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let txs = logs.into_iter().map(|l| TxResp {
+        id: l.id,
+        action: l.action,
+        decision: l.decision,
+        tx_hash: l.tx_hash,
+        created_at: l.created_at.to_rfc3339(),
+    }).collect();
+
+    Ok(Json(txs))
+}
+
 // ==================== API Key Handlers ====================
 
 #[derive(Deserialize)]
@@ -522,6 +632,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/unlock", post(unlock))
         .route("/api/wallets", get(list_wallets).post(create_wallet))
         .route("/api/wallets/:id/balance", get(wallet_balance))
+        .route("/api/wallets/:id/fund", post(wallet_fund))
+        .route("/api/wallets/:id/transactions", get(wallet_transactions))
         .route("/api/wallets/:id/api-keys", get(list_api_keys).post(create_api_key))
         .route("/api/wallets/:id/policies", post(create_policy))
         .route("/health", get(|| async { "ok" }))

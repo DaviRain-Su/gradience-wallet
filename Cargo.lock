@@ -1254,6 +1254,8 @@ dependencies = [
  "gradience-core",
  "gradience-db",
  "hex",
+ "ows-lib",
+ "rlp",
  "serde",
  "serde_json",
  "sqlx",
