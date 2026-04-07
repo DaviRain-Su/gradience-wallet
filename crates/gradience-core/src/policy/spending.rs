@@ -55,6 +55,8 @@ pub async fn evaluate_spending_limits(
                 return Ok(EvalResult {
                     decision: Decision::Deny,
                     reasons: vec![format!("{} limit exceeded", period)],
+                    matched_intent: None,
+                    dynamic_adjustments: vec![],
                 });
             }
         }
@@ -63,6 +65,8 @@ pub async fn evaluate_spending_limits(
     Ok(EvalResult {
         decision: Decision::Allow,
         reasons: vec![],
+        matched_intent: None,
+        dynamic_adjustments: vec![],
     })
 }
 

@@ -73,8 +73,10 @@ pub enum Commands {
 
 #[derive(Subcommand, Debug)]
 pub enum AuthCommands {
-    /// Login to your vault
+    /// Login to your vault (browser-based device auth)
     Login,
+    /// Show current authentication status
+    Whoami,
 }
 
 #[derive(Subcommand, Debug)]

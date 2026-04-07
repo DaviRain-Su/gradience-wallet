@@ -2,6 +2,20 @@ use gradience_core::ows::adapter::Transaction;
 use gradience_core::policy::engine::{PolicyEngine, EvalContext, Decision, Policy};
 use serde_json::json;
 
+fn block_on_async<F, T>(f: F) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.metrics().num_workers() > 1 => {
+            tokio::task::block_in_place(|| handle.block_on(f))
+        }
+        _ => {
+            tokio::runtime::Runtime::new().expect("create tokio runtime").block_on(f)
+        }
+    }
+}
+
 fn get_vault_config() -> anyhow::Result<(String, std::path::PathBuf)> {
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
         .map(std::path::PathBuf::from)
@@ -62,8 +76,7 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         raw_hex: data_hex.into(),
     };
 
-    let rt = tokio::runtime::Runtime::new()?;
-    let (policies, nonce, gas_price) = rt.block_on(async {
+    let (policies, nonce, gas_price) = block_on_async(async {
         let data_dir = std::env::var("GRADIENCE_DATA_DIR")
             .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
@@ -108,6 +121,9 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         transaction: tx,
         intent,
         timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+        dynamic_signals: None,
+        max_tokens: None,
+        model: None,
     };
 
     let policy_refs: Vec<&Policy> = policies.iter().collect();
@@ -158,8 +174,7 @@ pub fn handle_get_balance(args: crate::args::GetBalanceArgs) -> anyhow::Result<s
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
-    let rt = tokio::runtime::Runtime::new()?;
-    let balance = rt.block_on(async {
+    let balance = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
         let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url).ok()?;
@@ -195,8 +210,7 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
     let (passphrase, vault_dir) = get_vault_config()?;
     let rpc_url = resolve_rpc(&chain_id_str);
 
-    let rt = tokio::runtime::Runtime::new()?;
-    let result = rt.block_on(async {
+    let result = block_on_async(async {
         let data_dir = std::env::var("GRADIENCE_DATA_DIR")
             .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
@@ -257,8 +271,7 @@ pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Valu
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
-    let rt = tokio::runtime::Runtime::new()?;
-    let tx_hash = rt.block_on(async {
+    let tx_hash = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
         let mut addr = None;
@@ -295,8 +308,7 @@ pub fn handle_llm_generate(args: crate::args::LlmGenerateArgs) -> anyhow::Result
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
-    let rt = tokio::runtime::Runtime::new()?;
-    let result = rt.block_on(async {
+    let result = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let svc = gradience_core::ai::gateway::AiGatewayService::new();
         svc.llm_generate(&db, wallet_id, None, provider, model, prompt).await.ok()
@@ -322,8 +334,7 @@ pub fn handle_ai_balance(args: crate::args::AiBalanceArgs) -> anyhow::Result<ser
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
-    let rt = tokio::runtime::Runtime::new()?;
-    let balance = rt.block_on(async {
+    let balance = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let svc = gradience_core::ai::gateway::AiGatewayService::new();
         svc.get_balance(&db, wallet_id, token).await.ok()

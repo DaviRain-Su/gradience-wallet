@@ -32,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Auth { cmd } => match cmd {
             AuthCommands::Login => commands::auth::login(&ctx).await,
+            AuthCommands::Whoami => commands::auth::whoami(&ctx).await,
         },
         Commands::Agent { cmd } => match cmd {
             AgentCommands::Create { name, workspace } => {

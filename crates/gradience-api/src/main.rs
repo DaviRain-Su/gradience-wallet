@@ -16,6 +16,18 @@ use tracing::{info, warn};
 use webauthn_rs::prelude::*;
 
 #[derive(Clone)]
+struct RecoverySession {
+    user_id: String,
+    username: String,
+}
+
+#[derive(Clone)]
+struct DeviceAuth {
+    user_code: String,
+    token: Option<String>,
+}
+
+#[derive(Clone)]
 struct Session {
     user_id: String,
     username: String,
@@ -31,6 +43,8 @@ struct AppState {
     auth_challenges: Mutex<HashMap<String, PasskeyAuthentication>>,
     credentials: Mutex<HashMap<String, Passkey>>,
     sessions: Mutex<HashMap<String, Session>>,
+    recovery_sessions: Mutex<HashMap<String, RecoverySession>>,
+    device_auths: Mutex<HashMap<String, DeviceAuth>>,
     risk_cache: gradience_core::policy::dynamic::RiskSignalCache,
 }
 
@@ -44,6 +58,33 @@ fn auth_token(headers: &axum::http::HeaderMap) -> Option<String> {
 
 async fn get_session(state: &AppState, token: &str) -> Option<Session> {
     state.sessions.lock().await.get(token).cloned()
+}
+
+async fn require_wallet_owner(
+    state: &AppState,
+    session: &Session,
+    wallet_id: &str,
+) -> Result<gradience_db::models::Wallet, StatusCode> {
+    let wallet = gradience_db::queries::get_wallet_by_id(&state.db, wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+    if wallet.owner_id != session.user_id {
+        return Err(StatusCode::FORBIDDEN);
+    }
+    Ok(wallet)
+}
+
+async fn require_workspace_member(
+    state: &AppState,
+    user_id: &str,
+    workspace_id: &str,
+) -> Result<String, StatusCode> {
+    let members = gradience_db::queries::list_workspace_members(&state.db, workspace_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let m = members.into_iter().find(|m| m.user_id == user_id).ok_or(StatusCode::FORBIDDEN)?;
+    Ok(m.role)
 }
 
 // ==================== Auth DTOs ====================
@@ -105,7 +146,7 @@ async fn register_start(
 
     let user_id = Uuid::new_v4();
 
-    let mut creds = state.credentials.lock().await;
+    let creds = state.credentials.lock().await;
     let exclude = if let Some(pk) = creds.get(&username) {
         vec![pk.cred_id().clone()]
     } else {
@@ -220,6 +261,7 @@ async fn register_finish(
 
     let token = uuid::Uuid::new_v4().to_string();
     state.sessions.lock().await.insert(token.clone(), Session {
+        user_id: user_id.clone(),
         username,
         passphrase: Some(body.passphrase),
     });
@@ -300,10 +342,16 @@ async fn login_finish(
         })?;
 
     info!("Passkey login success for {}", username);
+    let email = format!("{}@gradience.local", username);
+    let user = gradience_db::queries::get_user_by_email(&state.db, &email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let user = user.ok_or(StatusCode::NOT_FOUND)?;
+
     let token = uuid::Uuid::new_v4().to_string();
-    state.sessions.lock().await.insert(token.clone(), Session {
+    state.recovery_sessions.lock().await.insert(token.clone(), RecoverySession {
+        user_id: user.id,
         username,
-        passphrase: None,
     });
     Ok(Json(TokenResp { token }))
 }
@@ -384,17 +432,132 @@ async fn recover_verify(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let token = uuid::Uuid::new_v4().to_string();
-        state.sessions.lock().await.insert(token.clone(), Session {
+        state.recovery_sessions.lock().await.insert(token.clone(), RecoverySession {
+            user_id: user.id,
             username,
-            passphrase: None,
         });
-        return Ok((StatusCode::OK, axum::Json(serde_json::json!({"token": token, "recovered": true}))));
+        return Ok((StatusCode::OK, axum::Json(serde_json::json!({"recovery_token": token, "recovered": true}))));
     }
 
     Err(StatusCode::BAD_REQUEST)
 }
 
+#[derive(Deserialize)]
+struct RecoverRegisterReq {
+    recovery_token: String,
+    credential: serde_json::Value,
+}
+
+async fn recover_register(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<RecoverRegisterReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let rec = state.recovery_sessions.lock().await.remove(&body.recovery_token);
+    let rec = rec.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let pk: Passkey = serde_json::from_value(body.credential)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let cred_id = pk.cred_id().as_ref().to_vec();
+    let cred_json = serde_json::to_vec(&pk).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let _ = sqlx::query("DELETE FROM passkey_credentials WHERE user_id = ?")
+        .bind(&rec.user_id)
+        .execute(&state.db)
+        .await;
+
+    sqlx::query(
+        "INSERT INTO passkey_credentials (id, user_id, credential_id, credential_pk, counter, transports, device_name) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    )
+    .bind(&rec.user_id)
+    .bind(&rec.user_id)
+    .bind(&cred_id)
+    .bind(&cred_json)
+    .bind(0i64)
+    .bind("internal")
+    .bind("Passkey")
+    .execute(&state.db)
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let token = uuid::Uuid::new_v4().to_string();
+    state.sessions.lock().await.insert(token.clone(), Session {
+        user_id: rec.user_id,
+        username: rec.username,
+        passphrase: None,
+    });
+
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({"token": token, "registered": true}))))
+}
+
+
+#[derive(Deserialize)]
+struct DeviceInitiateReq {
+    client_name: Option<String>,
+}
+
+#[derive(Serialize)]
+struct DeviceInitiateResp {
+    device_code: String,
+    user_code: String,
+    verification_url: String,
+}
+
+async fn device_initiate() -> Result<Json<DeviceInitiateResp>, StatusCode> {
+    let device_code = uuid::Uuid::new_v4().to_string();
+    let user_code = format!("{:04}-{:04}", rand::random::<u32>() % 10000, rand::random::<u32>() % 10000);
+    let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "http://localhost:3000".into());
+    Ok(Json(DeviceInitiateResp {
+        device_code: device_code.clone(),
+        user_code: user_code.clone(),
+        verification_url: format!("{}/device?code={}", origin, user_code),
+    }))
+}
+
+#[derive(Deserialize)]
+struct DevicePollReq {
+    device_code: String,
+}
+
+async fn device_poll(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DevicePollReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let auths = state.device_auths.lock().await;
+    if let Some(auth) = auths.get(&body.device_code) {
+        if let Some(token) = &auth.token {
+            return Ok((StatusCode::OK, axum::Json(serde_json::json!({"token": token, "authorized": true}))));
+        }
+        return Ok((StatusCode::OK, axum::Json(serde_json::json!({"authorized": false}))));
+    }
+    Err(StatusCode::NOT_FOUND)
+}
+
+#[derive(Deserialize)]
+struct DeviceAuthorizeReq {
+    user_code: String,
+}
+
+async fn device_authorize(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<DeviceAuthorizeReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let mut auths = state.device_auths.lock().await;
+    for (device_code, auth) in auths.iter_mut() {
+        if auth.user_code == body.user_code {
+            auth.token = Some(token);
+            return Ok((StatusCode::OK, axum::Json(serde_json::json!({"device_code": device_code, "authorized": true}))));
+        }
+    }
+    Err(StatusCode::NOT_FOUND)
+}
+
 // ==================== OAuth (Skeleton) ====================
+
 
 async fn oauth_start(
     axum::extract::Path(provider): axum::extract::Path<String>,
@@ -446,9 +609,9 @@ async fn list_wallets(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<WalletResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let rows = gradience_db::queries::list_wallets_by_owner(&state.db, "user-1")
+    let rows = gradience_db::queries::list_wallets_by_owner(&state.db, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -472,21 +635,18 @@ async fn create_wallet(
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
-    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+    let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
 
     let name = body.name.trim();
     if name.is_empty() {
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    // Ensure demo user exists
-    let _ = gradience_db::queries::create_user(&state.db, "user-1", "demo@gradience.io").await;
-
     let vault = state.ows.init_vault(&passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let wallet = state.ows.create_wallet(&vault, name, DerivationParams::default()).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    gradience_db::queries::create_wallet(&state.db, &wallet.id, &wallet.name, "user-1", None)
+    gradience_db::queries::create_wallet(&state.db, &wallet.id, &wallet.name, &session.user_id, None)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -519,7 +679,8 @@ async fn wallet_balance(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<BalanceResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
         .await
@@ -555,7 +716,8 @@ async fn wallet_addresses(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<AddressResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
         .await
@@ -583,7 +745,8 @@ async fn wallet_portfolio(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<PortfolioResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
         .await
@@ -636,6 +799,12 @@ async fn evaluate_wallet_policy(
     let parser = gradience_core::policy::intent::IntentParser::new();
     let intent = parser.parse(&transaction, chain_id).ok();
 
+    // Build dynamic signals snapshot from cache
+    let dynamic_signals = gradience_core::policy::engine::DynamicSignals {
+        forta_score: state.risk_cache.get("*", "forta").map(|s| s.score),
+        chainalysis_score: state.risk_cache.get("*", "chainalysis").map(|s| s.score),
+    };
+
     let engine = PolicyEngine;
     let ctx = EvalContext {
         wallet_id: wallet_id.into(),
@@ -644,6 +813,9 @@ async fn evaluate_wallet_policy(
         transaction: transaction.clone(),
         intent,
         timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+        dynamic_signals: Some(dynamic_signals),
+        max_tokens: None,
+        model: None,
     };
 
     let policy_refs: Vec<_> = core_policies.iter().collect();
@@ -660,25 +832,6 @@ async fn evaluate_wallet_policy(
         }
     }
 
-    if result.decision == gradience_core::policy::engine::Decision::Allow {
-        for policy in &core_policies {
-            if policy.status != "active" { continue; }
-            for rule in &policy.rules {
-                if let gradience_core::policy::engine::Rule::DynamicRisk { max_forta, max_chainalysis } = rule {
-                    match state.risk_cache.evaluate("*", *max_forta, *max_chainalysis) {
-                        Ok((true, reasons)) => {
-                            return Ok((gradience_core::policy::engine::EvalResult {
-                                decision: gradience_core::policy::engine::Decision::Deny,
-                                reasons,
-                            }, core_policies));
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-
     Ok((result, core_policies))
 }
 
@@ -690,7 +843,8 @@ async fn wallet_fund(
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
-    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+    let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let chain = body.chain.unwrap_or_else(|| "base".into());
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
@@ -810,7 +964,8 @@ async fn wallet_sign(
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
-    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+    let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
         .await
@@ -930,7 +1085,8 @@ async fn wallet_swap(
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
-    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+    let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
         .await
@@ -1114,7 +1270,8 @@ async fn wallet_transactions(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<TxResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let logs = gradience_db::queries::list_audit_logs_by_wallet(&state.db, &wallet_id, 50)
         .await
@@ -1146,7 +1303,8 @@ async fn create_api_key(
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
     let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
-    let passphrase = session.passphrase.ok_or(StatusCode::FORBIDDEN)?;
+    let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let name = body.name.trim();
     if name.is_empty() {
@@ -1180,7 +1338,8 @@ async fn list_api_keys(
     Path(wallet_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let rows = gradience_db::queries::list_api_keys_by_wallet(&state.db, &wallet_id)
         .await
@@ -1218,7 +1377,8 @@ async fn create_policy(
     Json(body): Json<CreatePolicyReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let policy_id = gradience_core::policy::service::create_policy_sync(
         &state.db,
@@ -1248,8 +1408,13 @@ struct TopupReq {
 
 async fn ai_topup(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Json(body): Json<TopupReq>,
 ) -> Result<StatusCode, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &body.wallet_id).await?;
+
     let svc = gradience_core::ai::gateway::AiGatewayService::new();
     svc.topup(&state.db, &body.wallet_id, &body.token, &body.amount_raw)
         .await
@@ -1259,12 +1424,17 @@ async fn ai_topup(
 
 async fn ai_balance(
     State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
     Path(wallet_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let token = params.get("token").map(|s| s.as_str()).unwrap_or("USDC");
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
+
+    let token_sym = params.get("token").map(|s| s.as_str()).unwrap_or("USDC");
     let svc = gradience_core::ai::gateway::AiGatewayService::new();
-    let bal = svc.get_balance(&state.db, &wallet_id, token)
+    let bal = svc.get_balance(&state.db, &wallet_id, token_sym)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok((StatusCode::OK, axum::Json(serde_json::json!({ "balance_raw": bal }))))
@@ -1284,7 +1454,8 @@ async fn ai_generate(
     Json(body): Json<GenerateReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &body.wallet_id).await?;
 
     let svc = gradience_core::ai::gateway::AiGatewayService::new();
     let resp = svc.llm_generate(
@@ -1317,7 +1488,8 @@ async fn wallet_anchor(
     Path(wallet_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let svc = gradience_core::audit::anchor::AnchorService::from_env()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1395,7 +1567,7 @@ async fn create_workspace(
     Json(body): Json<CreateWorkspaceReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
 
     let name = body.name.trim();
     if name.is_empty() {
@@ -1403,7 +1575,7 @@ async fn create_workspace(
     }
 
     let svc = gradience_core::team::workspace::WorkspaceService::new();
-    let workspace_id = svc.create_workspace(&state.db, name, "user-1")
+    let workspace_id = svc.create_workspace(&state.db, name, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -1419,9 +1591,9 @@ async fn list_workspaces(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let rows = gradience_db::queries::list_workspaces_by_owner(&state.db, "user-1")
+    let rows = gradience_db::queries::list_workspaces_by_owner(&state.db, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -1449,7 +1621,8 @@ async fn invite_workspace_member(
     Json(body): Json<InviteMemberReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _role = require_workspace_member(&state, &session.user_id, &workspace_id).await?;
 
     let role = gradience_core::team::workspace::WorkspaceRole::from_str(&body.role)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -1480,7 +1653,8 @@ async fn list_workspace_members(
     Path(workspace_id): Path<String>,
 ) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _role = require_workspace_member(&state, &session.user_id, &workspace_id).await?;
 
     let rows = gradience_db::queries::list_workspace_members(&state.db, &workspace_id)
         .await
@@ -1597,6 +1771,8 @@ async fn main() -> anyhow::Result<()> {
         auth_challenges: Mutex::new(HashMap::new()),
         credentials: Mutex::new(HashMap::new()),
         sessions: Mutex::new(HashMap::new()),
+        recovery_sessions: Mutex::new(HashMap::new()),
+        device_auths: Mutex::new(HashMap::new()),
         risk_cache: risk_cache.clone(),
     });
 
@@ -1616,6 +1792,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/unlock", post(unlock))
         .route("/api/auth/recover/initiate", post(recover_initiate))
         .route("/api/auth/recover/verify", post(recover_verify))
+        .route("/api/auth/recover/register", post(recover_register))
+        .route("/api/auth/device/initiate", post(device_initiate))
+        .route("/api/auth/device/poll", post(device_poll))
+        .route("/api/auth/device/authorize", post(device_authorize))
         .route("/api/auth/oauth/:provider/start", get(oauth_start))
         .route("/api/auth/oauth/:provider/callback", get(oauth_callback))
         .route("/api/wallets", get(list_wallets).post(create_wallet))

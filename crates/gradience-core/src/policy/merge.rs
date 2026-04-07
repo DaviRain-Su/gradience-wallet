@@ -56,7 +56,67 @@ pub fn merge_policies_strictest(
         .collect();
     merged.model_whitelist = intersect_vec(model_lists);
 
+    // monthly_limit: min
+    let monthly: Vec<String> = all.iter()
+        .flat_map(|p| p.rules.iter())
+        .filter_map(|r| match r { Rule::MonthlyLimit { max, .. } => Some(max.clone()), _ => None })
+        .collect();
+    merged.monthly_limit = min_str(monthly);
+
+    // contract_whitelist: intersection
+    let contract_lists: Vec<Vec<String>> = all.iter()
+        .flat_map(|p| p.rules.iter())
+        .filter_map(|r| match r { Rule::ContractWhitelist { contracts } => Some(contracts.clone()), _ => None })
+        .collect();
+    merged.contract_whitelist = intersect_vec(contract_lists);
+
+    // operation_type: intersection
+    let op_lists: Vec<Vec<String>> = all.iter()
+        .flat_map(|p| p.rules.iter())
+        .filter_map(|r| match r { Rule::OperationType { allowed } => Some(allowed.clone()), _ => None })
+        .collect();
+    merged.operation_type = intersect_vec(op_lists);
+
+    // time_window: narrowest
+    let windows: Vec<TimeWindowRule> = all.iter()
+        .flat_map(|p| p.rules.iter())
+        .filter_map(|r| match r {
+            Rule::TimeWindow { start_hour, end_hour, timezone } => {
+                Some(TimeWindowRule { start_hour: *start_hour, end_hour: *end_hour, timezone: timezone.clone() })
+            }
+            _ => None
+        })
+        .collect();
+    merged.time_window = narrowest_window(windows);
+
+    // max_tokens: min
+    let tokens: Vec<u64> = all.iter()
+        .flat_map(|p| p.rules.iter())
+        .filter_map(|r| match r { Rule::MaxTokensPerCall { limit } => Some(*limit), _ => None })
+        .collect();
+    merged.max_tokens = tokens.into_iter().min();
+
     merged
+}
+
+fn narrowest_window(windows: Vec<TimeWindowRule>) -> Option<TimeWindowRule> {
+    if windows.is_empty() {
+        return None;
+    }
+    // Narrowest = smallest duration
+    windows.into_iter().min_by(|a, b| {
+        let dur_a = if a.start_hour <= a.end_hour {
+            a.end_hour - a.start_hour
+        } else {
+            24 - a.start_hour + a.end_hour
+        };
+        let dur_b = if b.start_hour <= b.end_hour {
+            b.end_hour - b.start_hour
+        } else {
+            24 - b.start_hour + b.end_hour
+        };
+        dur_a.cmp(&dur_b)
+    })
 }
 
 fn min_str(vals: Vec<String>) -> Option<String> {

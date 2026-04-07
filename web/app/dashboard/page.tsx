@@ -270,9 +270,9 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   });
 
   function parseNativeBalance(hex: string) {
-    const val = parseInt(hex || "0x0", 16);
-    if (val === 0) return "0 ETH";
-    const eth = val / 1e18;
+    const val = BigInt(hex || "0x0");
+    if (val === BigInt(0)) return "0 ETH";
+    const eth = Number(val) / 1e18;
     return `${eth.toFixed(6)} ETH`;
   }
 

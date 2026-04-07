@@ -68,42 +68,60 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
 
             let result = match name {
                 "sign_transaction" => {
-                    let a: SignTxArgs = serde_json::from_value(args)?;
+                    let a: SignTxArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
                     match crate::tools::handle_sign_transaction(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }
                 }
                 "get_balance" => {
-                    let a: GetBalanceArgs = serde_json::from_value(args)?;
+                    let a: GetBalanceArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
                     match crate::tools::handle_get_balance(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }
                 }
                 "swap" => {
-                    let a: SwapArgs = serde_json::from_value(args)?;
+                    let a: SwapArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
                     match crate::tools::handle_swap(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }
                 }
                 "pay" => {
-                    let a: PayArgs = serde_json::from_value(args)?;
+                    let a: PayArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
                     match crate::tools::handle_pay(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }
                 }
                 "llm_generate" => {
-                    let a: LlmGenerateArgs = serde_json::from_value(args)?;
+                    let a: LlmGenerateArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
                     match crate::tools::handle_llm_generate(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }
                 }
                 "ai_balance" => {
-                    let a: AiBalanceArgs = serde_json::from_value(args)?;
+                    let a: AiBalanceArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
                     match crate::tools::handle_ai_balance(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),

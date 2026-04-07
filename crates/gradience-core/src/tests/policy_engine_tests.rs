@@ -25,6 +25,9 @@ fn make_ctx(chain: &str, value: &str) -> EvalContext {
         transaction: Transaction { to: None, value: value.into(), data: vec![], raw_hex: "0x".into() },
         intent: None,
         timestamp_ms: 0,
+        dynamic_signals: None,
+        max_tokens: None,
+        model: None,
     }
 }
 

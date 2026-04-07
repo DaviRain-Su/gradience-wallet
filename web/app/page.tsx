@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { registerPasskey, loginPasskey, unlockVault } from "@/lib/webauthn";
+import { registerPasskey, registerPasskeyForRecovery, loginPasskey, unlockVault } from "@/lib/webauthn";
 import { apiPost } from "@/lib/api";
 
 export default function Home() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [passphrase, setPassphrase] = useState("");
-  const [step, setStep] = useState<"login" | "forgot" | "unlock">("login");
+  const [step, setStep] = useState<"login" | "forgot" | "recover_register" | "unlock">("login");
   const [recoveryCode, setRecoveryCode] = useState("");
+  const [recoveryToken, setRecoveryToken] = useState("");
   const [msg, setMsg] = useState("");
   const router = useRouter();
 
@@ -55,11 +56,24 @@ export default function Home() {
     try {
       const res = await apiPost("/api/auth/recover/verify", { username, code: recoveryCode });
       const data = await res.json();
-      localStorage.setItem("gradience_token", data.token);
-      setStep("unlock");
-      setMsg("Recovered successfully. Unlock to continue.");
+      if (!data.recovery_token) {
+        throw new Error("Invalid recovery response");
+      }
+      setRecoveryToken(data.recovery_token);
+      setStep("recover_register");
+      setMsg("Identity verified. Register a new Passkey on this device.");
     } catch (e: unknown) {
       setMsg(`Recovery failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function handleRegisterNewPasskey() {
+    try {
+      await registerPasskeyForRecovery(username, recoveryToken);
+      setStep("unlock");
+      setMsg("New Passkey registered. Unlock your vault to continue.");
+    } catch (e: unknown) {
+      setMsg(`Passkey registration failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -154,6 +168,26 @@ export default function Home() {
               style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}
             >
               Verify code
+            </button>
+            <p className="text-center text-sm">
+              <button onClick={() => { setStep("login"); setMsg(""); }} className="underline" style={{ color: "var(--primary)" }}>
+                Back to login
+              </button>
+            </p>
+          </>
+        )}
+
+        {step === "recover_register" && (
+          <>
+            <p className="text-center text-sm" style={{ color: "var(--muted-foreground)" }}>
+              Your identity is verified. Register a new Passkey on this device.
+            </p>
+            <button
+              onClick={handleRegisterNewPasskey}
+              className="rounded py-2"
+              style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+            >
+              Register New Passkey
             </button>
             <p className="text-center text-sm">
               <button onClick={() => { setStep("login"); setMsg(""); }} className="underline" style={{ color: "var(--primary)" }}>

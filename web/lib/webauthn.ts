@@ -33,6 +33,21 @@ export async function loginPasskey(username: string) {
   return token;
 }
 
+export async function registerPasskeyForRecovery(username: string, recoveryToken: string) {
+  const startRes = await apiPost("/api/auth/passkey/register/start", { username });
+  const { challenge } = await startRes.json();
+
+  const credential = await create(challenge);
+
+  const finishRes = await apiPost("/api/auth/recover/register", {
+    recovery_token: recoveryToken,
+    credential,
+  });
+  const { token } = await finishRes.json();
+  localStorage.setItem("gradience_token", token);
+  return token;
+}
+
 export async function unlockVault(passphrase: string) {
   const token = localStorage.getItem("gradience_token");
   if (!token) throw new Error("No session");

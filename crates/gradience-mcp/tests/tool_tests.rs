@@ -77,7 +77,7 @@ fn test_mcp_sign_tx_missing_wallet_id() {
     }));
     let resp = handle_request(req).unwrap();
     assert!(resp.error.is_some());
-    assert!(resp.error.as_ref().unwrap().message.contains("missing walletId"));
+    assert!(resp.error.as_ref().unwrap().message.contains("missing field"));
 }
 
 #[test]
