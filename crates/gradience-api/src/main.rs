@@ -1136,6 +1136,71 @@ async fn list_workspace_members(
     Ok(Json(list))
 }
 
+// ==================== Telegram Mini App Webhook ====================
+
+#[derive(Deserialize)]
+struct TgWebhookReq {
+    #[allow(dead_code)]
+    update_id: i64,
+    message: Option<TgMessage>,
+}
+
+#[derive(Deserialize)]
+struct TgMessage {
+    #[allow(dead_code)]
+    message_id: i64,
+    chat: TgChat,
+    text: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TgChat {
+    id: i64,
+}
+
+async fn tg_webhook(
+    Json(body): Json<TgWebhookReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = std::env::var("TELEGRAM_BOT_TOKEN")
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let origin = std::env::var("ORIGIN")
+        .unwrap_or_else(|_| "https://gradience-wallet.example.com".into());
+
+    let chat_id = body.message.as_ref().map(|m| m.chat.id);
+    let text = body.message.as_ref().and_then(|m| m.text.clone());
+
+    if let (Some(chat_id), Some(text)) = (chat_id, text) {
+        if text.trim().to_lowercase().starts_with("/start") {
+            let url = format!("{}/tg", origin.trim_end_matches('/'));
+            let payload = serde_json::json!({
+                "chat_id": chat_id,
+                "text": "Welcome to Gradience Wallet! Tap below to open your wallet.",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": "Open Gradience",
+                                "web_app": {
+                                    "url": url
+                                }
+                            }
+                        ]
+                    ]
+                }
+            });
+
+            let client = reqwest::Client::new();
+            let _ = client
+                .post(format!("https://api.telegram.org/bot{}/sendMessage", token))
+                .json(&payload)
+                .send()
+                .await;
+        }
+    }
+
+    Ok(StatusCode::OK)
+}
+
 // ==================== Main ====================
 
 #[tokio::main]
@@ -1202,6 +1267,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/policy-approvals", get(list_policy_approvals))
         .route("/api/policy-approvals/:id/approve", post(approve_policy_approval))
         .route("/api/policy-approvals/:id/reject", post(reject_policy_approval))
+        .route("/api/tg/webhook", post(tg_webhook))
         .route("/health", get(health_check))
         .layer(
             tower_http::cors::CorsLayer::new()

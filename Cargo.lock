@@ -1276,6 +1276,7 @@ dependencies = [
  "gradience-mcp",
  "hex",
  "ows-lib",
+ "reqwest",
  "rlp",
  "serde",
  "serde_json",

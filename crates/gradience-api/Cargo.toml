@@ -24,6 +24,7 @@ url = "2"
 hex.workspace = true
 rlp.workspace = true
 chrono.workspace = true
+reqwest.workspace = true
 
 gradience-core = { path = "../gradience-core" }
 gradience-db = { path = "../gradience-db" }
