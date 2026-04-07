@@ -1,0 +1,26 @@
+{
+  "id": "ef0ed3a6-e0a5-47d4-948c-6c5e8160a4cf",
+  "name": "test",
+  "token_hash": "cf8043302ff1110718d36db0e6faeeff41360a72ef0f4800282617c7ce516575",
+  "created_at": "2026-04-07T21:06:48.956912+00:00",
+  "wallet_ids": [
+    "367147d7-0215-4b68-b694-38ff9c60a3da"
+  ],
+  "policy_ids": [],
+  "wallet_secrets": {
+    "367147d7-0215-4b68-b694-38ff9c60a3da": {
+      "auth_tag": "85f1710b83c67f84f4676f545318ab30",
+      "cipher": "aes-256-gcm",
+      "cipherparams": {
+        "iv": "294dae92bc71efa4409fd2c5"
+      },
+      "ciphertext": "a6e0f5bd6d85f281092d47a8a6bf492728ea75661e74ef150d5e5f0a1ee908e20eb1157a42e6195b569caaaca64f6fcc4709c7357d68fe04b60c89001c204acb0eb6562bc3106e754f45",
+      "kdf": "hkdf-sha256",
+      "kdfparams": {
+        "dklen": 32,
+        "info": "ows-api-key-v1",
+        "salt": "f90d31a51d11b2f5eb63468d52fa95a5f0225f3c628e3d67e9da0a4f52ae2cdc"
+      }
+    }
+  }
+}

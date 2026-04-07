@@ -79,12 +79,13 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-4xl mx-auto">
+    <div className="min-h-screen p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       <h1 className="text-2xl font-bold mb-6">Wallet Dashboard</h1>
 
       <div className="flex gap-2 mb-6">
         <input
           className="border rounded px-3 py-2 flex-1"
+          style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
           placeholder="Wallet name"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -92,27 +93,30 @@ export default function Dashboard() {
         <button
           onClick={handleCreate}
           disabled={loading}
-          className="bg-black text-white px-4 py-2 rounded disabled:opacity-50"
+          className="px-4 py-2 rounded disabled:opacity-50"
+          style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
         >
           {loading ? "Creating..." : "Create Wallet"}
         </button>
       </div>
 
       {showApiConfig && (
-        <div className="mb-4 border rounded p-3 bg-yellow-50">
-          <p className="text-sm text-yellow-800 mb-2">
+        <div className="mb-4 border rounded p-3" style={{ backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }}>
+          <p className="text-sm text-yellow-900 mb-2">
             You are on HTTPS but your local API is HTTP. Please enter your local API tunnel URL (e.g. ngrok HTTPS) or switch to local dev mode.
           </p>
           <div className="flex gap-2">
             <input
               className="border rounded px-2 py-1 flex-1 text-sm"
+              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}
               placeholder="https://your-ngrok-url.ngrok-free.app"
               value={apiBase}
               onChange={(e) => setApiBaseState(e.target.value)}
             />
             <button
               onClick={() => { setApiBase(apiBase); setShowApiConfig(false); setMsg("API base updated. Refreshing..."); window.location.reload(); }}
-              className="bg-black text-white px-3 py-1 rounded text-sm"
+              className="px-3 py-1 rounded text-sm"
+              style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
             >
               Save
             </button>
@@ -120,10 +124,10 @@ export default function Dashboard() {
         </div>
       )}
 
-      {msg && <p className="text-red-500 text-sm mb-4">{msg}</p>}
+      {msg && <p className="text-sm mb-4" style={{ color: "#B45309" }}>{msg}</p>}
 
       <div className="space-y-6">
-        {wallets.length === 0 && <p className="text-gray-500">No wallets yet.</p>}
+        {wallets.length === 0 && <p style={{ color: "var(--muted-foreground)" }}>No wallets yet.</p>}
         {wallets.map((w) => (
           <WalletCard key={w.id} wallet={w} />
         ))}
@@ -234,52 +238,86 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     }
   }
 
+  const addressMap = new Map<string, string>();
+  balances.forEach((b) => {
+    if (!addressMap.has(b.chain_id)) addressMap.set(b.chain_id, b.address);
+  });
+
+  function copy(text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      setMsg("Copied!");
+      setTimeout(() => setMsg(""), 1500);
+    });
+  }
+
+  const btnClass = "text-sm border px-3 py-1 rounded transition-colors";
+  const inputClass = "border rounded px-2 py-1 text-sm";
+
   return (
-    <div className="border rounded p-4">
+    <div className="rounded-xl p-5 shadow-sm" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
       <div className="flex justify-between items-start">
         <div>
           <p className="font-semibold text-lg">{wallet.name}</p>
-          <p className="text-sm text-gray-500 font-mono">{wallet.id}</p>
+          <p className="text-sm font-mono mt-0.5" style={{ color: "var(--muted-foreground)" }}>{wallet.id}</p>
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => setShowFund(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Fund</button>
-          <button onClick={() => setShowSwap(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">Swap</button>
-          <button onClick={() => setShowKey(true)} className="text-sm border px-3 py-1 rounded hover:bg-gray-100">API Key</button>
-          <button onClick={handleAnchor} disabled={anchorLoading} className="text-sm border px-3 py-1 rounded hover:bg-gray-100 disabled:opacity-50">
+        <div className="flex gap-2 flex-wrap justify-end">
+          <button onClick={() => setShowFund(true)} className={btnClass} style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}>Fund</button>
+          <button onClick={() => setShowSwap(true)} className={btnClass} style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}>Swap</button>
+          <button onClick={() => setShowKey(true)} className={btnClass} style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}>API Key</button>
+          <button onClick={handleAnchor} disabled={anchorLoading} className={`${btnClass} disabled:opacity-50`} style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}>
             {anchorLoading ? "Anchoring..." : "Anchor"}
           </button>
         </div>
       </div>
 
-      <div className="mt-3">
-        <p className="text-sm font-medium">Balances</p>
-        {balances.length === 0 && <p className="text-xs text-gray-400">No balances loaded.</p>}
-        {balances.map((b) => (
-          <p key={b.chain_id} className="text-sm">
-            {b.chain_id}: <span className="font-mono">{b.balance}</span> ({b.address})
-          </p>
-        ))}
+      <div className="mt-4">
+        <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Addresses</p>
+        {addressMap.size === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No addresses loaded.</p>}
+        <div className="mt-2 space-y-2">
+          {Array.from(addressMap.entries()).map(([chain, addr]) => (
+            <div key={chain} className="flex items-center justify-between gap-3 rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium" style={{ color: "var(--muted-foreground)" }}>{chain}</p>
+                <p className="text-sm font-mono truncate">{addr}</p>
+              </div>
+              <button onClick={() => copy(addr)} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>Copy</button>
+            </div>
+          ))}
+        </div>
       </div>
 
-      <div className="mt-3">
-        <p className="text-sm font-medium">Recent Transactions</p>
-        {txs.length === 0 && <p className="text-xs text-gray-400">No transactions.</p>}
-        <ul className="text-sm space-y-1">
+      <div className="mt-4">
+        <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Balances</p>
+        {balances.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
+        <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {balances.map((b) => (
+            <div key={b.chain_id} className="text-sm rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
+              <span className="font-medium">{b.chain_id}</span>
+              <span className="font-mono ml-2">{b.balance}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Recent Transactions</p>
+        {txs.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No transactions.</p>}
+        <ul className="text-sm space-y-1 mt-1">
           {txs.map((t) => (
-            <li key={t.id} className="flex justify-between">
+            <li key={t.id} className="flex justify-between items-center rounded-lg px-3 py-1.5" style={{ backgroundColor: "var(--muted)" }}>
               <span>{t.action}</span>
-              <span className="text-gray-500 text-xs">{t.tx_hash || t.decision}</span>
+              <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>{t.tx_hash || t.decision}</span>
             </li>
           ))}
         </ul>
       </div>
 
-      <div className="mt-3">
-        <p className="text-sm font-medium">API Keys</p>
-        {keys.length === 0 && <p className="text-xs text-gray-400">No API keys.</p>}
-        <div className="flex flex-wrap gap-2">
+      <div className="mt-4">
+        <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>API Keys</p>
+        {keys.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No API keys.</p>}
+        <div className="flex flex-wrap gap-2 mt-1">
           {keys.map((k) => (
-            <span key={k.id} className="text-xs bg-gray-100 px-2 py-1 rounded">
+            <span key={k.id} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }}>
               {k.name} {k.expired && "(revoked)"}
             </span>
           ))}
@@ -287,36 +325,36 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       </div>
 
       {showFund && (
-        <div className="mt-4 border-t pt-3">
+        <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--border)" }}>
           <div className="flex gap-2">
-            <input className="border rounded px-2 py-1 flex-1 text-sm" placeholder="To address" value={fundTo} onChange={(e) => setFundTo(e.target.value)} />
-            <input className="border rounded px-2 py-1 w-24 text-sm" value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} />
-            <button onClick={handleFund} disabled={fundLoading} className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50">{fundLoading ? "Sending..." : "Send"}</button>
+            <input className={`${inputClass} flex-1`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder="To address" value={fundTo} onChange={(e) => setFundTo(e.target.value)} />
+            <input className={`${inputClass} w-24`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} />
+            <button onClick={handleFund} disabled={fundLoading} className="px-3 py-1 rounded text-sm disabled:opacity-50" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>{fundLoading ? "Sending..." : "Send"}</button>
           </div>
         </div>
       )}
 
       {showKey && (
-        <div className="mt-4 border-t pt-3">
+        <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--border)" }}>
           <div className="flex gap-2">
-            <input className="border rounded px-2 py-1 flex-1 text-sm" placeholder="Key name" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
-            <button onClick={handleCreateKey} disabled={keyLoading} className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50">{keyLoading ? "Creating..." : "Create"}</button>
+            <input className={`${inputClass} flex-1`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder="Key name" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
+            <button onClick={handleCreateKey} disabled={keyLoading} className="px-3 py-1 rounded text-sm disabled:opacity-50" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>{keyLoading ? "Creating..." : "Create"}</button>
           </div>
         </div>
       )}
 
       {showSwap && (
-        <div className="mt-4 border-t pt-3">
+        <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--border)" }}>
           <div className="flex gap-2 flex-wrap">
-            <input className="border rounded px-2 py-1 flex-1 text-sm min-w-[8rem]" placeholder="From token" value={swapFrom} onChange={(e) => setSwapFrom(e.target.value)} />
-            <input className="border rounded px-2 py-1 flex-1 text-sm min-w-[8rem]" placeholder="To token" value={swapTo} onChange={(e) => setSwapTo(e.target.value)} />
-            <input className="border rounded px-2 py-1 w-24 text-sm" value={swapAmount} onChange={(e) => setSwapAmount(e.target.value)} />
-            <button onClick={handleSwap} disabled={swapLoading} className="bg-black text-white px-3 py-1 rounded text-sm disabled:opacity-50">{swapLoading ? "Swapping..." : "Swap"}</button>
+            <input className={`${inputClass} flex-1 min-w-[8rem]`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder="From token" value={swapFrom} onChange={(e) => setSwapFrom(e.target.value)} />
+            <input className={`${inputClass} flex-1 min-w-[8rem]`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder="To token" value={swapTo} onChange={(e) => setSwapTo(e.target.value)} />
+            <input className={`${inputClass} w-24`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} value={swapAmount} onChange={(e) => setSwapAmount(e.target.value)} />
+            <button onClick={handleSwap} disabled={swapLoading} className="px-3 py-1 rounded text-sm disabled:opacity-50" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>{swapLoading ? "Swapping..." : "Swap"}</button>
           </div>
         </div>
       )}
 
-      {msg && <p className="text-xs text-red-500 mt-2">{msg}</p>}
+      {msg && <p className="text-xs mt-2" style={{ color: "#B45309" }}>{msg}</p>}
     </div>
   );
 }
