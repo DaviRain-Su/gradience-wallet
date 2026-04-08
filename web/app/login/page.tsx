@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiPost } from "@/lib/api";
+import { loginPasskey } from "@/lib/webauthn";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [countdown, setCountdown] = useState(0);
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -85,6 +87,26 @@ export default function LoginPage() {
     }
   }
 
+  async function handlePasskeyLogin() {
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !trimmed.includes("@")) {
+      setMsg("请输入有效的邮箱地址");
+      return;
+    }
+    setPasskeyLoading(true);
+    setMsg("");
+    try {
+      const token = await loginPasskey(trimmed, trimmed);
+      localStorage.setItem("gradience_token", token);
+      router.push("/dashboard");
+    } catch (e: unknown) {
+      const text = e instanceof Error ? e.message : String(e);
+      setMsg(`Passkey login failed: ${text}`);
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-8" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       <main className="max-w-sm w-full flex flex-col gap-4">
@@ -138,6 +160,15 @@ export default function LoginPage() {
             </div>
           </>
         )}
+
+        <button
+          onClick={handlePasskeyLogin}
+          disabled={passkeyLoading || !email.trim().includes("@")}
+          className="rounded py-2 disabled:opacity-50 border"
+          style={{ backgroundColor: "var(--muted)", color: "var(--foreground)", borderColor: "var(--border)" }}
+        >
+          {passkeyLoading ? "Authenticating..." : "Login with Passkey"}
+        </button>
 
         {msg && <p className="text-center text-sm" style={{ color: "#B45309" }}>{msg}</p>}
       </main>
