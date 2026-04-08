@@ -16,10 +16,30 @@ export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("gradience_token")) {
-      router.push("/dashboard");
+    if (typeof window !== "undefined") {
+      if (localStorage.getItem("gradience_token")) {
+        router.push("/dashboard");
+      } else {
+        const savedUsername = localStorage.getItem("gradience_username");
+        if (savedUsername) {
+          tryAutoPasskeyLogin(savedUsername);
+        }
+      }
     }
   }, [router]);
+
+  async function tryAutoPasskeyLogin(username: string) {
+    setPasskeyLoading(true);
+    try {
+      const token = await loginPasskey(username, username);
+      localStorage.setItem("gradience_token", token);
+      router.push("/dashboard");
+    } catch {
+      // silent fail: let user input email manually
+    } finally {
+      setPasskeyLoading(false);
+    }
+  }
 
   async function handleSendCode() {
     const trimmed = email.trim().toLowerCase();
@@ -67,6 +87,7 @@ export default function LoginPage() {
       const data = await res.json();
       if (data.token) {
         localStorage.setItem("gradience_token", data.token);
+        localStorage.setItem("gradience_username", trimmed);
         router.push("/dashboard");
       } else {
         setMsg("登录失败，请重试");
@@ -98,6 +119,7 @@ export default function LoginPage() {
     try {
       const token = await loginPasskey(trimmed, trimmed);
       localStorage.setItem("gradience_token", token);
+      localStorage.setItem("gradience_username", trimmed);
       router.push("/dashboard");
     } catch (e: unknown) {
       const text = e instanceof Error ? e.message : String(e);

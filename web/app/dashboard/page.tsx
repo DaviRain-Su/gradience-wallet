@@ -185,6 +185,7 @@ export default function Dashboard() {
       await registerPasskey(username, bindPassphrase);
       setShowBindPasskey(false);
       setBindPassphrase("");
+      localStorage.setItem("gradience_username", username);
       setMsg("Passkey bound successfully");
     } catch (e: unknown) {
       setMsg(`Bind failed: ${e instanceof Error ? e.message : String(e)}`);
