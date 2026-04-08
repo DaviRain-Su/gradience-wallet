@@ -70,18 +70,31 @@ pub async fn balance(ctx: &AppContext, wallet_id: String, chain: Option<String>)
         let is_evm = a.chain_id.starts_with("eip155:");
         let is_match = a.chain_id.contains(&chain)
             || (chain == "base" && (a.chain_id == "eip155:8453" || (is_evm && a.chain_id == "eip155:1")))
-            || (chain == "ethereum" && a.chain_id == "eip155:1");
+            || (chain == "ethereum" && a.chain_id == "eip155:1")
+            || (chain == "solana" && a.chain_id.starts_with("solana:"));
         if is_match {
             found = true;
-            let rpc_url = if chain == "base" || a.chain_id == "eip155:8453" {
-                "https://mainnet.base.org"
+            if chain == "solana" || a.chain_id.starts_with("solana:") {
+                let rpc_url = "https://api.devnet.solana.com";
+                let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+                match client.get_balance(&a.address).await {
+                    Ok(lamports) => {
+                        let sol = gradience_core::rpc::solana::lamports_to_sol(lamports);
+                        println!("Wallet {} on {}: {} SOL ({} lamports) (address: {})", wallet_id, a.chain_id, sol, lamports, a.address);
+                    }
+                    Err(e) => println!("Failed to get balance for {}: {}", a.address, e),
+                }
             } else {
-                "https://eth.llamarpc.com"
-            };
-            let client = gradience_core::rpc::evm::EvmRpcClient::new(&a.chain_id, rpc_url)?;
-            match client.get_balance(&a.address).await {
-                Ok(bal) => println!("Wallet {} on {}: {} (address: {})", wallet_id, a.chain_id, bal, a.address),
-                Err(e) => println!("Failed to get balance for {}: {}", a.address, e),
+                let rpc_url = if chain == "base" || a.chain_id == "eip155:8453" {
+                    "https://mainnet.base.org"
+                } else {
+                    "https://eth.llamarpc.com"
+                };
+                let client = gradience_core::rpc::evm::EvmRpcClient::new(&a.chain_id, rpc_url)?;
+                match client.get_balance(&a.address).await {
+                    Ok(bal) => println!("Wallet {} on {}: {} (address: {})", wallet_id, a.chain_id, bal, a.address),
+                    Err(e) => println!("Failed to get balance for {}: {}", a.address, e),
+                }
             }
         }
     }
@@ -108,6 +121,57 @@ pub async fn fund(
         .ok_or_else(|| anyhow::anyhow!("No session found. Run 'gradience auth login' first."))?;
 
     let addrs = queries::list_wallet_addresses(&ctx.db, &wallet_id).await.unwrap_or_default();
+
+    // ------------------------------------------------------------------
+    // Solana branch
+    // ------------------------------------------------------------------
+    if chain == "solana" {
+        let mut sol_addr = None;
+        for a in &addrs {
+            if a.chain_id.starts_with("solana:") {
+                sol_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = sol_addr.ok_or_else(|| anyhow::anyhow!("No Solana address found for wallet {}", wallet_id))?;
+        let to_addr = to.unwrap_or_else(|| from_addr.clone());
+
+        let sol_amount: f64 = amount.parse()
+            .map_err(|_| anyhow::anyhow!("Invalid amount: expected SOL decimal string"))?;
+        let lamports = (sol_amount * 1_000_000_000.0) as u64;
+
+        let rpc_url = "https://api.devnet.solana.com";
+        let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+        let blockhash = client.get_latest_blockhash().await?;
+
+        let tx_bytes = gradience_core::ows::signing::build_solana_transfer_tx(
+            &from_addr,
+            &to_addr,
+            lamports,
+            &blockhash,
+        ).map_err(|e| anyhow::anyhow!("Failed to build Solana tx: {}", e))?;
+        let tx_hex = format!("0x{}", hex::encode(&tx_bytes));
+
+        let result = ows_lib::sign_and_send(
+            &wallet_id,
+            "solana",
+            &tx_hex,
+            Some(&passphrase),
+            None,
+            Some(rpc_url),
+            Some(&ctx.vault_dir),
+        ).map_err(|e| anyhow::anyhow!("OWS sign_and_send failed: {}", e))?;
+
+        println!(
+            "Sent {} SOL from {} to {} on Solana devnet. Signature: {}",
+            amount, from_addr, to_addr, result.tx_hash
+        );
+        return Ok(());
+    }
+
+    // ------------------------------------------------------------------
+    // EVM branch (original)
+    // ------------------------------------------------------------------
     let mut addr = None;
     for a in &addrs {
         if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {

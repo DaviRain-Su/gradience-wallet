@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# NOTE: This script enables GRADIENCE_DEMO_TOKEN for local demonstration only.
+# Never set this variable in a production deployment.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."

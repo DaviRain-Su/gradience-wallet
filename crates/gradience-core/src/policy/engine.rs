@@ -214,7 +214,7 @@ impl PolicyEngine {
                     }
                     Rule::SpendLimit { max, .. } => {
                         let val = crate::eth_to_wei(&ctx.transaction.value).unwrap_or(0);
-                        let limit = crate::eth_to_wei(max).unwrap_or(u128::MAX);
+                        let limit = max.parse::<u128>().unwrap_or(u128::MAX);
                         if val > limit {
                             deny_reasons.push("spend limit exceeded".into());
                         } else if val > limit / 5 * 4 {
@@ -280,6 +280,23 @@ impl PolicyEngine {
                 }
             }
         }
+
+        // Deduplicate reasons while preserving order
+        fn dedup_strings(vec: Vec<String>) -> Vec<String> {
+            let mut seen = std::collections::HashSet::new();
+            vec.into_iter()
+                .filter(|s| seen.insert(s.clone()))
+                .collect()
+        }
+        fn dedup_adjustments(vec: Vec<DynamicAdjustment>) -> Vec<DynamicAdjustment> {
+            let mut seen = std::collections::HashSet::new();
+            vec.into_iter()
+                .filter(|a| seen.insert((a.source.clone(), a.reason.clone())))
+                .collect()
+        }
+        let deny_reasons = dedup_strings(deny_reasons);
+        let warn_reasons = dedup_strings(warn_reasons);
+        let adjustments = dedup_adjustments(adjustments);
 
         if !deny_reasons.is_empty() {
             return Ok(EvalResult {

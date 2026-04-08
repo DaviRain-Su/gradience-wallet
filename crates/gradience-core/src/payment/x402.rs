@@ -107,7 +107,7 @@ impl X402Service {
 
         if payment.requirement.network.starts_with("stellar") {
             return Err(GradienceError::Validation(
-                "Stellar settlement not yet implemented (requires Stellar signer integration)".into(),
+                "Stellar settlement is on the roadmap — currently supported on EVM chains only.".into(),
             ));
         }
 

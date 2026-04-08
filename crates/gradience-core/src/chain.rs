@@ -6,8 +6,9 @@ pub fn resolve_rpc(chain_id: &str) -> &str {
         "eip155:1" | "eth" | "ethereum" | "1" => "https://eth.llamarpc.com",
         "eip155:196" | "xlayer" | "okx" | "196" => "https://rpc.xlayer.tech",
         "eip155:56" | "bsc" | "bnb" | "56" => "https://bsc-dataseed.binance.org",
-        "solana" | "sol" => "https://api.mainnet-beta.solana.com",
-        "stellar" | "xlm" => "https://horizon.stellar.org",
+        "solana:101" | "solana" | "sol" => "https://api.mainnet-beta.solana.com",
+        "solana:103" => "https://api.devnet.solana.com",
+        "stellar:pubnet" | "stellar" | "xlm" => "https://horizon.stellar.org",
         _ => "https://eth.llamarpc.com",
     }
 }

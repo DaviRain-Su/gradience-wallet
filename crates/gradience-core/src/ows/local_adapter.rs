@@ -84,11 +84,41 @@ impl OwsAdapter for LocalOwsAdapter {
 
     async fn derive_account(
         &self,
-        _vault: &VaultHandle,
+        vault: &VaultHandle,
         wallet_id: &str,
         chain: &str,
         derivation_path: &str,
     ) -> Result<AccountDescriptor> {
+        if chain.starts_with("solana:") {
+            // Use ows-lib to derive the real Solana address from the wallet mnemonic.
+            let exported = ows_lib::export_wallet(
+                wallet_id,
+                Some(&vault.passphrase),
+                Some(&self.vault_dir),
+            ).map_err(map_ows_err)?;
+
+            // Private-key wallets (JSON) cannot be re-derived via mnemonic path.
+            if exported.trim_start().starts_with('{') {
+                return Err(GradienceError::InvalidConfig(
+                    "derive_account for Solana is only supported for mnemonic wallets".into(),
+                ));
+            }
+
+            let index = derivation_path
+                .split('/')
+                .filter_map(|s| s.trim_end_matches('\'').parse::<u32>().ok())
+                .last();
+            let address = ows_lib::derive_address(&exported, chain, index)
+                .map_err(map_ows_err)?;
+
+            return Ok(AccountDescriptor {
+                account_id: format!("{}:{}", chain, address),
+                address,
+                chain_id: chain.into(),
+                derivation_path: derivation_path.into(),
+            });
+        }
+
         // Deterministic address generation for demo purposes using SHA3 hash of wallet_id + chain + path.
         // In a real production system this would derive the private key from the HD seed.
         use sha3::{Digest, Sha3_256};
@@ -101,10 +131,6 @@ impl OwsAdapter for LocalOwsAdapter {
 
         let address = if chain.starts_with("eip155:") || chain.starts_with("base:") {
             crate::ows::signing::eth_address_from_secret_key(&secret)?
-        } else if chain.starts_with("solana:") {
-            // Stub: Solana addresses are base58-encoded ed25519 pubkeys.
-            // For demo we return a deterministic fake base58 string.
-            format!("sol{}", hex::encode(&secret[..16]))
         } else {
             format!("0x{}", hex::encode(&secret[..20]))
         };
@@ -182,6 +208,16 @@ impl OwsAdapter for LocalOwsAdapter {
         signed_tx: &SignedTransaction,
         rpc_url: &str,
     ) -> Result<String> {
+        if chain.starts_with("solana:") {
+            use crate::rpc::solana::SolanaRpcClient;
+            let client = SolanaRpcClient::new(rpc_url);
+            let raw_hex = signed_tx.raw_hex.strip_prefix("0x").unwrap_or(&signed_tx.raw_hex);
+            let signed_bytes = hex::decode(raw_hex)
+                .map_err(|e| GradienceError::Validation(format!("invalid hex signed tx: {}", e)))?;
+            let sig = client.send_transaction(&signed_bytes).await?;
+            return Ok(sig);
+        }
+
         use crate::rpc::evm::EvmRpcClient;
         let client = EvmRpcClient::new(chain, rpc_url)?;
         let tx_hash = client.send_raw_transaction(&signed_tx.raw_hex).await?;

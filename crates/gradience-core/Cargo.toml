@@ -25,6 +25,8 @@ rand = "0.8"
 tokio.workspace = true
 mpp = { version = "0.9.1", features = ["tempo", "client"] }
 alloy = { version = "1.8", features = ["signer-local", "contract"] }
+bs58 = "0.5"
+base64 = "0.22"
 
 [dependencies.ows-core]
 git = "https://github.com/open-wallet-standard/core"

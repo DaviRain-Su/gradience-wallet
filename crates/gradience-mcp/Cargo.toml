@@ -29,5 +29,8 @@ reqwest.workspace = true
 ring.workspace = true
 dirs = "5"
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies.ows-lib]
 git = "https://github.com/open-wallet-standard/core"

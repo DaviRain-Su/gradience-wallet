@@ -89,3 +89,105 @@ pub fn sign_eth_transaction(
 
     Ok(signed_rlp.out().into())
 }
+
+// ========================================================================
+// Solana minimal transaction helpers (no solana-sdk dependency)
+// ========================================================================
+
+fn encode_compact_u16(value: u16) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut val = value;
+    loop {
+        let mut byte = (val & 0x7F) as u8;
+        val >>= 7;
+        if val != 0 {
+            byte |= 0x80;
+        }
+        bytes.push(byte);
+        if val == 0 {
+            break;
+        }
+    }
+    bytes
+}
+
+/// Build an unsigned Solana legacy transfer transaction envelope.
+/// The envelope format is:
+///   [compact_u16(num_signatures)] [64-byte placeholder per signature] [message]
+/// This can be fed directly to `ows_lib::sign_transaction` for Solana chains;
+/// the SolanaSigner will extract the message, sign it, and splice the signature back in.
+pub fn build_solana_transfer_tx(
+    from: &str,
+    to: &str,
+    lamports: u64,
+    recent_blockhash_b58: &str,
+) -> Result<Vec<u8>> {
+    let from_pubkey = bs58::decode(from)
+        .into_vec()
+        .map_err(|e| GradienceError::Validation(format!("invalid from address: {}", e)))?;
+    if from_pubkey.len() != 32 {
+        return Err(GradienceError::Validation("from address must be 32 bytes".into()));
+    }
+
+    let to_pubkey = bs58::decode(to)
+        .into_vec()
+        .map_err(|e| GradienceError::Validation(format!("invalid to address: {}", e)))?;
+    if to_pubkey.len() != 32 {
+        return Err(GradienceError::Validation("to address must be 32 bytes".into()));
+    }
+
+    let blockhash = bs58::decode(recent_blockhash_b58)
+        .into_vec()
+        .map_err(|e| GradienceError::Validation(format!("invalid blockhash: {}", e)))?;
+    if blockhash.len() != 32 {
+        return Err(GradienceError::Validation("blockhash must be 32 bytes".into()));
+    }
+
+    // System program ID (all zeros)
+    let system_program: [u8; 32] = [0; 32];
+
+    // Account keys: from (signer+writable), to (writable), system_program (readonly)
+    let account_keys: Vec<[u8; 32]> = vec![
+        from_pubkey.as_slice().try_into().unwrap(),
+        to_pubkey.as_slice().try_into().unwrap(),
+        system_program,
+    ];
+
+    let num_required_signatures: u8 = 1;
+    let num_readonly_signed_accounts: u8 = 0;
+    let num_readonly_unsigned_accounts: u8 = 1; // system_program
+
+    // Instruction data: Transfer discriminant (u32 LE = 2) + lamports (u64 LE)
+    let mut instruction_data = vec![0u8; 12];
+    instruction_data[0..4].copy_from_slice(&2u32.to_le_bytes());
+    instruction_data[4..12].copy_from_slice(&lamports.to_le_bytes());
+
+    // Compiled instruction for system program
+    let mut instruction = vec![];
+    instruction.push(2u8); // program_id_index = system_program
+    instruction.extend_from_slice(&encode_compact_u16(2));
+    instruction.push(0u8); // from index
+    instruction.push(1u8); // to index
+    instruction.extend_from_slice(&encode_compact_u16(instruction_data.len() as u16));
+    instruction.extend_from_slice(&instruction_data);
+
+    // Build message
+    let mut message = vec![];
+    message.push(num_required_signatures);
+    message.push(num_readonly_signed_accounts);
+    message.push(num_readonly_unsigned_accounts);
+    message.extend_from_slice(&encode_compact_u16(account_keys.len() as u16));
+    for key in &account_keys {
+        message.extend_from_slice(key);
+    }
+    message.extend_from_slice(&blockhash);
+    message.extend_from_slice(&encode_compact_u16(1)); // 1 instruction
+    message.extend_from_slice(&instruction);
+
+    // Envelope: 1 signature placeholder + message
+    let mut tx = encode_compact_u16(1);
+    tx.extend_from_slice(&[0u8; 64]);
+    tx.extend_from_slice(&message);
+
+    Ok(tx)
+}

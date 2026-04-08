@@ -32,6 +32,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         Commands::Auth { cmd } => match cmd {
             AuthCommands::Login => commands::auth::login(&ctx).await,
+            AuthCommands::LocalUnlock => commands::auth::local_unlock(&ctx).await,
             AuthCommands::Whoami => commands::auth::whoami(&ctx).await,
         },
         Commands::Agent { cmd } => match cmd {
@@ -72,11 +73,11 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Commands::Dex { cmd } => match cmd {
-            DexCommands::Quote { wallet_id, from, to, amount } => {
-                commands::dex::quote(&ctx, wallet_id, from, to, amount).await
+            DexCommands::Quote { wallet_id, from, to, amount, chain } => {
+                commands::dex::quote(&ctx, wallet_id, from, to, amount, chain).await
             }
-            DexCommands::Swap { wallet_id, from, to, amount } => {
-                commands::dex::swap(&ctx, wallet_id, from, to, amount).await
+            DexCommands::Swap { wallet_id, from, to, amount, chain } => {
+                commands::dex::swap(&ctx, wallet_id, from, to, amount, chain).await
             }
         },
         Commands::Audit { cmd } => match cmd {

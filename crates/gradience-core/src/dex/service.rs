@@ -38,11 +38,10 @@ impl DexService {
             let jup = super::jupiter::JupiterClient::new();
             let input_mint = super::jupiter::resolve_solana_mint(from);
             let output_mint = super::jupiter::resolve_solana_mint(to);
-            match jup.quote(&input_mint, &output_mint, amount, 50).await {
-                Ok(q) => {
-                    // Jupiter returns amount in output token raw units
+            let jup_amount = super::jupiter::normalize_solana_amount(from, amount);
+            match jup.quote(&input_mint, &output_mint, &jup_amount, 50).await {
+                Ok((q, _)) => {
                     let out_f = q.out_amount.parse::<f64>().unwrap_or(0.0);
-                    // priceImpactPct is a string like "0.1234"
                     let impact = format!("{}%", q.price_impact_pct);
                     return Ok(SwapQuote {
                         from_token: from.into(),
@@ -85,29 +84,46 @@ impl DexService {
         let cfg = super::uniswap::router_for_chain(chain_num);
         if let Some(quoter) = cfg.quoter {
             let amount_u = amount.parse::<u128>().unwrap_or(0);
-            let data = super::uniswap::encode_quote_exact_input_single(
-                from, to, 3000, amount_u, 0
-            )?;
-            match client.eth_call(&quoter, &format!("0x{}", hex::encode(&data)))
-                .await {
-                Ok(resp) => {
-                    let hex = resp.trim_start_matches("0x");
-                    if hex.len() >= 64 {
-                        let out = u128::from_str_radix(&hex[hex.len()-64..], 16).unwrap_or(0);
-                        return Ok(SwapQuote {
-                            from_token: from.into(),
-                            to_token: to.into(),
-                            from_amount: amount.into(),
-                            to_amount: format!("{}", out),
-                            price_impact: "0.30%".into(),
-                            provider: "uniswap-v3-quoter".into(),
-                        });
+            // Try common fee tiers and pick the best output.
+            let mut best_out: Option<u128> = None;
+            for fee in [500u32, 3000, 10000] {
+                match super::uniswap::encode_quote_exact_input_single(from, to, fee, amount_u, 0) {
+                    Ok(data) => {
+                        match client.eth_call(&quoter, &format!("0x{}", hex::encode(&data))).await {
+                            Ok(resp) => {
+                                let hex = resp.trim_start_matches("0x");
+                                if hex.len() >= 64 {
+                                    let out = u128::from_str_radix(&hex[0..64], 16).unwrap_or(0);
+                                    if out > 0 {
+                                        if best_out.map(|b| out > b).unwrap_or(true) {
+                                            best_out = Some(out);
+                                        }
+                                    }
+                                } else if hex.is_empty() || hex.starts_with("08c379a0") {
+                                    tracing::warn!("Uniswap quoter reverted for fee={}", fee);
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Uniswap eth_call failed for fee={}: {}", fee, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Uniswap encode failed for fee={}: {}", fee, e);
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("Uniswap quoter failed: {}, using estimate", e);
-                }
             }
+            if let Some(out) = best_out {
+                return Ok(SwapQuote {
+                    from_token: from.into(),
+                    to_token: to.into(),
+                    from_amount: amount.into(),
+                    to_amount: format!("{}", out),
+                    price_impact: "0.30%".into(),
+                    provider: "uniswap-v3-quoter".into(),
+                });
+            }
+            tracing::warn!("Uniswap quoter returned no valid quote for any fee tier, using estimate");
         }
 
         // 4) Heuristic estimate
@@ -137,15 +153,24 @@ impl DexService {
     ) -> Result<Transaction> {
         let slippage_pct = slippage_bps as f64 / 100.0;
 
-        // 1) Solana placeholder via Jupiter
+        // 1) Solana swap via Jupiter
         if chain_num == 101 {
             let jup = super::jupiter::JupiterClient::new();
             let input_mint = super::jupiter::resolve_solana_mint(from_token);
             let output_mint = super::jupiter::resolve_solana_mint(to_token);
-            let _quote = jup.quote(&input_mint, &output_mint, amount, slippage_bps).await?;
-            return Err(GradienceError::InvalidCredential(
-                "Solana swap execution requires Jupiter signer integration (not yet wired)".into(),
-            ));
+            let jup_amount = super::jupiter::normalize_solana_amount(from_token, amount);
+            let (_quote, quote_json) = jup.quote(&input_mint, &output_mint, &jup_amount, slippage_bps).await?;
+            let swap = jup.swap(&quote_json, from_addr).await?;
+            use base64::Engine;
+            let tx_bytes = base64::engine::general_purpose::STANDARD
+                .decode(swap.swap_transaction)
+                .map_err(|e| GradienceError::Http(format!("base64 decode failed: {}", e)))?;
+            return Ok(Transaction {
+                to: None,
+                value: "0".into(),
+                data: tx_bytes.clone(),
+                raw_hex: format!("0x{}", hex::encode(&tx_bytes)),
+            });
         }
 
         // 2) LI.FI for EVM / cross-chain

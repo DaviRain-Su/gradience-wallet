@@ -46,7 +46,7 @@ export default function LoginPage() {
   async function handleSendRecovery() {
     try {
       await apiPost("/api/auth/recover/initiate", { username });
-      setMsg("Recovery code sent (check API console output for mock email).");
+      setMsg("Recovery code sent (check the server logs for the code).");
     } catch (e: unknown) {
       setMsg(`Send failed: ${e instanceof Error ? e.message : String(e)}`);
     }

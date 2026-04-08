@@ -5,10 +5,10 @@ use std::io::Write;
 fn cmd_with_temp() -> (Command, tempfile::TempDir) {
     let temp = tempfile::tempdir().unwrap();
 
-    // Auto-login so agent commands have a session
+    // Auto-unlock local vault so agent commands have a session
     let mut login = Command::cargo_bin("gradience").unwrap();
     login.env("GRADIENCE_DATA_DIR", temp.path());
-    login.args(["auth", "login"]);
+    login.args(["auth", "local-unlock"]);
     login.write_stdin("demo-pass-12345\n");
     login.assert().success();
 
@@ -38,7 +38,7 @@ fn test_agent_create_success() {
 #[test]
 fn test_agent_create_empty_name_fails() {
     let (mut cmd, _temp) = cmd_with_temp();
-    cmd.args(["agent", "create", "--name", ""]);
+    cmd.args(["agent", "create", "--name", " "]);
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("empty"));

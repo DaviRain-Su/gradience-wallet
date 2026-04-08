@@ -11,7 +11,7 @@ pub fn router_for_chain(chain_num: u64) -> RouterConfig {
         8453 => RouterConfig {
             // Base mainnet Uniswap V3 SwapRouter02
             router: "0x2626664c2603336E57B271c5C0b26F421741e481".into(),
-            quoter: Some("0x3d4e44Eb1374040B13B768b5b1BD4a6F7B10bA7A".into()),
+            quoter: Some("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a".into()),
         },
         1 => RouterConfig {
             // Ethereum mainnet
@@ -90,8 +90,9 @@ pub fn encode_exact_input_single(
     })
 }
 
-/// Encode QuoterV2 `quoteExactInputSingle(address,address,uint24,uint256,uint160)` call.
-/// Selector: 0xcdca1753
+/// Encode QuoterV2 `quoteExactInputSingle((address,address,uint256,uint24,uint160))` call.
+/// Selector: 0xc6a5026a (keccak of the struct-tuple signature).
+/// Fields in struct order: tokenIn, tokenOut, amountIn, fee, sqrtPriceLimitX96.
 pub fn encode_quote_exact_input_single(
     token_in: &str,
     token_out: &str,
@@ -99,14 +100,15 @@ pub fn encode_quote_exact_input_single(
     amount_in: u128,
     sqrt_price_limit_x96: u128,
 ) -> Result<Vec<u8>> {
-    let selector = hex::decode("cdca1753").map_err(|e| GradienceError::Validation(format!("bad selector: {}", e)))?;
+    let selector = hex::decode("c6a5026a")
+        .map_err(|e| GradienceError::Validation(format!("bad selector: {}", e)))?;
     let token_in = parse_address(token_in)?;
     let token_out = parse_address(token_out)?;
-    let mut data = selector;
+    let mut data = selector.clone();
     data.extend(pad_address(&token_in));
     data.extend(pad_address(&token_out));
-    data.extend(pad_u24(fee));
     data.extend(pad_u256(amount_in));
+    data.extend(pad_u24(fee));
     data.extend(pad_u256(sqrt_price_limit_x96));
     Ok(data)
 }
@@ -129,7 +131,7 @@ fn pad_address(addr: &[u8; 20]) -> Vec<u8> {
 }
 
 fn pad_u24(v: u24) -> Vec<u8> {
-    let mut out = vec![0u8; 29];
+    let mut out = vec![0u8; 28];
     out.extend_from_slice(&v.to_be_bytes());
     out
 }

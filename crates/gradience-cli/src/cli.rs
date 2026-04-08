@@ -75,6 +75,8 @@ pub enum Commands {
 pub enum AuthCommands {
     /// Login to your vault (browser-based device auth)
     Login,
+    /// Unlock local vault with passphrase (non-interactive device)
+    LocalUnlock,
     /// Show current authentication status
     Whoami,
 }
@@ -158,6 +160,8 @@ pub enum DexCommands {
         to: String,
         #[arg(long)]
         amount: String,
+        #[arg(long)]
+        chain: Option<String>,
     },
     /// Execute swap
     Swap {
@@ -168,6 +172,8 @@ pub enum DexCommands {
         to: String,
         #[arg(long)]
         amount: String,
+        #[arg(long)]
+        chain: Option<String>,
     },
 }
 

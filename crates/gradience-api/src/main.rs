@@ -398,10 +398,10 @@ async fn recover_initiate(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    // Mock email delivery: log to console
-    info!("[MOCK EMAIL] To: {} | Recovery code: {}", email, code);
+    // Local-only recovery code delivery (production would use an email/SMS provider)
+    info!("[RECOVERY] To: {} | Recovery code: {}", email, code);
 
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({"sent": true, "mock": true}))))
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({"sent": true, "local": true}))))
 }
 
 #[derive(Deserialize)]
@@ -892,7 +892,14 @@ async fn wallet_fund(
             break;
         }
     }
-    let from_addr = from_addr.ok_or(StatusCode::NOT_FOUND)?;
+    let from_addr = match from_addr {
+        Some(addr) => addr,
+        None => {
+            return Ok((StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({
+                "error": "Solana/Stellar transaction signing is on the roadmap — please use an EVM chain (Base, Ethereum, BNB) for live transactions."
+            }))));
+        }
+    };
 
     let wei = gradience_core::eth_to_wei(&body.amount)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -1014,7 +1021,14 @@ async fn wallet_sign(
             break;
         }
     }
-    let from_addr = addr.ok_or(StatusCode::NOT_FOUND)?;
+    let from_addr = match addr {
+        Some(a) => a,
+        None => {
+            return Ok((StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({
+                "error": "Solana/Stellar transaction signing is on the roadmap — please use an EVM chain (Base, Ethereum, BNB) for live transactions."
+            }))));
+        }
+    };
 
     let wei = gradience_core::eth_to_wei(&body.amount)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -1165,7 +1179,14 @@ async fn wallet_swap(
             break;
         }
     }
-    let from_addr = addr.ok_or(StatusCode::NOT_FOUND)?;
+    let from_addr = match addr {
+        Some(a) => a,
+        None => {
+            return Ok((StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({
+                "error": "Solana/Stellar transaction signing is on the roadmap — please use an EVM chain (Base, Ethereum, BNB) for live transactions."
+            }))));
+        }
+    };
 
     let chain_num = gradience_core::chain::evm_chain_num(&body.chain);
     let rpc_url = gradience_core::chain::resolve_rpc(&body.chain);
@@ -2380,8 +2401,10 @@ async fn main() -> anyhow::Result<()> {
     info!("CORS                : allow_any=true");
     info!("============================================================");
 
-    // Pre-seed a demo session for full-demo.sh when GRADIENCE_DEMO_TOKEN is set
+    // SECURITY NOTE: GRADIENCE_DEMO_TOKEN is for local demonstration only.
+    // It injects a hardcoded session into memory and must NEVER be enabled in production.
     if let Ok(demo_token) = std::env::var("GRADIENCE_DEMO_TOKEN") {
+        warn!("DEMO MODE ENABLED — do not deploy with GRADIENCE_DEMO_TOKEN in production");
         let demo_pass = std::env::var("GRADIENCE_DEMO_PASSPHRASE")
             .unwrap_or_else(|_| "demo-passphrase-123".into());
         let mut sessions = state.sessions.lock().await;

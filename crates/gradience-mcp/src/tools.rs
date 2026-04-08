@@ -72,6 +72,8 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         raw_hex: data_hex.into(),
     };
 
+    let is_solana = chain_id.starts_with("solana:");
+
     let (policies, nonce, gas_price) = block_on_async(async {
         let data_dir = std::env::var("GRADIENCE_DATA_DIR")
             .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
@@ -88,6 +90,10 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         let wm = gradience_core::wallet::service::WalletManagerService::new();
         if let Err(e) = wm.require_status_active(&db, wallet_id).await {
             return anyhow::Result::<_>::Err(anyhow::anyhow!("wallet status check failed: {}", e));
+        }
+
+        if is_solana {
+            return anyhow::Result::Ok((policies, 0u64, 0u128));
         }
 
         let rpc_url = resolve_rpc(chain_id);
@@ -134,9 +140,33 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         Decision::Allow => {
             let (passphrase, vault_dir) = get_vault_config()?;
 
-            let chain_num = gradience_core::chain::evm_chain_num(chain_id);
-            let value_raw: u128 = value.parse().unwrap_or(0);
-            let tx_hex = build_unsigned_tx(nonce, gas_price, to, value_raw, &data, chain_num);
+            let tx_hex = if is_solana {
+                let tx_bytes: Vec<u8> = block_on_async(async {
+                    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+                        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+                    let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+                    let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+                        .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
+                    let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+                        .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
+                    let from = addrs.iter()
+                        .find(|a| a.chain_id.starts_with("solana:"))
+                        .map(|a| a.address.clone())
+                        .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
+                    let rpc_url = resolve_rpc(chain_id);
+                    let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+                    let blockhash = client.get_latest_blockhash().await
+                        .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
+                    let lamports: u64 = value.parse().unwrap_or(0);
+                    gradience_core::ows::signing::build_solana_transfer_tx(&from, to, lamports, &blockhash)
+                        .map_err(|e| anyhow::anyhow!("build solana tx failed: {}", e))
+                })?;
+                format!("0x{}", hex::encode(&tx_bytes))
+            } else {
+                let chain_num = gradience_core::chain::evm_chain_num(chain_id);
+                let value_raw: u128 = value.parse().unwrap_or(0);
+                build_unsigned_tx(nonce, gas_price, to, value_raw, &data, chain_num)
+            };
 
             let sign_result = ows_lib::sign_transaction(
                 wallet_id,
@@ -477,8 +507,7 @@ pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Resul
     let data = hex::decode(data_hex.trim_start_matches("0x")).unwrap_or_default();
 
     let (passphrase, vault_dir) = get_vault_config()?;
-    let chain_num = gradience_core::chain::evm_chain_num(chain_id);
-    let value_raw: u128 = value.parse().unwrap_or(0);
+    let is_solana = chain_id.starts_with("solana:");
 
     let result = block_on_async(async {
         let data_dir = std::env::var("GRADIENCE_DATA_DIR")
@@ -489,26 +518,41 @@ pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Resul
             Err(_) => return anyhow::Result::<_>::Err(anyhow::anyhow!("db connect failed")),
         };
         let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
-        let mut from_addr = None;
-        for a in &addrs {
-            if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
-                from_addr = Some(a.address.clone());
-                break;
-            }
-        }
-        let addr = from_addr.ok_or_else(|| anyhow::anyhow!("wallet address not found"))?;
 
         let rpc_url = resolve_rpc(chain_id);
-        let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
-            .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
-        let nonce = client.get_transaction_count(&addr).await
-            .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
-        let gp_hex = client.get_gas_price().await
-            .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
-        let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
-            .map_err(|_| anyhow::anyhow!("bad gas price"))?;
-
-        let tx_hex = build_unsigned_tx(nonce, gas_price, to, value_raw, &data, chain_num);
+        let tx_hex = if is_solana {
+            let from = addrs.iter()
+                .find(|a| a.chain_id.starts_with("solana:"))
+                .map(|a| a.address.clone())
+                .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
+            let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+            let blockhash = client.get_latest_blockhash().await
+                .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
+            let lamports: u64 = value.parse().unwrap_or(0);
+            let tx_bytes = gradience_core::ows::signing::build_solana_transfer_tx(&from, to, lamports, &blockhash)
+                .map_err(|e| anyhow::anyhow!("build solana tx failed: {}", e))?;
+            format!("0x{}", hex::encode(&tx_bytes))
+        } else {
+            let chain_num = gradience_core::chain::evm_chain_num(chain_id);
+            let value_raw: u128 = value.parse().unwrap_or(0);
+            let mut from_addr = None;
+            for a in &addrs {
+                if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+                    from_addr = Some(a.address.clone());
+                    break;
+                }
+            }
+            let addr = from_addr.ok_or_else(|| anyhow::anyhow!("wallet address not found"))?;
+            let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+                .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
+            let nonce = client.get_transaction_count(&addr).await
+                .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
+            let gp_hex = client.get_gas_price().await
+                .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
+            let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
+                .map_err(|_| anyhow::anyhow!("bad gas price"))?;
+            build_unsigned_tx(nonce, gas_price, to, value_raw, &data, chain_num)
+        };
 
         let res = ows_lib::sign_and_send(
             wallet_id,

@@ -35,6 +35,11 @@ fn test_mcp_tools_list() {
 
 #[test]
 fn test_mcp_sign_tx_success() {
+    // Use a temp directory so the test is isolated from any existing ~/.gradience session
+    let temp = tempfile::tempdir().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    std::env::set_var("GRADIENCE_DATA_DIR", &data_dir);
+
     let req = make_request("tools/call", json!({
         "name": "sign_transaction",
         "arguments": {
@@ -49,9 +54,6 @@ fn test_mcp_sign_tx_success() {
     }));
     let resp = handle_request(req).unwrap();
     // Without a real session file and vault, we expect an error after policy allows
-    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience"));
     if !data_dir.join(".session").exists() {
         assert!(resp.error.is_some(), "expected error when no session file exists");
         return;
@@ -82,6 +84,11 @@ fn test_mcp_sign_tx_missing_wallet_id() {
 
 #[test]
 fn test_mcp_get_balance() {
+    // Use a temp directory so the test is isolated from any existing ~/.gradience session
+    let temp = tempfile::tempdir().unwrap();
+    let data_dir = temp.path().to_path_buf();
+    std::env::set_var("GRADIENCE_DATA_DIR", &data_dir);
+
     let req = make_request("tools/call", json!({
         "name": "get_balance",
         "arguments": {
@@ -90,9 +97,6 @@ fn test_mcp_get_balance() {
         }
     }));
     let resp = handle_request(req).unwrap();
-    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience"));
     if !data_dir.join(".session").exists() {
         assert!(resp.error.is_some() || resp.result.is_some());
         return;
