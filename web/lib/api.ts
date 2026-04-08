@@ -26,6 +26,13 @@ function getToken(): string | null {
   return localStorage.getItem("gradience_token");
 }
 
+function handleAuthError(res: Response) {
+  if (res.status === 401 && typeof window !== "undefined") {
+    localStorage.removeItem("gradience_token");
+    window.location.href = "/login";
+  }
+}
+
 export async function apiPost(path: string, body: unknown) {
   const token = getToken();
   const base = getApiBase();
@@ -38,6 +45,7 @@ export async function apiPost(path: string, body: unknown) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
+    handleAuthError(res);
     const text = await res.text().catch(() => "Unknown error");
     throw new Error(text || `HTTP ${res.status}`);
   }
@@ -55,6 +63,7 @@ export async function apiGet(path: string) {
     },
   });
   if (!res.ok) {
+    handleAuthError(res);
     const text = await res.text().catch(() => "Unknown error");
     throw new Error(text || `HTTP ${res.status}`);
   }

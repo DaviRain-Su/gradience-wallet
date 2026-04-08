@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiPost } from "@/lib/api";
 
@@ -12,6 +12,12 @@ export default function LoginPage() {
   const [msg, setMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("gradience_token")) {
+      router.push("/dashboard");
+    }
+  }, [router]);
 
   async function handleSendCode() {
     const trimmed = email.trim().toLowerCase();
