@@ -1,14 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, apiDelete } from "@/lib/api";
 import { formatChainName } from "@/lib/chains";
-import type { Wallet, Address, Portfolio, Tx, ApiKey, Policy } from "../types";
+import type { Wallet, Address, Portfolio, ApiKey, Policy } from "../types";
 
 export default function WalletCard({ wallet }: { wallet: Wallet }) {
   const [portfolio, setPortfolio] = useState<Portfolio[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
-  const [txs, setTxs] = useState<Tx[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [newApiKeyToken, setNewApiKeyToken] = useState<string | null>(null);
@@ -31,14 +30,12 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
     Promise.all([
       apiGet(`/api/wallets/${wallet.id}/portfolio`).then((r) => r.json()),
       apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json()),
-      apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json()),
       apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json()),
       apiGet(`/api/wallets/${wallet.id}/policies`).then((r) => r.json()),
     ])
-      .then(([p, a, t, k, po]) => {
+      .then(([p, a, k, po]) => {
         setPortfolio(p);
         setAddresses(a);
-        setTxs(t);
         setKeys(k);
         setPolicies(po);
       })
@@ -58,8 +55,6 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
       setShowFund(false);
       const p = await apiGet(`/api/wallets/${wallet.id}/portfolio`).then((r) => r.json());
       setPortfolio(p);
-      const t = await apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json());
-      setTxs(t);
     } catch (e: unknown) {
       setMsg(`Fund failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -84,6 +79,18 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
     }
   }
 
+  async function handleDeleteKey(keyId: string) {
+    if (!confirm("Revoke this API key?")) return;
+    try {
+      await apiDelete(`/api/wallets/${wallet.id}/api-keys/${keyId}`);
+      setMsg("API key revoked");
+      const k = await apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json());
+      setKeys(k);
+    } catch (e: unknown) {
+      setMsg(`Revoke failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   async function handleAnchor() {
     setAnchorLoading(true);
     try {
@@ -94,8 +101,6 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
       } else {
         setMsg(data.message || "No unanchored logs");
       }
-      const t = await apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json());
-      setTxs(t);
     } catch (e: unknown) {
       setMsg(`Anchor failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -116,6 +121,30 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
     if (chainId.startsWith("cosmos:")) return "ATOM";
     if (chainId.startsWith("filecoin:")) return "FIL";
     if (chainId.startsWith("xrpl:") || chainId.startsWith("xrp:")) return "XRP";
+    if (chainId.startsWith("sui:")) return "SUI";
+    if (chainId.startsWith("tron:") || chainId.startsWith("trc20:")) return "TRX";
+    if (chainId.startsWith("stellar:")) return "XLM";
+    if (chainId.startsWith("btc:")) return "BTC";
+    if (chainId.startsWith("doge:")) return "DOGE";
+    if (chainId.startsWith("aptos:")) return "APT";
+    if (chainId.startsWith("near:")) return "NEAR";
+    if (chainId.startsWith("algorand:")) return "ALGO";
+    if (chainId.startsWith("cardano:")) return "ADA";
+    if (chainId.startsWith("polkadot:")) return "DOT";
+    if (chainId.startsWith("kusama:")) return "KSM";
+    if (chainId.startsWith("tezos:")) return "XTZ";
+    if (chainId.startsWith("hedera:")) return "HBAR";
+    if (chainId.startsWith("icp:")) return "ICP";
+    // Specific EVM overrides
+    if (chainId === "eip155:56" || chainId === "eip155:97") return "BNB";
+    if (chainId === "eip155:137" || chainId === "eip155:80001" || chainId === "eip155:80002") return "POL";
+    if (chainId === "eip155:43114" || chainId === "eip155:43113") return "AVAX";
+    if (chainId === "eip155:250" || chainId === "eip155:4002") return "FTM";
+    if (chainId === "eip155:1284") return "GLMR";
+    if (chainId === "eip155:1285") return "MOVR";
+    if (chainId === "eip155:2020" || chainId === "eip155:2021") return "RON";
+    if (chainId === "eip155:42220" || chainId === "eip155:44787") return "CELO";
+    if (chainId === "eip155:100" || chainId === "eip155:10200") return "xDAI";
     return "ETH";
   }
 
@@ -126,6 +155,20 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
     if (chainId.startsWith("cosmos:")) return 1e6;
     if (chainId.startsWith("filecoin:")) return 1e18;
     if (chainId.startsWith("xrpl:") || chainId.startsWith("xrp:")) return 1e6;
+    if (chainId.startsWith("sui:")) return 1e9;
+    if (chainId.startsWith("tron:") || chainId.startsWith("trc20:")) return 1e6;
+    if (chainId.startsWith("stellar:")) return 1e7;
+    if (chainId.startsWith("btc:")) return 1e8;
+    if (chainId.startsWith("doge:")) return 1e8;
+    if (chainId.startsWith("aptos:")) return 1e8;
+    if (chainId.startsWith("near:")) return 1e24;
+    if (chainId.startsWith("algorand:")) return 1e6;
+    if (chainId.startsWith("cardano:")) return 1e6;
+    if (chainId.startsWith("polkadot:")) return 1e10;
+    if (chainId.startsWith("kusama:")) return 1e12;
+    if (chainId.startsWith("tezos:")) return 1e6;
+    if (chainId.startsWith("hedera:")) return 1e8;
+    if (chainId.startsWith("icp:")) return 1e8;
     return 1e18;
   }
 
@@ -258,19 +301,6 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
       </div>
 
       <div className="mt-4">
-        <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Recent Transactions</p>
-        {!loading && txs.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No transactions.</p>}
-        <ul className="text-sm space-y-1 mt-1">
-          {txs.map((t) => (
-            <li key={t.id} className="flex justify-between items-center rounded-lg px-3 py-1.5" style={{ backgroundColor: "var(--muted)" }}>
-              <span>{t.action}</span>
-              <span className="text-xs" style={{ color: "var(--muted-foreground)" }}>{t.tx_hash || t.decision}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>API Keys</p>
 
         {newApiKeyToken && (
@@ -287,8 +317,11 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
         {!loading && keys.length === 0 && !newApiKeyToken && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No API keys.</p>}
         <div className="flex flex-wrap gap-2 mt-2">
           {keys.map((k) => (
-            <span key={k.id} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }}>
+            <span key={k.id} className="text-xs px-2 py-1 rounded inline-flex items-center gap-2" style={{ backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }}>
               {k.name} {k.expired && "(revoked)"}
+              {!k.expired && (
+                <button onClick={() => handleDeleteKey(k.id)} className="text-[10px] underline" style={{ color: "var(--primary)" }}>Revoke</button>
+              )}
             </span>
           ))}
         </div>

@@ -938,12 +938,14 @@ pub async fn wallet_portfolio(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let mut result = Vec::new();
-    let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", "https://mainnet.base.org")
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let svc = gradience_core::portfolio::discovery::TokenDiscoveryService::new();
+    let http = reqwest::Client::new();
 
     for a in addrs {
         if a.chain_id.starts_with("eip155:") {
+            let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
+            let client = gradience_core::rpc::evm::EvmRpcClient::new(&a.chain_id, rpc_url)
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             let native = client.get_balance(&a.address).await.unwrap_or_default();
             let assets = svc.discover(&a.chain_id, &a.address).await.unwrap_or_default();
             result.push(PortfolioResp {
@@ -953,20 +955,81 @@ pub async fn wallet_portfolio(
                 assets,
             });
         } else if a.chain_id.starts_with("solana:") {
-            let sol_client = gradience_core::rpc::solana::SolanaRpcClient::new("https://api.devnet.solana.com");
+            let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
+            let sol_client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
             let lamports = sol_client.get_balance(&a.address).await.unwrap_or(0);
             let native_balance = format!("0x{:x}", lamports);
+            let mut assets = vec![];
+            let spl_body = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getTokenAccountsByOwner",
+                "params": [
+                    a.address,
+                    {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},
+                    {"encoding": "jsonParsed"}
+                ],
+            });
+            if let Ok(spl_resp) = http.post(rpc_url).json(&spl_body).send().await {
+                if let Ok(spl_json) = spl_resp.json::<serde_json::Value>().await {
+                    if let Some(arr) = spl_json["result"]["value"].as_array() {
+                        for item in arr {
+                            let info = item["account"]["data"]["parsed"]["info"].clone();
+                            if let (Some(mint), Some(amount), Some(decimals)) = (
+                                info["mint"].as_str(),
+                                info["tokenAmount"]["uiAmountString"].as_str(),
+                                info["tokenAmount"]["decimals"].as_u64(),
+                            ) {
+                                assets.push(gradience_core::portfolio::discovery::TokenAsset {
+                                    chain_id: a.chain_id.clone(),
+                                    address: a.address.clone(),
+                                    token_address: mint.into(),
+                                    symbol: format!("{}...", &mint[..8.min(mint.len())]),
+                                    name: "SPL Token".into(),
+                                    decimals: decimals as u8,
+                                    balance: "0".into(),
+                                    balance_formatted: amount.into(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
                 native_balance,
-                assets: vec![],
+                assets,
             });
         } else if a.chain_id.starts_with("ton:") {
             let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
             let ton_client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
             let nanoton = ton_client.get_balance(&a.address).await.unwrap_or(0);
             let native_balance = format!("0x{:x}", nanoton);
+            result.push(PortfolioResp {
+                chain_id: a.chain_id,
+                address: a.address,
+                native_balance,
+                assets: vec![],
+            });
+        } else if a.chain_id.starts_with("sui:") {
+            let native_balance = sui_balance(&http, &a.address).await.unwrap_or_else(|_| "0x0".into());
+            result.push(PortfolioResp {
+                chain_id: a.chain_id,
+                address: a.address,
+                native_balance,
+                assets: vec![],
+            });
+        } else if a.chain_id.starts_with("tron:") || a.chain_id.starts_with("trc20:") {
+            let native_balance = tron_balance(&http, &a.address).await.unwrap_or_else(|_| "0x0".into());
+            result.push(PortfolioResp {
+                chain_id: a.chain_id,
+                address: a.address,
+                native_balance,
+                assets: vec![],
+            });
+        } else if a.chain_id.starts_with("filecoin:") {
+            let native_balance = filecoin_balance(&http, &a.address).await.unwrap_or_else(|_| "0x0".into());
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
@@ -984,6 +1047,55 @@ pub async fn wallet_portfolio(
     }
 
     Ok(Json(result))
+}
+
+async fn sui_balance(client: &reqwest::Client, address: &str) -> anyhow::Result<String> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "suix_getBalance",
+        "params": [address, "0x2::sui::SUI"],
+    });
+    let resp: serde_json::Value = client
+        .post("https://fullnode.mainnet.sui.io/")
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    let bal = resp["result"]["totalBalance"].as_str().unwrap_or("0");
+    let val = bal.parse::<u64>().unwrap_or(0);
+    Ok(format!("0x{:x}", val))
+}
+
+async fn tron_balance(client: &reqwest::Client, address: &str) -> anyhow::Result<String> {
+    let resp: serde_json::Value = client
+        .get(format!("https://api.trongrid.io/v1/accounts/{}", address))
+        .send()
+        .await?
+        .json()
+        .await?;
+    let bal = resp["data"][0]["balance"].as_u64().unwrap_or(0);
+    Ok(format!("0x{:x}", bal))
+}
+
+async fn filecoin_balance(client: &reqwest::Client, address: &str) -> anyhow::Result<String> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "Filecoin.WalletBalance",
+        "params": [address],
+    });
+    let resp: serde_json::Value = client
+        .post("https://api.node.glif.io/rpc/v1")
+        .json(&body)
+        .send()
+        .await?
+        .json()
+        .await?;
+    let bal = resp["result"].as_str().unwrap_or("0");
+    let val = bal.parse::<u128>().unwrap_or(0);
+    Ok(format!("0x{:x}", val))
 }
 
 #[derive(Deserialize)]
