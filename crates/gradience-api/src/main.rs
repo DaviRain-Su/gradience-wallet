@@ -1,4 +1,4 @@
-use axum::{routing::{get, post}, Router};
+use axum::{routing::{delete, get, post}, Router};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -89,6 +89,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/passkey/login/finish", post(handlers::login_finish))
         .route("/api/auth/unlock", post(handlers::unlock))
         .route("/api/auth/me", get(handlers::auth_me))
+        .route("/api/auth/me/sessions", get(handlers::list_sessions))
+        .route("/api/auth/sessions", delete(handlers::revoke_session))
         .route("/api/auth/logout", post(handlers::logout))
         .route("/api/auth/recover/initiate", post(handlers::recover_initiate))
         .route("/api/auth/recover/verify", post(handlers::recover_verify))
@@ -111,6 +113,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/audit/verify", post(handlers::verify_audit_proof))
         .route("/api/wallets/:id/anchor", post(handlers::wallet_anchor))
         .route("/api/wallets/:id/api-keys", get(handlers::list_api_keys).post(handlers::create_api_key))
+        .route("/api/wallets/:id/api-keys/:key_id", delete(handlers::revoke_api_key))
         .route("/api/wallets/:id/policies", get(handlers::list_wallet_policies).post(handlers::create_policy))
         .route("/api/wallets/:id/payment-routes", get(handlers::list_payment_routes).post(handlers::set_payment_routes))
         .route("/api/swap/quote", post(handlers::swap_quote))

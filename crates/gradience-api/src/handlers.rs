@@ -2019,6 +2019,81 @@ pub async fn list_api_keys(
     Ok((StatusCode::OK, axum::Json(keys)))
 }
 
+pub async fn revoke_api_key(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path((wallet_id, key_id)): Path<(String, String)>,
+) -> Result<StatusCode, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
+
+    gradience_db::queries::revoke_api_key(&state.db, &key_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let _ = gradience_core::audit::service::log_wallet_action(
+        &state.db, &wallet_id, None, "revoke_api_key", &serde_json::json!({"key_id": key_id}).to_string(), "allowed",
+    ).await;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ==================== Session / Security Handlers ====================
+
+#[derive(Serialize)]
+struct SessionRow {
+    token: String,
+    username: String,
+    created_at: String,
+    expires_at: String,
+    current: bool,
+}
+
+pub async fn list_sessions(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let rows = gradience_db::queries::list_sessions_by_user(&state.db, &session.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let sessions: Vec<SessionRow> = rows.into_iter().map(|(t, u, c, e)| SessionRow {
+        token: t.clone(),
+        username: u,
+        created_at: c.to_rfc3339(),
+        expires_at: e.to_rfc3339(),
+        current: t == token,
+    }).collect();
+    Ok((StatusCode::OK, axum::Json(sessions)))
+}
+
+#[derive(Deserialize)]
+pub struct RevokeSessionReq {
+    token: String,
+}
+
+pub async fn revoke_session(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<RevokeSessionReq>,
+) -> Result<StatusCode, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let user_sessions = gradience_db::queries::list_sessions_by_user(&state.db, &session.user_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    if user_sessions.iter().any(|(t, _, _, _)| t == &body.token) {
+        gradience_db::queries::delete_session_by_token(&state.db, &body.token)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(StatusCode::NOT_FOUND)
+    }
+}
+
 // ==================== Policy Handlers ====================
 
 #[derive(Deserialize)]

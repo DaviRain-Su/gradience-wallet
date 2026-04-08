@@ -969,3 +969,30 @@ pub async fn reset_email_send_limit(pool: &Pool<Sqlite>, email: &str) -> Result<
     .await?;
     Ok(())
 }
+
+pub async fn list_sessions_by_user(
+    pool: &Pool<Sqlite>,
+    user_id: &str,
+) -> Result<Vec<(String, String, DateTime<Utc>, DateTime<Utc>)>> {
+    let rows = sqlx::query(
+        "SELECT token, username, created_at, expires_at FROM sessions WHERE user_id = ? AND expires_at > datetime('now') ORDER BY created_at DESC"
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows.into_iter().map(|r| {
+        (
+            r.get::<String, _>("token"),
+            r.get::<String, _>("username"),
+            r.get::<DateTime<Utc>, _>("created_at"),
+            r.get::<DateTime<Utc>, _>("expires_at"),
+        )
+    }).collect())
+}
+
+pub async fn delete_session_by_token(pool: &Pool<Sqlite>, token: &str) -> Result<u64> {
+    let res = sqlx::query!("DELETE FROM sessions WHERE token = ?", token)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected())
+}

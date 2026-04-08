@@ -69,3 +69,22 @@ export async function apiGet(path: string) {
   }
   return res;
 }
+
+export async function apiDelete(path: string, body?: unknown) {
+  const token = getToken();
+  const base = getApiBase();
+  const res = await fetch(`${base}${path}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (!res.ok) {
+    handleAuthError(res);
+    const text = await res.text().catch(() => "Unknown error");
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res;
+}
