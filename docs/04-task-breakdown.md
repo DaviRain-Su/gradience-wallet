@@ -206,37 +206,82 @@
 
 ---
 
-## Sprint 4: AI Gateway (Day 5)
+## Sprint 4: MPP Migration + AI Gateway (Day 5-7)
 
-### T4.1 — AI Gateway 最小实现
-**优先级**: P1  
+> 设计决策: 废弃自研 x402 栈，全面迁移到官方 MPP 生态 (`mpp-rs` / `mppx`)。
+> 详细方案见 `docs/spec-mpp-migration.md`。
+
+### T4.1 — 清理 legacy x402 债务
+**优先级**: P0  
 **预估**: 4h  
-**依赖**: T1.3
+**依赖**: 无
 
 **内容**:
-- `ai_balances` 表读写
-- `llm_generate` 预扣费逻辑
-- Anthropic Provider 适配器 (裸 HTTP client)
+- 删除 `gradience-core/src/payment/x402.rs`, `base_x402.rs`, `stellar_x402.rs`, `mpp_session.rs`
+- 简化 `protocol.rs` 移除 `PaymentProtocol::X402`
+- 改写 CLI `commands/pay.rs` 和 MCP `tools.rs` 为 MPP 路由
+- 更新/删除 `payment_tests.rs`
+- 清理外部 Node bridges `bridge/base-x402/` 和 `bridge/stellar-x402/`
 
 **验收标准**:
-- 测试: topup 100 USDC → balance 查询返回 100 USDC
-- 测试: 调用 `llm_generate` 后 balance 按实际 token 扣减
-- 测试: balance < cost 时返回 `InsufficientBalance`
+- `cargo check --workspace` 通过且无任何 x402 引用
+- `gradience pay` 命令使用 `MppClient` 完成支付
 
 ---
 
-### T4.2 — MCP AI Tools
-**优先级**: P1  
-**预估**: 2h  
-**依赖**: T4.1, T2.2
+### T4.2 — 扩展 `GradienceMppProvider` 多链支持
+**优先级**: P0  
+**预估**: 6h  
+**依赖**: T4.1
 
 **内容**:
-- MCP tool: `llm_generate`
-- MCP tool: `ai_balance`
-- 策略规则: `max_daily_cost_usdc`, `model_whitelist`
+- 在 `mpp_client.rs` 新增 EVM `charge` provider (Alloy signer + ERC20 transfer)
+- 新增 Solana `charge` provider (SPL transfer via `solana-sdk` / `solana-mpp`)
+- 接入 `PaymentRouter` 实现自动选链
+- 保留 `tempo` 和 `gradience(session)` 作为 fallback
 
 **验收标准**:
-- Agent 通过 MCP 调用 `llm_generate` → Gateway 计费 → 返回结果
+- `GradienceMppProvider::supports("evm", "charge")` 返回 true
+- `GradienceMppProvider::supports("solana", "charge")` 返回 true
+- 单元测试: mock 402 challenge → EVM signer 构建 transfer tx → credential 生成成功
+
+---
+
+### T4.3 — Gateway AI + Frontend MPP 集成
+**优先级**: P1  
+**预估**: 6h  
+**依赖**: T4.2
+
+**内容**:
+- 后端新增 `POST /api/ai/mpp-generate` Gateway:
+  - 使用 `MppClient` 自动处理 402
+  - 支持 provider: `anthropic.mpp.tempo.xyz`, `openai.mpp.tempo.xyz`
+  - 链偏好: `auto` | `tempo` | `base` | `solana`
+- 前端 `/ai` 页面重建为 MPP AI Gateway:
+  - Provider 选择器
+  - Chain 选择器 (auto / specific)
+  - Prompt 输入 → 调用 Gateway → 展示结果
+- 安装 `mppx@^0.4.11` 并封装 `web/lib/mpp.ts` (供未来 direct-client 模式使用)
+
+**验收标准**:
+- 前端能成功发起一次 MPP  backed AI 调用且返回生成内容
+- 浏览器 Network 面板可见 Gateway 和下游 MPP provider 的完整 402 协商 (或 Gateway 内部协商)
+- `npm run build` 通过
+
+---
+
+### T4.4 — MCP AI Tools (MPP 版)
+**优先级**: P1  
+**预估**: 3h  
+**依赖**: T4.2, T2.2
+
+**内容**:
+- MCP tool: `ai_generate` 改用 `MppClient` 路由
+- MCP tool: `ai_balance` 移除预充值概念，改为查询 wallet 链上余额/MPP session 余额
+- 策略规则: `max_daily_cost_usdc`, `model_whitelist`, `mpp_method_whitelist`
+
+**验收标准**:
+- Agent 通过 MCP 调用 `ai_generate` → Gateway 使用 MPP 付费 → 返回结果
 - 超出 daily limit → Gateway 拦截，返回 policy denied
 
 ---
