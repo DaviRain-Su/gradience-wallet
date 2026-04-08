@@ -26,6 +26,7 @@ rlp.workspace = true
 chrono.workspace = true
 reqwest.workspace = true
 rand = "0.8"
+ring = "0.17"
 
 gradience-core = { path = "../gradience-core" }
 gradience-db = { path = "../gradience-db" }

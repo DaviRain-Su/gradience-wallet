@@ -1,50 +1,64 @@
 "use client";
 
-import { useState } from "react";
-import { MppProvider, mppGenerate } from "@/lib/mpp";
+import { useEffect, useState } from "react";
+import {
+  AiProxyKey,
+  createAiProxyKey,
+  deleteAiProxyKey,
+  listAiProxyKeys,
+} from "@/lib/mpp";
+import { apiGet } from "@/lib/api";
 
-const PROVIDERS: { key: MppProvider; label: string; defaultModel: string }[] = [
-  { key: "anthropic", label: "Anthropic", defaultModel: "claude-3-5-sonnet" },
-  { key: "openai", label: "OpenAI", defaultModel: "gpt-4o" },
-  { key: "openrouter", label: "OpenRouter", defaultModel: "openai/gpt-4o" },
-  { key: "gemini", label: "Gemini", defaultModel: "gemini-1.5-pro" },
-  { key: "groq", label: "Groq", defaultModel: "llama-3.3-70b" },
-  { key: "mistral", label: "Mistral", defaultModel: "mistral-large" },
-  { key: "deepseek", label: "DeepSeek", defaultModel: "deepseek-v3" },
-];
+interface Wallet {
+  id: string;
+  name: string;
+}
 
 export default function AiGateway() {
-  const [provider, setProvider] = useState<MppProvider>("anthropic");
-  const [model, setModel] = useState("claude-3-5-sonnet");
-  const [prompt, setPrompt] = useState("");
+  const [wallets, setWallets] = useState<Wallet[]>([]);
   const [walletId, setWalletId] = useState("");
+  const [keys, setKeys] = useState<AiProxyKey[]>([]);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [newKeyName, setNewKeyName] = useState("");
+  const [createdToken, setCreatedToken] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const handleProviderChange = (key: MppProvider) => {
-    setProvider(key);
-    const p = PROVIDERS.find((x) => x.key === key);
-    if (p) setModel(p.defaultModel);
-  };
+  useEffect(() => {
+    apiGet("/api/wallets")
+      .then(async (res) => {
+        if (res.ok) {
+          const data = (await res.json()) as { wallets?: Wallet[] };
+          const list = data.wallets || [];
+          setWallets(list);
+          if (list.length > 0) setWalletId(list[0].id);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (!walletId) return;
     setError(null);
-    setResult(null);
-    if (!walletId.trim() || !prompt.trim()) {
-      setError("Please enter wallet ID and prompt");
-      return;
-    }
+    listAiProxyKeys(walletId)
+      .then(setKeys)
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, [walletId]);
+
+  const handleCreate = async () => {
+    if (!walletId || !newKeyName.trim()) return;
     setLoading(true);
+    setError(null);
+    setCreatedToken(null);
     try {
-      const resp = await mppGenerate({
-        wallet_id: walletId.trim(),
-        provider,
-        model,
-        prompt: prompt.trim(),
+      const resp = await createAiProxyKey({
+        wallet_id: walletId,
+        name: newKeyName.trim(),
       });
-      setResult(JSON.stringify(resp.data, null, 2));
+      setCreatedToken(resp.raw_token);
+      setNewKeyName("");
+      const updated = await listAiProxyKeys(walletId);
+      setKeys(updated);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -52,109 +66,139 @@ export default function AiGateway() {
     }
   };
 
+  const handleDelete = async (keyId: string) => {
+    setLoading(true);
+    try {
+      await deleteAiProxyKey(keyId);
+      const updated = await listAiProxyKeys(walletId);
+      setKeys(updated);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const baseUrl = typeof window !== "undefined"
+    ? `${window.location.origin.replace(/\/+$/, "")}/v1/proxy/openai`
+    : "https://api.gradiences.xyz/v1/proxy/openai";
+
   return (
     <div
       className="min-h-screen p-6 max-w-3xl mx-auto"
       style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}
     >
-      <h1 className="text-2xl font-bold mb-4">AI Gateway (MPP)</h1>
+      <h1 className="text-2xl font-bold mb-2">AI Gateway</h1>
       <p className="text-sm mb-6" style={{ color: "var(--muted-foreground)" }}>
-        Pay per request with on-chain stablecoins via MPP.
+        Connect any AI agent to Gradience via a temporary API key. Pay per request on-chain through MPP.
       </p>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium mb-1">Wallet ID</label>
-          <input
+          <label className="block text-sm font-medium mb-1">Wallet</label>
+          <select
             className="w-full border rounded px-3 py-2"
-            style={{
-              backgroundColor: "var(--card)",
-              borderColor: "var(--border)",
-              color: "var(--foreground)",
-            }}
+            style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
             value={walletId}
             onChange={(e) => setWalletId(e.target.value)}
-            placeholder="Paste your wallet ID"
-          />
+          >
+            {wallets.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name} ({w.id.slice(0, 8)}...)
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Provider</label>
-            <select
-              className="w-full border rounded px-3 py-2"
-              style={{
-                backgroundColor: "var(--card)",
-                borderColor: "var(--border)",
-                color: "var(--foreground)",
-              }}
-              value={provider}
-              onChange={(e) => handleProviderChange(e.target.value as MppProvider)}
-            >
-              {PROVIDERS.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
+        <div className="flex gap-2">
+          <input
+            className="flex-1 border rounded px-3 py-2"
+            style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
+            placeholder="Key name (e.g. pi-mono)"
+            value={newKeyName}
+            onChange={(e) => setNewKeyName(e.target.value)}
+          />
+          <button
+            onClick={handleCreate}
+            disabled={loading || !walletId || !newKeyName.trim()}
+            className="px-4 py-2 rounded disabled:opacity-50"
+            style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+          >
+            Generate Key
+          </button>
+        </div>
+
+        {createdToken && (
+          <div className="border rounded p-3" style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}>
+            <p className="text-sm font-medium mb-1">Your new API key (copy it now — we won&apos;t show it again)</p>
+            <div className="flex items-center gap-2">
+              <code className="text-sm break-all flex-1">{createdToken}</code>
+              <button
+                onClick={() => copy(createdToken)}
+                className="text-xs px-2 py-1 rounded border"
+                style={{ borderColor: "var(--border)" }}
+              >
+                {copied ? "Copied" : "Copy"}
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Model</label>
-            <input
-              className="w-full border rounded px-3 py-2"
-              style={{
-                backgroundColor: "var(--card)",
-                borderColor: "var(--border)",
-                color: "var(--foreground)",
-              }}
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
-          </div>
+        )}
+
+        {error && <div className="text-sm" style={{ color: "#B45309" }}>{error}</div>}
+
+        <div className="border rounded p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}>
+          <h2 className="font-semibold mb-2">Agent configuration</h2>
+          <p className="text-sm mb-2" style={{ color: "var(--muted-foreground)" }}>
+            Set these environment variables in your agent or IDE:
+          </p>
+          <pre
+            className="text-sm p-3 rounded overflow-auto"
+            style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}
+          >
+            {`export OPENAI_API_KEY="${createdToken ?? "<your gradience key>"}"
+export OPENAI_BASE_URL="${baseUrl}"`}
+          </pre>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Prompt</label>
-          <textarea
-            className="w-full border rounded px-3 py-2 h-32"
-            style={{
-              backgroundColor: "var(--card)",
-              borderColor: "var(--border)",
-              color: "var(--foreground)",
-            }}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Type your prompt here..."
-          />
+          <h2 className="font-semibold mb-2">Active proxy keys</h2>
+          {keys.length === 0 ? (
+            <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>No proxy keys yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {keys.map((k) => (
+                <div
+                  key={k.id}
+                  className="border rounded p-3 flex items-center justify-between"
+                  style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}
+                >
+                  <div>
+                    <p className="font-medium text-sm">{k.name}</p>
+                    <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
+                      {k.id} · Created {new Date(k.created_at).toLocaleDateString()}
+                      {k.expires_at ? ` · Expires ${new Date(k.expires_at).toLocaleDateString()}` : ""}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => handleDelete(k.id)}
+                    disabled={loading}
+                    className="text-sm px-3 py-1 rounded border disabled:opacity-50"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          className="px-4 py-2 rounded disabled:opacity-50"
-          style={{
-            backgroundColor: "var(--primary)",
-            color: "var(--primary-foreground)",
-          }}
-        >
-          {loading ? "Generating..." : "Generate via MPP"}
-        </button>
-      </form>
-
-      {error && (
-        <div className="mt-4 text-sm" style={{ color: "#B45309" }}>
-          {error}
-        </div>
-      )}
-
-      {result && (
-        <div
-          className="mt-6 border rounded p-4 overflow-auto text-sm"
-          style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}
-        >
-          <pre className="whitespace-pre-wrap">{result}</pre>
-        </div>
-      )}
+      </div>
     </div>
   );
 }

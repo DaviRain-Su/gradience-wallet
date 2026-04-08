@@ -1,4 +1,4 @@
-use axum::{routing::{delete, get, post}, Router};
+use axum::{routing::{any, delete, get, post}, Router};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -122,6 +122,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ai/generate", post(handlers::ai_generate))
         .route("/api/ai/mpp-generate", post(handlers::mpp_generate))
         .route("/api/ai/models", get(handlers::ai_models))
+        .route("/api/ai/proxy-keys", post(handlers::create_ai_proxy_key).get(handlers::list_ai_proxy_keys))
+        .route("/api/ai/proxy-keys/:key_id", delete(handlers::delete_ai_proxy_key))
+        .route("/v1/proxy/:provider/*path", any(handlers::ai_proxy_handler))
         .route("/api/payments", get(handlers::list_payments))
         .route("/api/ws", get(handlers::ws_handler))
         .route("/api/mpp/demo", post(handlers::mpp_demo))

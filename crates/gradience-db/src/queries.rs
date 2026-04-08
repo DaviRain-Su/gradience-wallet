@@ -190,7 +190,7 @@ pub async fn create_api_key(
 
 pub async fn get_api_key_by_hash(pool: &Pool<Sqlite>, hash: &[u8]) -> Result<Option<ApiKey>> {
     let key = sqlx::query_as::<_, ApiKey>(
-        "SELECT id, wallet_id, name, key_hash, permissions, expires_at, last_used_at, created_at FROM api_keys WHERE key_hash = ? AND expires_at IS NULL"
+        "SELECT id, wallet_id, name, key_hash, permissions, expires_at, last_used_at, created_at FROM api_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > datetime('now'))"
     )
     .bind(hash)
     .fetch_optional(pool)
@@ -206,6 +206,31 @@ pub async fn list_api_keys_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str) -> Re
     .fetch_all(pool)
     .await?;
     Ok(keys)
+}
+
+pub async fn list_api_keys_by_wallet_and_permission(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+    permission: &str,
+) -> Result<Vec<ApiKey>> {
+    let keys = sqlx::query_as::<_, ApiKey>(
+        "SELECT id, wallet_id, name, key_hash, permissions, expires_at, last_used_at, created_at FROM api_keys WHERE wallet_id = ? AND permissions = ? ORDER BY created_at DESC"
+    )
+    .bind(wallet_id)
+    .bind(permission)
+    .fetch_all(pool)
+    .await?;
+    Ok(keys)
+}
+
+pub async fn get_api_key_by_id(pool: &Pool<Sqlite>, id: &str) -> Result<Option<ApiKey>> {
+    let key = sqlx::query_as::<_, ApiKey>(
+        "SELECT id, wallet_id, name, key_hash, permissions, expires_at, last_used_at, created_at FROM api_keys WHERE id = ?"
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(key)
 }
 
 pub async fn revoke_api_key(pool: &Pool<Sqlite>, id: &str) -> Result<()> {

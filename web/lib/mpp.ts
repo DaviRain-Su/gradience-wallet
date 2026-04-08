@@ -1,33 +1,50 @@
-import { apiPost } from "./api";
+import { apiDelete, apiGet, apiPost } from "./api";
 
-export type MppProvider =
-  | "anthropic"
-  | "openai"
-  | "openrouter"
-  | "gemini"
-  | "groq"
-  | "mistral"
-  | "deepseek";
+export interface AiProxyKey {
+  id: string;
+  name: string;
+  permissions: string;
+  expires_at?: string;
+  created_at: string;
+}
 
-export interface MppGenerateReq {
+export interface CreateAiProxyKeyReq {
   wallet_id: string;
-  provider: MppProvider;
-  model: string;
-  prompt: string;
+  name: string;
 }
 
-export interface MppGenerateResp {
-  provider_status: number;
-  data: unknown;
+export interface CreateAiProxyKeyResp {
+  id: string;
+  name: string;
+  raw_token: string;
+  permissions: string;
+  expires_at: string;
 }
 
-export async function mppGenerate(req: MppGenerateReq): Promise<MppGenerateResp> {
-  const res = await apiPost("/api/ai/mpp-generate", req);
+export async function listAiProxyKeys(walletId: string): Promise<AiProxyKey[]> {
+  const res = await apiGet(`/api/ai/proxy-keys?wallet_id=${encodeURIComponent(walletId)}`);
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`MPP generate failed: ${res.status} ${text}`);
+    throw new Error(`Failed to list keys: ${res.status} ${text}`);
   }
-  return res.json() as Promise<MppGenerateResp>;
+  return res.json() as Promise<AiProxyKey[]>;
+}
+
+export async function createAiProxyKey(req: CreateAiProxyKeyReq): Promise<CreateAiProxyKeyResp> {
+  const res = await apiPost("/api/ai/proxy-keys", req);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to create key: ${res.status} ${text}`);
+  }
+  return res.json() as Promise<CreateAiProxyKeyResp>;
+}
+
+export async function deleteAiProxyKey(keyId: string): Promise<void> {
+  const res = await apiDelete(`/api/ai/proxy-keys/${encodeURIComponent(keyId)}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Failed to delete key: ${res.status} ${text}`);
+  }
 }
 
 // Future: direct-browser MPP client via mppx SDK
