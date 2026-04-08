@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO email_verifications (email, code, expires_at, attempts) VALUES (?, ?, ?, 0)\n         ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, attempts = 0, created_at = datetime('now')",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "38f27901114e31eab5051f6eb0565d7f5be6b1c7c59cdf931e34f2f2e04e1257"
+}

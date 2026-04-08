@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE email_verifications SET attempts = attempts + 1 WHERE email = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "a8de67648a12a7c2924d16e3aa8a697d54d3027d66d537d0932544f6a3fd133c"
+}

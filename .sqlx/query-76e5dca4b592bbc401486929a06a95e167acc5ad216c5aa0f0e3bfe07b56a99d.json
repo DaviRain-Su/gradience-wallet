@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM email_verifications WHERE email = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "76e5dca4b592bbc401486929a06a95e167acc5ad216c5aa0f0e3bfe07b56a99d"
+}
