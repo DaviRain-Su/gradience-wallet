@@ -124,6 +124,45 @@ fn encode_compact_u16(value: u16) -> Vec<u8> {
     bytes
 }
 
+fn decode_compact_u16(data: &[u8]) -> Result<(u16, usize)> {
+    let mut value: u16 = 0;
+    let mut shift = 0;
+    for (i, &byte) in data.iter().enumerate() {
+        let bits = (byte & 0x7F) as u16;
+        value |= bits << shift;
+        if byte & 0x80 == 0 {
+            return Ok((value, i + 1));
+        }
+        shift += 7;
+        if shift > 14 {
+            return Err(GradienceError::Validation("compact u16 overflow".into()));
+        }
+    }
+    Err(GradienceError::Validation("incomplete compact u16".into()))
+}
+
+/// Sign a Solana legacy transaction envelope built by `build_solana_transfer_tx`.
+/// Replaces the 64-byte signature placeholder with an ed25519 signature over the message.
+pub fn sign_solana_transaction(mut tx_bytes: Vec<u8>, secret: &[u8; 32]) -> Result<Vec<u8>> {
+    use ed25519_dalek::{Signer, SigningKey};
+
+    let (num_sigs, header_len) = decode_compact_u16(&tx_bytes)?;
+    if num_sigs != 1 {
+        return Err(GradienceError::Validation("expected 1 signature placeholder".into()));
+    }
+    let msg_start = header_len + 64;
+    if tx_bytes.len() < msg_start {
+        return Err(GradienceError::Validation("solana tx too short".into()));
+    }
+    let message = &tx_bytes[msg_start..];
+
+    let signing_key = SigningKey::from_bytes(secret);
+    let signature = signing_key.sign(message);
+
+    tx_bytes[header_len..header_len + 64].copy_from_slice(&signature.to_bytes());
+    Ok(tx_bytes)
+}
+
 /// Build an unsigned Solana legacy transfer transaction envelope.
 /// The envelope format is:
 ///   [compact_u16(num_signatures)] [64-byte placeholder per signature] [message]
