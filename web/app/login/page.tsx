@@ -140,13 +140,6 @@ export default function LoginPage() {
         )}
 
         {msg && <p className="text-center text-sm" style={{ color: "#B45309" }}>{msg}</p>}
-
-        <div className="mt-2 text-center text-xs" style={{ color: "var(--muted-foreground)" }}>
-          Or continue with{" "}
-          <a href="/api/auth/oauth/google/start" className="underline" style={{ color: "var(--primary)" }}>Google</a>
-          {" / "}
-          <a href="/api/auth/oauth/github/start" className="underline" style={{ color: "var(--primary)" }}>GitHub</a>
-        </div>
       </main>
     </div>
   );
