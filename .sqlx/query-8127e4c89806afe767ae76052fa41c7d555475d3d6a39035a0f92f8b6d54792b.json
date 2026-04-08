@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE email_send_limits SET last_sent = ?, count_1h = 1 WHERE email = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "8127e4c89806afe767ae76052fa41c7d555475d3d6a39035a0f92f8b6d54792b"
+}

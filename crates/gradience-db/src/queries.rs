@@ -924,3 +924,48 @@ pub async fn delete_sessions_by_user(pool: &Pool<Sqlite>, user_id: &str) -> Resu
         .await?;
     Ok(())
 }
+
+// ========== Email Send Limits ==========
+pub async fn get_email_send_limit(
+    pool: &Pool<Sqlite>,
+    email: &str,
+) -> Result<Option<(DateTime<Utc>, i64)>> {
+    let row = sqlx::query(
+        "SELECT last_sent, count_1h FROM email_send_limits WHERE email = ?"
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        (
+            r.get::<DateTime<Utc>, _>("last_sent"),
+            r.get::<i64, _>("count_1h"),
+        )
+    }))
+}
+
+pub async fn record_email_send(pool: &Pool<Sqlite>, email: &str) -> Result<()> {
+    let now = Utc::now();
+    sqlx::query!(
+        "INSERT INTO email_send_limits (email, last_sent, count_1h) VALUES (?, ?, 1)
+         ON CONFLICT(email) DO UPDATE SET last_sent = excluded.last_sent, count_1h = count_1h + 1",
+        email,
+        now
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn reset_email_send_limit(pool: &Pool<Sqlite>, email: &str) -> Result<()> {
+    let now = Utc::now();
+    sqlx::query!(
+        "UPDATE email_send_limits SET last_sent = ?, count_1h = 1 WHERE email = ?",
+        now,
+        email
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}

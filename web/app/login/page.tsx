@@ -41,7 +41,12 @@ export default function LoginPage() {
         });
       }, 1000);
     } catch (e: unknown) {
-      setMsg(`发送失败: ${e instanceof Error ? e.message : String(e)}`);
+      const text = e instanceof Error ? e.message : String(e);
+      if (text.includes("429") || text.includes("TOO_MANY_REQUESTS")) {
+        setMsg("发送过于频繁，请 1 分钟后再试，或 1 小时内最多 5 次");
+      } else {
+        setMsg(`发送失败: ${text}`);
+      }
     } finally {
       setLoading(false);
     }

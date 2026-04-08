@@ -252,6 +252,24 @@ async fn email_send_code(
     if email.is_empty() || !email.contains('@') {
         return Err(StatusCode::BAD_REQUEST);
     }
+
+    if let Ok(Some((last_sent, count))) = gradience_db::queries::get_email_send_limit(&state.db, &email).await {
+        let since_last = chrono::Utc::now() - last_sent;
+        if since_last < chrono::Duration::seconds(60) {
+            return Err(StatusCode::TOO_MANY_REQUESTS);
+        }
+        if since_last < chrono::Duration::hours(1) && count >= 5 {
+            return Err(StatusCode::TOO_MANY_REQUESTS);
+        }
+        if since_last >= chrono::Duration::hours(1) {
+            let _ = gradience_db::queries::reset_email_send_limit(&state.db, &email).await;
+        } else {
+            let _ = gradience_db::queries::record_email_send(&state.db, &email).await;
+        }
+    } else {
+        let _ = gradience_db::queries::record_email_send(&state.db, &email).await;
+    }
+
     let code = generate_otp_code();
     if let Err(e) = send_email_via_resend(&email, &code).await {
         warn!("Failed to send verification email to {}: {}", email, e);

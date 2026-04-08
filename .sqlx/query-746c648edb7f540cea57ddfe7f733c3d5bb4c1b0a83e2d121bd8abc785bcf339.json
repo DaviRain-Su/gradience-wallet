@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO email_send_limits (email, last_sent, count_1h) VALUES (?, ?, 1)\n         ON CONFLICT(email) DO UPDATE SET last_sent = excluded.last_sent, count_1h = count_1h + 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "746c648edb7f540cea57ddfe7f733c3d5bb4c1b0a83e2d121bd8abc785bcf339"
+}

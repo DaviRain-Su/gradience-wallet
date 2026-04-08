@@ -86,7 +86,8 @@ export default function Dashboard() {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("gradience_api_base") || "http://localhost:8080";
       setApiBaseState(saved);
-      setShowApiConfig(window.location.protocol === "https:" && saved.startsWith("http:"));
+      const isProdApi = saved.trim().startsWith("https://api.gradiences.xyz");
+      setShowApiConfig(window.location.protocol === "https:" && saved.startsWith("http:") && !isProdApi);
     }
     apiGet("/api/auth/me")
       .then((res) => res.json())
