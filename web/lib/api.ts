@@ -1,6 +1,6 @@
 function getApiBase(): string {
   if (typeof window === "undefined") return "http://localhost:8080";
-  const env = process.env.NEXT_PUBLIC_API_URL;
+  const env = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (env) return env;
   const saved = localStorage.getItem("gradience_api_base");
   if (saved) return saved;
