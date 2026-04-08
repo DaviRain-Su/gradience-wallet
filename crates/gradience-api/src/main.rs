@@ -110,6 +110,8 @@ struct RegisterFinishReq {
 #[derive(Deserialize)]
 struct LoginStartReq {
     username: String,
+    #[serde(default)]
+    email: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -120,6 +122,8 @@ struct LoginStartResp {
 #[derive(Deserialize)]
 struct LoginFinishReq {
     username: String,
+    #[serde(default)]
+    email: Option<String>,
     credential: PublicKeyCredential,
 }
 
@@ -189,6 +193,31 @@ async fn register_finish(
     let username = body.username.trim().to_lowercase();
     if body.passphrase.len() < 12 {
         return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Check for existing username conflict
+    let default_email = format!("{}@gradience.local", username);
+    if let Some(existing) = gradience_db::queries::get_user_by_email(&state.db, &default_email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    {
+        // Also verify custom email conflict if provided
+        let custom_email = body.email.as_deref().and_then(|e| {
+            let trimmed = e.trim();
+            if trimmed.is_empty() { None } else { Some(trimmed.to_lowercase()) }
+        });
+        let conflict = if let Some(ref custom) = custom_email {
+            gradience_db::queries::get_user_by_email(&state.db, custom)
+                .await
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+                .is_some()
+        } else {
+            true // default_email already exists
+        };
+        if conflict {
+            warn!("register conflict for username={} existing_email={}", username, existing.email);
+            return Err(StatusCode::CONFLICT);
+        }
     }
 
     let reg_state = state
@@ -269,17 +298,30 @@ async fn register_finish(
     Ok(Json(TokenResp { token }))
 }
 
+fn resolve_email(username: &str, email: Option<&str>) -> String {
+    email
+        .and_then(|e| {
+            let trimmed = e.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_lowercase())
+            }
+        })
+        .unwrap_or_else(|| format!("{}@gradience.local", username))
+}
+
 async fn login_start(
     State(state): State<Arc<AppState>>,
     Json(body): Json<LoginStartReq>,
 ) -> Result<Json<LoginStartResp>, StatusCode> {
     let username = body.username.trim().to_lowercase();
+    let email = resolve_email(&username, body.email.as_deref());
 
     let mut creds = state.credentials.lock().await;
     let allowed = if let Some(pk) = creds.get(&username) {
         vec![pk.clone()]
     } else {
-        let email = format!("{}@gradience.local", username);
         let row = sqlx::query_as::<_, (Vec<u8>,)>(
             "SELECT pc.credential_pk FROM passkey_credentials pc JOIN users u ON u.id = pc.user_id WHERE u.email = ?"
         )
@@ -326,6 +368,7 @@ async fn login_finish(
     Json(body): Json<LoginFinishReq>,
 ) -> Result<Json<TokenResp>, StatusCode> {
     let username = body.username.trim().to_lowercase();
+    let email = resolve_email(&username, body.email.as_deref());
     let auth_state = state
         .auth_challenges
         .lock()
@@ -342,7 +385,6 @@ async fn login_finish(
         })?;
 
     info!("Passkey login success for {}", username);
-    let email = format!("{}@gradience.local", username);
     let user = gradience_db::queries::get_user_by_email(&state.db, &email)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;

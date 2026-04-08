@@ -20,13 +20,18 @@ export default function LoginPage() {
       await registerPasskey(username, passphrase, email);
       router.push("/dashboard");
     } catch (e: unknown) {
-      setMsg(`Register failed: ${e instanceof Error ? e.message : String(e)}`);
+      const text = e instanceof Error ? e.message : String(e);
+      if (text.includes("409") || text.includes("Conflict")) {
+        setMsg("用户名已存在，请直接登录或换一个用户名");
+      } else {
+        setMsg(`Register failed: ${text}`);
+      }
     }
   }
 
   async function handleLogin() {
     try {
-      await loginPasskey(username);
+      await loginPasskey(username, email);
       setStep("unlock");
       setMsg("");
     } catch (e: unknown) {

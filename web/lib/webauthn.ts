@@ -18,8 +18,8 @@ export async function registerPasskey(username: string, passphrase: string, emai
   return token;
 }
 
-export async function loginPasskey(username: string) {
-  const startRes = await apiPost("/api/auth/passkey/login/start", { username });
+export async function loginPasskey(username: string, email?: string) {
+  const startRes = await apiPost("/api/auth/passkey/login/start", { username, ...(email ? { email } : {}) });
   const { challenge } = await startRes.json();
 
   const credential = await get(challenge);
@@ -27,6 +27,7 @@ export async function loginPasskey(username: string) {
   const finishRes = await apiPost("/api/auth/passkey/login/finish", {
     username,
     credential,
+    ...(email ? { email } : {}),
   });
   const { token } = await finishRes.json();
   localStorage.setItem("gradience_token", token);

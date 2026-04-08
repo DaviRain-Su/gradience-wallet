@@ -39,7 +39,7 @@ export async function apiPost(path: string, body: unknown) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "Unknown error");
-    throw new Error(text);
+    throw new Error(text || `HTTP ${res.status}`);
   }
   return res;
 }
@@ -56,7 +56,7 @@ export async function apiGet(path: string) {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "Unknown error");
-    throw new Error(text);
+    throw new Error(text || `HTTP ${res.status}`);
   }
   return res;
 }
