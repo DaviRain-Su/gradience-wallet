@@ -270,7 +270,12 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Balances</p>
         {!loading && portfolio.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
         <div className="mt-2 grid grid-cols-1 gap-3">
-          {[...portfolio].sort((a, b) => {
+          {!loading && [...portfolio].filter((p) => BigInt(p.native_balance || "0x0") > BigInt(0) || p.assets.length > 0).length === 0 && (
+            <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>No balances.</p>
+          )}
+          {[...portfolio]
+            .filter((p) => BigInt(p.native_balance || "0x0") > BigInt(0) || p.assets.length > 0)
+            .sort((a, b) => {
             const aVal = BigInt(a.native_balance || "0x0");
             const bVal = BigInt(b.native_balance || "0x0");
             const aScore = (aVal > BigInt(0) ? 2 : 0) + (a.assets.length > 0 ? 1 : 0);
