@@ -343,169 +343,48 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
 pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Value> {
     let wallet_id = &args.wallet_id;
     let recipient = &args.recipient;
-    let amount = &args.amount;
-    let token = args.token.as_deref().unwrap_or("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
-    let chain = args.chain.as_deref().unwrap_or("base");
+    let _amount = &args.amount;
+    let _token = args.token.as_deref().unwrap_or("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+    let _chain = args.chain.as_deref().unwrap_or("base");
 
-    let (passphrase, vault_dir) = get_vault_config()?;
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
-    // If recipient looks like an HTTP URL, attempt MPP 402 or Stellar x402 payment flow.
-    if recipient.starts_with("http://") || recipient.starts_with("https://") {
-        if chain.starts_with("stellar") {
-            let x402_result = block_on_async(async {
-                let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
-                let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
-                let stellar_addr = addrs.iter().find(|a| a.chain_id.starts_with("stellar:"))?.address.clone();
-
-                let derivation_path = gradience_core::wallet::hd::path_for(chain, 0);
-                let seed = gradience_core::ows::local_adapter::derive_demo_seed(wallet_id, chain, &derivation_path);
-                let secret_key = gradience_core::payment::stellar_x402::stellar_secret_from_seed(&seed);
-
-                let bridge_dir = std::env::var("CARGO_MANIFEST_DIR")
-                    .map(|p| std::path::PathBuf::from(p).join("../../bridge/stellar-x402"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("./bridge/stellar-x402"));
-                let x402_client = gradience_core::payment::stellar_x402::StellarX402Client::new(bridge_dir);
-                let network = if chain.contains("testnet") { "stellar:testnet" } else { "stellar:pubnet" };
-                let (resp, tx_hash) = x402_client.pay(
-                    &secret_key,
-                    network,
-                    reqwest::Method::GET,
-                    recipient,
-                    vec![],
-                    None,
-                ).await.ok()?;
-                let status = resp.status().as_u16();
-                let body = resp.text().await.ok()?;
-                Some(json!({
-                    "status": status,
-                    "txHash": tx_hash,
-                    "body": body,
-                    "stellarAddress": stellar_addr,
-                }))
-            });
-            if let Some(r) = x402_result {
-                return Ok(r);
-            }
-            return Err(anyhow::anyhow!("Stellar x402 payment failed"));
-        }
-
-        if chain.starts_with("eip155") {
-            let x402_result = block_on_async(async {
-                let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
-                let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
-                let evm_addr = addrs.iter().find(|a| a.chain_id == chain)
-                    .or_else(|| addrs.iter().find(|a| a.chain_id == "eip155:8453"))
-                    .or_else(|| addrs.iter().find(|a| a.chain_id == "eip155:1"))?
-                    .address.clone();
-
-                let derivation_path = gradience_core::wallet::hd::path_for(chain, 0);
-                let seed = gradience_core::ows::local_adapter::derive_demo_seed(wallet_id, chain, &derivation_path);
-                let private_key = format!("0x{}", hex::encode(&seed));
-
-                let bridge_dir = std::env::var("CARGO_MANIFEST_DIR")
-                    .map(|p| std::path::PathBuf::from(p).join("../../bridge/base-x402"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("./bridge/base-x402"));
-                let x402_client = gradience_core::payment::base_x402::BaseX402Client::new(bridge_dir);
-                let (status, _headers, body, tx_hash) = x402_client.pay(
-                    &private_key,
-                    chain,
-                    reqwest::Method::GET,
-                    recipient,
-                    vec![],
-                    None,
-                ).await.ok()?;
-                Some(json!({
-                    "status": status,
-                    "txHash": tx_hash,
-                    "body": body,
-                    "evmAddress": evm_addr,
-                }))
-            });
-            if let Some(r) = x402_result {
-                return Ok(r);
-            }
-            return Err(anyhow::anyhow!("Base/EVM x402 payment failed"));
-        }
-
-        let mpp_result = block_on_async(async {
-            use gradience_core::payment::router::{PaymentRoutePreference, PaymentRouter};
-            use gradience_core::payment::mpp_client::{GradienceMppProvider, MppClient};
-
-            let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
-            let routes = gradience_db::queries::list_payment_routes_by_wallet(&db, wallet_id).await.ok()?;
-            let preferences: Vec<PaymentRoutePreference> = routes.into_iter().map(|r| PaymentRoutePreference {
-                chain_id: r.chain_id,
-                token_address: r.token_address,
-                priority: r.priority as u32,
-            }).collect();
-
-            let router = if preferences.is_empty() {
-                PaymentRouter::new(vec![
-                    PaymentRoutePreference { chain_id: "eip155:8453".into(), token_address: token.into(), priority: 1 },
-                    PaymentRoutePreference { chain_id: "eip155:1".into(), token_address: "".into(), priority: 2 },
-                ])
-            } else {
-                PaymentRouter::new(preferences)
-            };
-
-            let provider = GradienceMppProvider::new(wallet_id, router);
-            let client = MppClient::new(provider);
-            client.send(reqwest::Client::new().get(recipient)).await.ok()
-        });
-
-        if let Some(resp) = mpp_result {
-            return Ok(json!({"mppStatus": resp.status().as_u16(), "mppUrl": recipient}));
-        }
-        return Err(anyhow::anyhow!("MPP payment failed (Tempo wallet may not be configured)"));
+    if !recipient.starts_with("http://") && !recipient.starts_with("https://") {
+        anyhow::bail!("MCP pay currently supports MPP HTTP(S) endpoints only. Direct address transfers will be restored in a future update.");
     }
 
-    // Otherwise fall back to direct on-chain transfer via payment router.
-    let tx_hash = block_on_async(async {
+    let mpp_result = block_on_async(async {
+        use gradience_core::payment::router::{PaymentRoutePreference, PaymentRouter};
+        use gradience_core::payment::mpp_client::{GradienceMppProvider, MppClient};
+
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let routes = gradience_db::queries::list_payment_routes_by_wallet(&db, wallet_id).await.ok()?;
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
+        let preferences: Vec<PaymentRoutePreference> = routes.into_iter().map(|r| PaymentRoutePreference {
+            chain_id: r.chain_id,
+            token_address: r.token_address,
+            priority: r.priority as u32,
+        }).collect();
 
-        let selected_chain = if let Some(first) = routes.first() {
-            first.chain_id.clone()
+        let router = if preferences.is_empty() {
+            PaymentRouter::new(vec![
+                PaymentRoutePreference { chain_id: "eip155:8453".into(), token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(), priority: 1 },
+                PaymentRoutePreference { chain_id: "eip155:1".into(), token_address: "".into(), priority: 2 },
+            ])
         } else {
-            format!("eip155:{}", if chain == "base" { 8453 } else { 1 })
+            PaymentRouter::new(preferences)
         };
 
-        let mut addr = None;
-        for a in addrs {
-            if a.chain_id == selected_chain || a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
-                addr = Some((a.address.clone(), a.chain_id.clone()));
-                break;
-            }
-        }
-        let (from_addr, used_chain) = addr?;
-
-        let svc = gradience_core::payment::x402::X402Service::new();
-        let deadline = (std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-        let req = svc.create_requirement(recipient, amount, token, deadline, Some(chain)).ok()?;
-        let sign_payload = format!("x402:{}:{}:{}", recipient, amount, deadline);
-        let sign_result = ows_lib::sign_message(
-            wallet_id,
-            "eip155:1",
-            &sign_payload,
-            Some(&passphrase),
-            Some("utf8"),
-            None,
-            Some(&vault_dir),
-        ).ok()?;
-        let mut payment = svc.sign_payment(req, &sign_result.signature).ok()?;
-        let chain_str = if used_chain.contains("8453") { "base" } else { "ethereum" };
-        svc.settle_payment(&mut payment, wallet_id, &from_addr, chain_str, &passphrase, &vault_dir).await.ok()
+        let provider = GradienceMppProvider::new(wallet_id, router);
+        let client = MppClient::new(provider);
+        client.send(reqwest::Client::new().get(recipient)).await.ok()
     });
 
-    match tx_hash {
-        Some(hash) => Ok(json!({"txHash": hash})),
-        None => Err(anyhow::anyhow!("x402 settlement failed")),
+    if let Some(resp) = mpp_result {
+        return Ok(json!({"mppStatus": resp.status().as_u16(), "mppUrl": recipient}));
     }
+    Err(anyhow::anyhow!("MPP payment failed (provider may not support this challenge or wallet not configured)"))
 }
 
 pub fn handle_llm_generate(args: crate::args::LlmGenerateArgs) -> anyhow::Result<serde_json::Value> {

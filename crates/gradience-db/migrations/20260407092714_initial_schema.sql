@@ -175,7 +175,7 @@ CREATE TABLE payment_records (
     id              TEXT PRIMARY KEY,
     wallet_id       TEXT NOT NULL REFERENCES wallets(id),
     protocol        TEXT NOT NULL
-        CHECK (protocol IN ('x402', 'mpp', 'hsp')),
+        CHECK (protocol IN ('mpp', 'hsp')),
     amount          TEXT NOT NULL,
     token           TEXT NOT NULL,
     recipient       TEXT NOT NULL,

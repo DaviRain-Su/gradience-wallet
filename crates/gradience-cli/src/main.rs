@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Commands::Pay { wallet_id, recipient, amount, token, chain, deadline } => {
-            commands::pay::x402(&ctx, wallet_id, recipient, amount, token, chain, deadline).await
+            commands::pay::mpp_pay(&ctx, wallet_id, recipient, amount, token, chain, deadline).await
         }
         Commands::Start => {
             commands::start::run().await
