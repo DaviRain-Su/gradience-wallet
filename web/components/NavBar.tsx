@@ -7,7 +7,6 @@ const mainLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/agents", label: "Agents" },
   { href: "/policies", label: "Policies" },
-  { href: "/workspaces", label: "Workspaces" },
   { href: "/approvals", label: "Approvals" },
   { href: "/activity", label: "Activity" },
 ];
