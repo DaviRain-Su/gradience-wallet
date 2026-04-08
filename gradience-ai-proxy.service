@@ -1,0 +1,20 @@
+[Unit]
+Description=Gradience AI Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=gradience
+Group=gradience
+WorkingDirectory=/opt/gradience-wallet
+Environment="RUST_LOG=info"
+Environment="AI_PROXY_BIND_ADDR=0.0.0.0:8081"
+Environment="DATABASE_URL=sqlite:/opt/gradience-wallet/data/gradience.db?mode=rwc"
+Environment="GRADIENCE_DATA_DIR=/opt/gradience-wallet/data"
+Environment="ORIGIN=https://wallets.gradiences.xyz"
+ExecStart=/opt/gradience-wallet/target/release/gradience-ai-proxy
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

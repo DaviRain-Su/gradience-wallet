@@ -1,4 +1,4 @@
-# Multi-stage build for Gradience API
+# Multi-stage build for Gradience AI Proxy
 FROM rust:1.80-slim-bookworm AS builder
 
 WORKDIR /app
@@ -31,7 +31,7 @@ RUN mkdir -p crates/gradience-core/src crates/gradience-db/src crates/gradience-
 
 # Copy full source and build
 COPY . .
-RUN cargo build --release -p gradience-api
+RUN cargo build --release -p gradience-ai-proxy
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -40,15 +40,15 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/gradience-api /usr/local/bin/gradience-api
+COPY --from=builder /app/target/release/gradience-ai-proxy /usr/local/bin/gradience-ai-proxy
 
 ENV DATABASE_URL="sqlite:/app/data/gradience.db?mode=rwc"
 ENV GRADIENCE_DATA_DIR="/app/data"
 ENV ORIGIN="https://wallet.example.com"
-ENV RP_ID="wallet.example.com"
+ENV AI_PROXY_BIND_ADDR="0.0.0.0:8081"
 
-EXPOSE 8080
+EXPOSE 8081
 
 VOLUME ["/app/data"]
 
-ENTRYPOINT ["gradience-api"]
+ENTRYPOINT ["gradience-ai-proxy"]

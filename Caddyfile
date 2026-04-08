@@ -3,5 +3,11 @@
 }
 
 :80 {
+    handle_path /api/ai/* {
+        reverse_proxy ai-proxy:8081
+    }
+    handle_path /v1/proxy/* {
+        reverse_proxy ai-proxy:8081
+    }
     reverse_proxy api:8080
 }
