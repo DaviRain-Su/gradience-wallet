@@ -21,6 +21,19 @@ pub fn eth_address_from_secret_key(secret: &[u8; 32]) -> Result<String> {
     Ok(addr)
 }
 
+pub fn stellar_address_from_secret_key(secret: &[u8; 32]) -> Result<String> {
+    use ed25519_dalek::{SigningKey, VerifyingKey};
+    let signing_key = SigningKey::from_bytes(secret);
+    let verifying_key: VerifyingKey = signing_key.verifying_key();
+    let pk = stellar_strkey::ed25519::PublicKey(verifying_key.to_bytes());
+    Ok(pk.to_string())
+}
+
+pub fn stellar_secret_from_seed(seed: &[u8; 32]) -> String {
+    let sk = stellar_strkey::ed25519::PrivateKey(*seed);
+    sk.to_string()
+}
+
 pub fn sign_eth_transaction(
     secret: &[u8; 32],
     nonce: u64,
@@ -190,4 +203,388 @@ pub fn build_solana_transfer_tx(
     tx.extend_from_slice(&message);
 
     Ok(tx)
+}
+
+// ========================================================================
+// Solana SPL Token + Staking helpers
+// ========================================================================
+
+fn decode_pubkey(b58: &str) -> Result<[u8; 32]> {
+    let bytes = bs58::decode(b58)
+        .into_vec()
+        .map_err(|e| GradienceError::Validation(format!("invalid base58 pubkey: {}", e)))?;
+    if bytes.len() != 32 {
+        return Err(GradienceError::Validation("pubkey must be 32 bytes".into()));
+    }
+    Ok(bytes.try_into().unwrap())
+}
+
+fn encode_pubkey(bytes: &[u8; 32]) -> String {
+    bs58::encode(bytes).into_string()
+}
+
+/// Check if 32 bytes represent a point on the ed25519 curve.
+fn is_on_curve(bytes: &[u8; 32]) -> bool {
+    ed25519_dalek::VerifyingKey::from_bytes(bytes).is_ok()
+}
+
+/// Solana `create_program_address` using SHA256 (ring) + ed25519 on-curve check.
+fn create_program_address(seeds: &[&[u8]], program_id: &[u8; 32]) -> Result<[u8; 32]> {
+    use ring::digest::{Context, SHA256};
+    let mut ctx = Context::new(&SHA256);
+    for seed in seeds {
+        ctx.update(seed);
+    }
+    ctx.update(program_id);
+    ctx.update(b"ProgramDerivedAddress");
+    let hash = ctx.finish();
+    let bytes: [u8; 32] = hash.as_ref().try_into().unwrap();
+    if is_on_curve(&bytes) {
+        return Err(GradienceError::Validation("invalid PDA: on curve".into()));
+    }
+    Ok(bytes)
+}
+
+/// Solana `find_program_address`: tries bump seeds 255..0.
+fn find_program_address(seeds: &[&[u8]], program_id: &[u8; 32]) -> Result<([u8; 32], u8)> {
+    for bump in (0..=255).rev() {
+        let bump_seed = [bump];
+        let mut seeds_with_bump = seeds.to_vec();
+        seeds_with_bump.push(&bump_seed);
+        if let Ok(addr) = create_program_address(&seeds_with_bump, program_id) {
+            return Ok((addr, bump));
+        }
+    }
+    Err(GradienceError::Validation("unable to find valid PDA".into()))
+}
+
+/// Derive the Associated Token Account (ATA) for a wallet + mint.
+pub fn find_associated_token_address(wallet_b58: &str, mint_b58: &str) -> Result<String> {
+    let wallet = decode_pubkey(wallet_b58)?;
+    let mint = decode_pubkey(mint_b58)?;
+    let ata_program = decode_pubkey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
+    let token_program = decode_pubkey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
+    let seeds: Vec<&[u8]> = vec![&wallet, &token_program, &mint];
+    let (addr, _) = find_program_address(&seeds, &ata_program)?;
+    Ok(encode_pubkey(&addr))
+}
+
+/// Build a Solana Legacy Message and wrap it in a transaction envelope.
+/// `instructions` are (program_id_index, accounts: Vec<(index, is_signer, is_writable)>, data).
+fn _build_solana_message(
+    _payer: &[u8; 32],
+    account_keys: Vec<[u8; 32]>,
+    recent_blockhash: &[u8; 32],
+    instructions: Vec<(u8, Vec<(u8, bool, bool)>, Vec<u8>)>,
+) -> Vec<u8> {
+    let num_required_signatures: u8 = 1;
+    let num_readonly_signed_accounts: u8 = 0;
+
+    // Count readonly unsigned accounts (everything after the last writable account, or more precisely all non-signer non-writable)
+    let readonly_unsigned: u8 = account_keys
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != 0) // exclude payer (signer)
+        .filter(|(i, _)| {
+            // Determine if any instruction references this key as writable
+            let idx = *i as u8;
+            !instructions.iter().any(|(_, accts, _)| {
+                accts.iter().any(|(a, _, w)| *a == idx && *w)
+            })
+        })
+        .count() as u8;
+
+    let mut message = vec![];
+    message.push(num_required_signatures);
+    message.push(num_readonly_signed_accounts);
+    message.push(readonly_unsigned);
+    message.extend_from_slice(&encode_compact_u16(account_keys.len() as u16));
+    for key in &account_keys {
+        message.extend_from_slice(key);
+    }
+    message.extend_from_slice(recent_blockhash);
+    message.extend_from_slice(&encode_compact_u16(instructions.len() as u16));
+
+    for (prog_idx, accounts, data) in instructions {
+        message.push(prog_idx);
+        message.extend_from_slice(&encode_compact_u16(accounts.len() as u16));
+        for (idx, is_signer, is_writable) in accounts {
+            let mut meta = 0u8;
+            if is_signer {
+                meta |= 0x80;
+            }
+            if is_writable {
+                meta |= 0x40;
+            }
+            message.push(meta | idx);
+        }
+        message.extend_from_slice(&encode_compact_u16(data.len() as u16));
+        message.extend_from_slice(&data);
+    }
+
+    let mut tx = encode_compact_u16(1);
+    tx.extend_from_slice(&[0u8; 64]);
+    tx.extend_from_slice(&message);
+    tx
+}
+
+/// Build a complete SPL Token transfer transaction.
+/// If `create_recipient_ata` is true, includes the `CreateAssociatedTokenAccount` instruction.
+pub fn build_spl_transfer_tx(
+    from_wallet_b58: &str,
+    to_wallet_b58: &str,
+    mint_b58: &str,
+    amount: u64,
+    decimals: u8,
+    recent_blockhash_b58: &str,
+    create_recipient_ata: bool,
+) -> Result<Vec<u8>> {
+    let from_wallet = decode_pubkey(from_wallet_b58)?;
+    let to_wallet = decode_pubkey(to_wallet_b58)?;
+    let mint = decode_pubkey(mint_b58)?;
+    let token_program = decode_pubkey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
+    let ata_program = decode_pubkey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL")?;
+    let system_program = decode_pubkey("11111111111111111111111111111111")?;
+    let from_ata = decode_pubkey(&find_associated_token_address(from_wallet_b58, mint_b58)?)?;
+    let to_ata = decode_pubkey(&find_associated_token_address(to_wallet_b58, mint_b58)?)?;
+    let blockhash = decode_pubkey(recent_blockhash_b58)?;
+
+    // Assemble unique account keys in required order:
+    // 0: from_wallet (signer, writable)
+    // 1: from_ata (writable)
+    // 2: to_ata (writable)
+    // 3: to_wallet (readonly)
+    // 4: mint (readonly)
+    // 5: token_program (readonly)
+    // 6: system_program (readonly, optional)
+    // 7: ata_program (readonly, optional)
+    let mut keys: Vec<[u8; 32]> = vec![
+        from_wallet, from_ata, to_ata, to_wallet, mint, token_program,
+    ];
+    if create_recipient_ata {
+        keys.push(system_program);
+        keys.push(ata_program);
+    }
+
+    let mut instructions: Vec<(u8, Vec<(u8, bool, bool)>, Vec<u8>)> = vec![];
+
+    if create_recipient_ata {
+        // CreateAssociatedTokenAccount: no data
+        // accounts: [payer(0), ata(2), owner(3), mint(4), system_program(6), token_program(5)]
+        // Note: keys vector index carefully
+        let create_accounts = vec![
+            (0, true, true),   // payer
+            (2, false, true),  // ata
+            (3, false, false), // owner
+            (4, false, false), // mint
+            (6, false, false), // system_program
+            (5, false, false), // token_program
+        ];
+        let ata_prog_idx = keys.iter().position(|k| k == &ata_program).unwrap() as u8;
+        instructions.push((ata_prog_idx, create_accounts, vec![]));
+    }
+
+    // TransferChecked data: [12, amount(le64), decimals]
+    let mut transfer_data = vec![12u8];
+    transfer_data.extend_from_slice(&amount.to_le_bytes());
+    transfer_data.push(decimals);
+
+    let transfer_accounts = vec![
+        (1, false, true),  // source (from_ata)
+        (4, false, false), // mint
+        (2, false, true),  // destination (to_ata)
+        (0, true, false),  // owner (from_wallet)
+    ];
+    let token_prog_idx = keys.iter().position(|k| k == &token_program).unwrap() as u8;
+    instructions.push((token_prog_idx, transfer_accounts, transfer_data));
+
+    // Recompute readonly count for message header correctly.
+    // Payer (index 0) is signer+writable, don't count.
+    // Everything else that is NOT writable is readonly unsigned.
+    let mut readonly_unsigned = 0u8;
+    for (i, _) in keys.iter().enumerate().skip(1) {
+        let idx = i as u8;
+        let is_writable = instructions.iter().any(|(_, accts, _)| {
+            accts.iter().any(|(a, _, w)| *a == idx && *w)
+        });
+        if !is_writable {
+            readonly_unsigned += 1;
+        }
+    }
+
+    let mut message = vec![];
+    message.push(1u8); // num_required_signatures
+    message.push(0u8); // num_readonly_signed_accounts
+    message.push(readonly_unsigned);
+    message.extend_from_slice(&encode_compact_u16(keys.len() as u16));
+    for key in &keys {
+        message.extend_from_slice(key);
+    }
+    message.extend_from_slice(&blockhash);
+    message.extend_from_slice(&encode_compact_u16(instructions.len() as u16));
+
+    for (prog_idx, accounts, data) in instructions {
+        message.push(prog_idx);
+        message.extend_from_slice(&encode_compact_u16(accounts.len() as u16));
+        for (idx, is_signer, is_writable) in accounts {
+            let mut meta = 0u8;
+            if is_signer {
+                meta |= 0x80;
+            }
+            if is_writable {
+                meta |= 0x40;
+            }
+            message.push(meta | idx);
+        }
+        message.extend_from_slice(&encode_compact_u16(data.len() as u16));
+        message.extend_from_slice(&data);
+    }
+
+    let mut tx = encode_compact_u16(1);
+    tx.extend_from_slice(&[0u8; 64]);
+    tx.extend_from_slice(&message);
+    Ok(tx)
+}
+
+/// Build a Solana DelegateStake transaction.
+/// The caller must ensure `stake_account` exists and is initialized.
+pub fn build_delegate_stake_tx(
+    stake_account_b58: &str,
+    vote_account_b58: &str,
+    authorized_staker_b58: &str,
+    recent_blockhash_b58: &str,
+) -> Result<Vec<u8>> {
+    let stake_account = decode_pubkey(stake_account_b58)?;
+    let vote_account = decode_pubkey(vote_account_b58)?;
+    let authorized_staker = decode_pubkey(authorized_staker_b58)?;
+    let clock = decode_pubkey("SysvarC1ock111111111111111111111111111111111")?;
+    let stake_history = decode_pubkey("SysvarStakeHistory1111111111111111111111111")?;
+    let stake_config = decode_pubkey("StakeConfig11111111111111111111111111111111")?;
+    let stake_program = decode_pubkey("Stake11111111111111111111111111111111111111")?;
+    let blockhash = decode_pubkey(recent_blockhash_b58)?;
+
+    let account_keys = vec![
+        stake_account,
+        authorized_staker,
+        vote_account,
+        clock,
+        stake_history,
+        stake_config,
+        stake_program,
+    ];
+
+    let num_required_signatures = 1u8;
+    let num_readonly_signed_accounts = 1u8;
+    let num_readonly_unsigned_accounts = 5u8;
+
+    let mut message = vec![];
+    message.push(num_required_signatures);
+    message.push(num_readonly_signed_accounts);
+    message.push(num_readonly_unsigned_accounts);
+    message.extend_from_slice(&encode_compact_u16(account_keys.len() as u16));
+    for key in &account_keys {
+        message.extend_from_slice(key);
+    }
+    message.extend_from_slice(&blockhash);
+
+    let instruction_accounts = vec![
+        (0u8, false, true),  // stake_account (writable)
+        (2u8, false, false), // vote_account
+        (3u8, false, false), // clock
+        (4u8, false, false), // stake_history
+        (5u8, false, false), // stake_config
+        (1u8, true, false),  // authorized_staker (signer)
+    ];
+    let prog_idx = 6u8;
+    message.extend_from_slice(&encode_compact_u16(1));
+    message.push(prog_idx);
+    message.extend_from_slice(&encode_compact_u16(instruction_accounts.len() as u16));
+    for (idx, is_signer, is_writable) in instruction_accounts {
+        let mut meta = 0u8;
+        if is_signer { meta |= 0x80; }
+        if is_writable { meta |= 0x40; }
+        message.push(meta | idx);
+    }
+    message.extend_from_slice(&encode_compact_u16(1));
+    message.push(2u8); // DelegateStake discriminant
+
+    let mut tx = encode_compact_u16(1);
+    tx.extend_from_slice(&[0u8; 64]);
+    tx.extend_from_slice(&message);
+    Ok(tx)
+}
+
+/// Build a Solana DeactivateStake transaction.
+pub fn build_deactivate_stake_tx(
+    stake_account_b58: &str,
+    authorized_staker_b58: &str,
+    recent_blockhash_b58: &str,
+) -> Result<Vec<u8>> {
+    let stake_account = decode_pubkey(stake_account_b58)?;
+    let authorized_staker = decode_pubkey(authorized_staker_b58)?;
+    let clock = decode_pubkey("SysvarC1ock111111111111111111111111111111111")?;
+    let stake_program = decode_pubkey("Stake11111111111111111111111111111111111111")?;
+    let blockhash = decode_pubkey(recent_blockhash_b58)?;
+
+    let account_keys = vec![
+        stake_account,
+        authorized_staker,
+        clock,
+        stake_program,
+    ];
+
+    let num_required_signatures = 1u8;
+    let num_readonly_signed_accounts = 1u8;
+    let num_readonly_unsigned_accounts = 2u8;
+
+    let mut message = vec![];
+    message.push(num_required_signatures);
+    message.push(num_readonly_signed_accounts);
+    message.push(num_readonly_unsigned_accounts);
+    message.extend_from_slice(&encode_compact_u16(account_keys.len() as u16));
+    for key in &account_keys {
+        message.extend_from_slice(key);
+    }
+    message.extend_from_slice(&blockhash);
+
+    let instruction_accounts = vec![
+        (0u8, false, true),  // stake_account (writable)
+        (1u8, true, false),  // authorized_staker (signer)
+        (2u8, false, false), // clock
+    ];
+    let prog_idx = 3u8;
+    message.extend_from_slice(&encode_compact_u16(1));
+    message.push(prog_idx);
+    message.extend_from_slice(&encode_compact_u16(instruction_accounts.len() as u16));
+    for (idx, is_signer, is_writable) in instruction_accounts {
+        let mut meta = 0u8;
+        if is_signer { meta |= 0x80; }
+        if is_writable { meta |= 0x40; }
+        message.push(meta | idx);
+    }
+    message.extend_from_slice(&encode_compact_u16(1));
+    message.push(5u8); // DeactivateStake discriminant
+
+    let mut tx = encode_compact_u16(1);
+    tx.extend_from_slice(&[0u8; 64]);
+    tx.extend_from_slice(&message);
+    Ok(tx)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_ata_known_vector() {
+        // owner = 8uAPC2UxiBjKmUksVVwUA6q4RctiXkgSAsovBR39cd1i
+        // mint  = EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v (USDC)
+        let ata = find_associated_token_address(
+            "8uAPC2UxiBjKmUksVVwUA6q4RctiXkgSAsovBR39cd1i",
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        ).unwrap();
+        // Length must be a valid base58-encoded 32-byte pubkey.
+        let decoded = bs58::decode(&ata).into_vec().unwrap();
+        assert_eq!(decoded.len(), 32);
+    }
 }

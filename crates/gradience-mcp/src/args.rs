@@ -67,6 +67,31 @@ pub struct SignAndSendArgs {
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct TransferSplArgs {
+    pub wallet_id: String,
+    pub chain_id: String,
+    pub mint: String,
+    pub to: String,
+    pub amount: String,
+    pub decimals: u8,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct DelegateStakeArgs {
+    pub wallet_id: String,
+    pub chain_id: String,
+    pub stake_account: String,
+    pub vote_account: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct DeactivateStakeArgs {
+    pub wallet_id: String,
+    pub chain_id: String,
+    pub stake_account: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct VerifyApiKeyArgs {
     pub api_key: String,
 }

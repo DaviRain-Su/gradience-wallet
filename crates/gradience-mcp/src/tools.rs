@@ -339,8 +339,46 @@ pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Valu
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
-    // If recipient looks like an HTTP URL, attempt MPP 402 payment flow.
+    // If recipient looks like an HTTP URL, attempt MPP 402 or Stellar x402 payment flow.
     if recipient.starts_with("http://") || recipient.starts_with("https://") {
+        if chain.starts_with("stellar") {
+            let x402_result = block_on_async(async {
+                let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+                let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
+                let stellar_addr = addrs.iter().find(|a| a.chain_id.starts_with("stellar:"))?.address.clone();
+
+                let derivation_path = gradience_core::wallet::hd::path_for(chain, 0);
+                let seed = gradience_core::ows::local_adapter::derive_demo_seed(wallet_id, chain, &derivation_path);
+                let secret_key = gradience_core::payment::stellar_x402::stellar_secret_from_seed(&seed);
+
+                let bridge_dir = std::env::var("CARGO_MANIFEST_DIR")
+                    .map(|p| std::path::PathBuf::from(p).join("../../bridge/stellar-x402"))
+                    .unwrap_or_else(|_| std::path::PathBuf::from("./bridge/stellar-x402"));
+                let x402_client = gradience_core::payment::stellar_x402::StellarX402Client::new(bridge_dir);
+                let network = if chain.contains("testnet") { "stellar:testnet" } else { "stellar:pubnet" };
+                let (resp, tx_hash) = x402_client.pay(
+                    &secret_key,
+                    network,
+                    reqwest::Method::GET,
+                    recipient,
+                    vec![],
+                    None,
+                ).await.ok()?;
+                let status = resp.status().as_u16();
+                let body = resp.text().await.ok()?;
+                Some(json!({
+                    "status": status,
+                    "txHash": tx_hash,
+                    "body": body,
+                    "stellarAddress": stellar_addr,
+                }))
+            });
+            if let Some(r) = x402_result {
+                return Ok(r);
+            }
+            return Err(anyhow::anyhow!("Stellar x402 payment failed"));
+        }
+
         let mpp_result = block_on_async(async {
             use gradience_core::payment::router::{PaymentRoutePreference, PaymentRouter};
             use gradience_core::payment::mpp_client::{GradienceMppProvider, MppClient};
@@ -598,4 +636,159 @@ pub fn handle_verify_api_key(args: crate::args::VerifyApiKeyArgs) -> anyhow::Res
         "valid": valid.is_some(),
         "apiKeyPrefix": api_key.get(..8).unwrap_or(""),
     }))
+}
+
+pub fn handle_transfer_spl(args: crate::args::TransferSplArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let chain_id = &args.chain_id;
+    let mint = &args.mint;
+    let to = &args.to;
+    let amount: u64 = args.amount.parse()
+        .map_err(|_| anyhow::anyhow!("amount must be a raw integer"))?;
+    let decimals = args.decimals;
+
+    let (passphrase, vault_dir) = get_vault_config()?;
+    let rpc_url = resolve_rpc(chain_id);
+
+    let tx_hex = block_on_async(async {
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+            .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
+
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+            .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
+        let from_wallet = addrs.iter()
+            .find(|a| a.chain_id.starts_with("solana:"))
+            .map(|a| a.address.clone())
+            .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
+
+        let to_ata = gradience_core::ows::signing::find_associated_token_address(to, mint)
+            .map_err(|e| anyhow::anyhow!("find recipient ata failed: {}", e))?;
+
+        let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+        let create_ata = match client.get_account_info(&to_ata).await {
+            Ok(Some(_)) => false,
+            Ok(None) => true,
+            Err(e) => {
+                tracing::warn!("failed to query recipient ATA: {}, assuming creation needed", e);
+                true
+            }
+        };
+
+        let blockhash = client.get_latest_blockhash().await
+            .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
+
+        let tx_bytes = gradience_core::ows::signing::build_spl_transfer_tx(
+            &from_wallet, to, mint, amount, decimals, &blockhash, create_ata,
+        ).map_err(|e| anyhow::anyhow!("build spl tx failed: {}", e))?;
+
+        Result::<String, anyhow::Error>::Ok(format!("0x{}", hex::encode(&tx_bytes)))
+    })?;
+
+    let result = ows_lib::sign_and_send(
+        wallet_id,
+        chain_id,
+        &tx_hex,
+        Some(&passphrase),
+        None,
+        Some(rpc_url),
+        Some(&vault_dir),
+    ).map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
+
+    Ok(json!({"txHash": result.tx_hash, "walletId": wallet_id, "chainId": chain_id}))
+}
+
+pub fn handle_delegate_stake(args: crate::args::DelegateStakeArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let chain_id = &args.chain_id;
+    let stake_account = &args.stake_account;
+    let vote_account = &args.vote_account;
+
+    let (passphrase, vault_dir) = get_vault_config()?;
+    let rpc_url = resolve_rpc(chain_id);
+
+    let tx_hex = block_on_async(async {
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+            .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
+
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+            .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
+        let authorized_staker = addrs.iter()
+            .find(|a| a.chain_id.starts_with("solana:"))
+            .map(|a| a.address.clone())
+            .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
+
+        let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+        let blockhash = client.get_latest_blockhash().await
+            .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
+
+        let tx_bytes = gradience_core::ows::signing::build_delegate_stake_tx(
+            stake_account, vote_account, &authorized_staker, &blockhash,
+        ).map_err(|e| anyhow::anyhow!("build delegate tx failed: {}", e))?;
+
+        Result::<String, anyhow::Error>::Ok(format!("0x{}", hex::encode(&tx_bytes)))
+    })?;
+
+    let result = ows_lib::sign_and_send(
+        wallet_id,
+        chain_id,
+        &tx_hex,
+        Some(&passphrase),
+        None,
+        Some(rpc_url),
+        Some(&vault_dir),
+    ).map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
+
+    Ok(json!({"txHash": result.tx_hash, "walletId": wallet_id, "chainId": chain_id}))
+}
+
+pub fn handle_deactivate_stake(args: crate::args::DeactivateStakeArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let chain_id = &args.chain_id;
+    let stake_account = &args.stake_account;
+
+    let (passphrase, vault_dir) = get_vault_config()?;
+    let rpc_url = resolve_rpc(chain_id);
+
+    let tx_hex = block_on_async(async {
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+            .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
+
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+            .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
+        let authorized_staker = addrs.iter()
+            .find(|a| a.chain_id.starts_with("solana:"))
+            .map(|a| a.address.clone())
+            .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
+
+        let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+        let blockhash = client.get_latest_blockhash().await
+            .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
+
+        let tx_bytes = gradience_core::ows::signing::build_deactivate_stake_tx(
+            stake_account, &authorized_staker, &blockhash,
+        ).map_err(|e| anyhow::anyhow!("build deactivate tx failed: {}", e))?;
+
+        Result::<String, anyhow::Error>::Ok(format!("0x{}", hex::encode(&tx_bytes)))
+    })?;
+
+    let result = ows_lib::sign_and_send(
+        wallet_id,
+        chain_id,
+        &tx_hex,
+        Some(&passphrase),
+        None,
+        Some(rpc_url),
+        Some(&vault_dir),
+    ).map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
+
+    Ok(json!({"txHash": result.tx_hash, "walletId": wallet_id, "chainId": chain_id}))
 }

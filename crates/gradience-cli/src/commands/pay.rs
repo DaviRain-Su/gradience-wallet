@@ -20,6 +20,46 @@ pub async fn x402(
     let passphrase = ctx.read_passphrase()
         .ok_or_else(|| anyhow::anyhow!("No session found. Run 'gradience auth login' first."))?;
 
+    if chain.starts_with("stellar") {
+        let addrs = queries::list_wallet_addresses(&ctx.db, &wallet_id).await.unwrap_or_default();
+        let stellar_addr = addrs
+            .iter()
+            .find(|a| a.chain_id.starts_with("stellar:"))
+            .ok_or_else(|| anyhow::anyhow!("No Stellar address found for wallet {}", wallet_id))?
+            .address
+            .clone();
+
+        let derivation_path = gradience_core::wallet::hd::path_for(&chain, 0);
+        let seed = gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, &chain, &derivation_path);
+        let secret_key = gradience_core::payment::stellar_x402::stellar_secret_from_seed(&seed);
+
+        let bridge_dir = std::env::var("CARGO_MANIFEST_DIR")
+            .map(|p| std::path::PathBuf::from(p).join("../../bridge/stellar-x402"))
+            .unwrap_or_else(|_| std::path::PathBuf::from("./bridge/stellar-x402"));
+        let x402_client = gradience_core::payment::stellar_x402::StellarX402Client::new(bridge_dir);
+        let network = if chain.contains("testnet") { "stellar:testnet" } else { "stellar:pubnet" };
+        let (resp, tx_hash) = x402_client
+            .pay(
+                &secret_key,
+                network,
+                reqwest::Method::GET,
+                &recipient,
+                vec![],
+                None,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("Stellar x402 payment failed: {}", e))?;
+
+        println!(
+            "Stellar x402 payment settled.\n  status: {}\n  tx_hash: {}\n  stellar_address: {}\n  body: {}",
+            resp.status().as_u16(),
+            tx_hash.unwrap_or_else(|| "N/A".into()),
+            stellar_addr,
+            resp.text().await.unwrap_or_default()
+        );
+        return Ok(());
+    }
+
     let addrs = queries::list_wallet_addresses(&ctx.db, &wallet_id).await.unwrap_or_default();
     let mut addr = None;
     for a in &addrs {

@@ -1,0 +1,14 @@
+{
+  "name": "gradience-stellar-x402-bridge",
+  "version": "0.1.0",
+  "description": "Node.js bridge for Stellar x402 auth-entry signing using @x402/stellar",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "node index.mjs"
+  },
+  "dependencies": {
+    "@x402/core": "^2.9.0",
+    "@x402/stellar": "^2.9.0"
+  }
+}

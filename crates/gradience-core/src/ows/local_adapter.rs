@@ -9,6 +9,18 @@ use crate::ows::adapter::{
 };
 use crate::ows::vault::VaultHandle;
 
+/// Deterministic seed generation used by LocalOwsAdapter for demo chains
+/// that are not yet supported by ows-lib native derivation.
+pub fn derive_demo_seed(wallet_id: &str, chain: &str, derivation_path: &str) -> [u8; 32] {
+    use sha3::{Digest, Sha3_256};
+    let mut hasher = Sha3_256::new();
+    hasher.update(wallet_id.as_bytes());
+    hasher.update(chain.as_bytes());
+    hasher.update(derivation_path.as_bytes());
+    let hash = hasher.finalize();
+    hash.as_slice()[..32].try_into().unwrap()
+}
+
 pub struct LocalOwsAdapter {
     vault_dir: PathBuf,
 }
@@ -119,18 +131,12 @@ impl OwsAdapter for LocalOwsAdapter {
             });
         }
 
-        // Deterministic address generation for demo purposes using SHA3 hash of wallet_id + chain + path.
-        // In a real production system this would derive the private key from the HD seed.
-        use sha3::{Digest, Sha3_256};
-        let mut hasher = Sha3_256::new();
-        hasher.update(wallet_id.as_bytes());
-        hasher.update(chain.as_bytes());
-        hasher.update(derivation_path.as_bytes());
-        let hash = hasher.finalize();
-        let secret: [u8; 32] = hash.as_slice()[..32].try_into().unwrap();
+        let secret = derive_demo_seed(wallet_id, chain, derivation_path);
 
         let address = if chain.starts_with("eip155:") || chain.starts_with("base:") {
             crate::ows::signing::eth_address_from_secret_key(&secret)?
+        } else if chain.starts_with("stellar:") {
+            crate::ows::signing::stellar_address_from_secret_key(&secret)?
         } else {
             format!("0x{}", hex::encode(&secret[..20]))
         };

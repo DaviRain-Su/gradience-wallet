@@ -59,6 +59,9 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 Tool::with_schema::<LlmGenerateArgs>("llm_generate", "Generate text via AI Gateway"),
                 Tool::with_schema::<AiBalanceArgs>("ai_balance", "Query AI Gateway balance"),
                 Tool::with_schema::<AiModelsArgs>("ai_models", "List available LLM models and pricing"),
+                Tool::with_schema::<TransferSplArgs>("transfer_spl_token", "Transfer SPL token on Solana (auto-creates recipient ATA if needed)"),
+                Tool::with_schema::<DelegateStakeArgs>("delegate_stake", "Delegate an existing Solana stake account to a validator"),
+                Tool::with_schema::<DeactivateStakeArgs>("deactivate_stake", "Deactivate a delegated Solana stake account"),
                 Tool::with_schema::<VerifyApiKeyArgs>("verify_api_key", "Verify an API key hash"),
             ];
             let result = ToolsListResult { tools };
@@ -150,6 +153,36 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
                     };
                     match crate::tools::handle_sign_and_send(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "transfer_spl_token" => {
+                    let a: TransferSplArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
+                    match crate::tools::handle_transfer_spl(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "delegate_stake" => {
+                    let a: DelegateStakeArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
+                    match crate::tools::handle_delegate_stake(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "deactivate_stake" => {
+                    let a: DeactivateStakeArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
+                    match crate::tools::handle_deactivate_stake(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }
