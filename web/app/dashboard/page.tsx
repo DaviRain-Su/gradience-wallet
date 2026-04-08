@@ -73,8 +73,10 @@ export default function Dashboard() {
   const [apiBase, setApiBaseState] = useState("");
   const [showApiConfig, setShowApiConfig] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState(0);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("gradience_api_base") || "http://localhost:8080";
       setApiBaseState(saved);
@@ -169,7 +171,7 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {showApiConfig && (
+      {mounted && showApiConfig && (
         <div className="mb-4 border rounded p-3" style={{ backgroundColor: "#FEF3C7", borderColor: "#FDE68A" }}>
           <p className="text-sm text-yellow-900 mb-2">
             You are on HTTPS but your local API is HTTP. Please enter your local API tunnel URL (e.g. ngrok HTTPS) or switch to local dev mode.

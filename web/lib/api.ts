@@ -4,6 +4,10 @@ function getApiBase(): string {
   if (env) return env;
   const saved = localStorage.getItem("gradience_api_base");
   if (saved) return saved;
+  // Fallback to production API when deployed on gradiences.xyz domains
+  if (typeof window !== "undefined" && window.location.hostname.endsWith("gradiences.xyz")) {
+    return "https://api.gradiences.xyz";
+  }
   return "http://localhost:8080";
 }
 
