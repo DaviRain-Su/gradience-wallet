@@ -17,6 +17,11 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "Gradience Wallet",
   description: "Agent Wallet Orchestration Platform",
+  manifest: "/manifest.json",
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
+  themeColor: "#3b82f6",
 };
 
 export default function RootLayout({
