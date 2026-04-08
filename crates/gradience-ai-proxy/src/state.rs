@@ -1,0 +1,50 @@
+use sqlx::{Pool, Sqlite};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+
+#[derive(Clone)]
+pub struct Session {
+    pub user_id: String,
+    pub username: String,
+    pub passphrase: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct SessionStore {
+    cache: Arc<Mutex<HashMap<String, Session>>>,
+    db: Pool<Sqlite>,
+}
+
+impl SessionStore {
+    pub fn new(db: Pool<Sqlite>) -> Self {
+        Self {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            db,
+        }
+    }
+
+    pub async fn get(&self, token: &str) -> Option<Session> {
+        if let Some(s) = self.cache.lock().await.get(token).cloned() {
+            return Some(s);
+        }
+        let row = gradience_db::queries::get_session_by_token(&self.db, token)
+            .await
+            .ok()
+            .flatten()?;
+        let session = Session {
+            user_id: row.0,
+            username: row.1,
+            passphrase: row.2,
+        };
+        self.cache.lock().await.insert(token.to_string(), session.clone());
+        Some(session)
+    }
+}
+
+pub struct AppState {
+    pub db: Pool<Sqlite>,
+    pub sessions: SessionStore,
+    pub ows: Arc<gradience_core::ows::local_adapter::LocalOwsAdapter>,
+    pub vault_dir: std::path::PathBuf,
+}

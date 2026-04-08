@@ -3,25 +3,46 @@ use crate::payment::router::{PaymentRequirement, PaymentRouter};
 use mpp::client::PaymentProvider;
 use mpp::{PaymentChallenge, PaymentCredential};
 
+/// Per-chain EVM configuration for MPP charge payments.
+#[derive(Clone, Debug)]
+pub struct EvmChargeConfig {
+    pub chain_id: u64,
+    pub rpc_url: String,
+    pub secret: [u8; 32],
+    pub gas_limit_native: u64,
+    pub gas_limit_erc20: u64,
+}
+
+impl EvmChargeConfig {
+    pub fn new(chain_id: u64, rpc_url: impl Into<String>, secret: [u8; 32]) -> Self {
+        Self {
+            chain_id,
+            rpc_url: rpc_url.into(),
+            secret,
+            gas_limit_native: 21000,
+            gas_limit_erc20: 65000,
+        }
+    }
+
+    pub fn with_gas_limits(mut self, native: u64, erc20: u64) -> Self {
+        self.gas_limit_native = native;
+        self.gas_limit_erc20 = erc20;
+        self
+    }
+}
+
 /// Gradience-specific MPP provider that delegates signing to the OWS wallet.
 /// Supports multi-chain priority routing before committing to a payment.
 #[derive(Clone, Debug)]
 pub struct GradienceMppProvider {
     pub wallet_id: String,
     pub router: PaymentRouter,
-    /// If true, only routes that the policy engine approves will be paid.
     pub policy_guard: bool,
-    /// Optional Tempo signer for charge payments.
     pub tempo_signer: Option<alloy::signers::local::PrivateKeySigner>,
-    /// RPC URL for Tempo (defaults to Moderato testnet).
     pub tempo_rpc: String,
-    /// Optional EVM secret (32 bytes) for charge payments on EVM chains.
-    pub evm_secret: Option<[u8; 32]>,
-    /// RPC URL for EVM (defaults to Base mainnet).
-    pub evm_rpc: String,
-    /// Optional Solana secret (32 bytes) for charge payments on Solana.
+    /// Multi-chain EVM configs keyed by chain_id.
+    pub evm_chains: Vec<EvmChargeConfig>,
     pub solana_secret: Option<[u8; 32]>,
-    /// RPC URL for Solana (defaults to mainnet).
     pub solana_rpc: String,
 }
 
@@ -33,8 +54,7 @@ impl GradienceMppProvider {
             policy_guard: false,
             tempo_signer: None,
             tempo_rpc: "https://rpc.moderato.tempo.xyz".into(),
-            evm_secret: None,
-            evm_rpc: "https://mainnet.base.org".into(),
+            evm_chains: Vec::new(),
             solana_secret: None,
             solana_rpc: "https://api.mainnet-beta.solana.com".into(),
         }
@@ -58,13 +78,29 @@ impl GradienceMppProvider {
         self
     }
 
-    pub fn with_evm_secret(mut self, secret: [u8; 32]) -> Self {
-        self.evm_secret = Some(secret);
+    /// Add an EVM chain config for MPP charge payments.
+    pub fn with_evm_chain(mut self, config: EvmChargeConfig) -> Self {
+        self.evm_chains.push(config);
         self
     }
 
+    /// Convenience: add a single EVM chain with just secret and chain name.
+    /// RPC and chain_id are resolved from `chain.rs`.
+    pub fn with_evm_secret(mut self, secret: [u8; 32]) -> Self {
+        self.evm_chains.push(EvmChargeConfig::new(
+            8453,
+            "https://mainnet.base.org",
+            secret,
+        ));
+        self
+    }
+
+    /// Convenience: set the RPC for the first (or only) EVM chain.
     pub fn with_evm_rpc(mut self, rpc: impl Into<String>) -> Self {
-        self.evm_rpc = rpc.into();
+        let rpc_str = rpc.into();
+        if let Some(first) = self.evm_chains.first_mut() {
+            first.rpc_url = rpc_str;
+        }
         self
     }
 
@@ -77,12 +113,153 @@ impl GradienceMppProvider {
         self.solana_rpc = rpc.into();
         self
     }
+
+    /// Find the best EVM chain config for a given charge request.
+    /// If the challenge specifies a chain, use that; otherwise pick the first available.
+    fn find_evm_config(&self, chain_hint: Option<u64>) -> Option<&EvmChargeConfig> {
+        if let Some(target) = chain_hint {
+            self.evm_chains.iter().find(|c| c.chain_id == target)
+        } else {
+            self.evm_chains.first()
+        }
+    }
+
+    async fn pay_evm_charge(
+        &self,
+        charge_req: &mpp::protocol::intents::ChargeRequest,
+        challenge_echo: mpp::protocol::core::ChallengeEcho,
+    ) -> Result<PaymentCredential, mpp::MppError> {
+        use mpp::protocol::core::PaymentPayload;
+
+        // Extract chain hint from methodDetails.chainId if present.
+        let chain_hint: Option<u64> = charge_req
+            .method_details
+            .as_ref()
+            .and_then(|d| d.get("chainId"))
+            .and_then(|v| v.as_u64());
+
+        let evm = self
+            .find_evm_config(chain_hint)
+            .ok_or_else(|| mpp::MppError::Http("no evm chain configured".into()))?;
+
+        let recipient = charge_req
+            .recipient
+            .as_deref()
+            .ok_or_else(|| mpp::MppError::InvalidConfig("missing recipient".into()))?;
+        let currency = &charge_req.currency;
+        let amount = charge_req
+            .amount
+            .parse::<u128>()
+            .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
+
+        let from_addr = crate::ows::signing::eth_address_from_secret_key(&evm.secret)
+            .map_err(|e| mpp::MppError::InvalidConfig(e.to_string()))?;
+
+        let client = crate::rpc::evm::EvmRpcClient::new("evm", &evm.rpc_url)
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+        let nonce = client
+            .get_transaction_count(&from_addr)
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+        let gp_hex = client
+            .get_gas_price()
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+        let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
+            .map_err(|e| mpp::MppError::InvalidConfig(format!("bad gas price: {}", e)))?;
+
+        let is_native = currency == "0x0000000000000000000000000000000000000000"
+            || currency.is_empty()
+            || currency == "ETH"
+            || currency == "BNB"
+            || currency == "CFX"
+            || currency == "OKB";
+
+        let (to, value, data, gas_limit): (String, u128, Vec<u8>, u64) = if is_native {
+            (recipient.into(), amount, vec![], evm.gas_limit_native)
+        } else {
+            let mut calldata = vec![0xa9, 0x05, 0x9c, 0xbb];
+            let to_bytes = hex::decode(recipient.trim_start_matches("0x"))
+                .map_err(|e| mpp::MppError::InvalidConfig(format!("bad recipient: {}", e)))?;
+            calldata.extend_from_slice(&[0u8; 12]);
+            calldata.extend_from_slice(&to_bytes);
+            calldata.extend_from_slice(&pad_u128_to_32_bytes(amount));
+            (currency.into(), 0, calldata, evm.gas_limit_erc20)
+        };
+
+        let signed_tx = crate::ows::signing::sign_eth_transaction(
+            &evm.secret,
+            nonce,
+            gas_price,
+            gas_limit,
+            &to,
+            value,
+            &data,
+            evm.chain_id,
+        )
+        .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        let tx_hash = client
+            .send_raw_transaction(&format!("0x{}", hex::encode(&signed_tx)))
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        let payload = PaymentPayload::hash(tx_hash);
+        Ok(PaymentCredential::new(challenge_echo, payload))
+    }
+
+    async fn pay_solana_charge(
+        &self,
+        charge_req: &mpp::protocol::intents::ChargeRequest,
+        challenge_echo: mpp::protocol::core::ChallengeEcho,
+    ) -> Result<PaymentCredential, mpp::MppError> {
+        use mpp::protocol::core::PaymentPayload;
+
+        let secret = self
+            .solana_secret
+            .ok_or_else(|| mpp::MppError::Http("missing solana signer".into()))?;
+
+        let recipient = charge_req
+            .recipient
+            .as_deref()
+            .ok_or_else(|| mpp::MppError::InvalidConfig("missing recipient".into()))?;
+        let amount = charge_req
+            .amount
+            .parse::<u64>()
+            .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
+
+        let from_pubkey = ed25519_dalek::SigningKey::from_bytes(&secret)
+            .verifying_key()
+            .to_bytes();
+        let from_addr = bs58::encode(&from_pubkey).into_string();
+
+        let client = crate::rpc::solana::SolanaRpcClient::new(&self.solana_rpc);
+        let blockhash = client
+            .get_latest_blockhash()
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        let tx = crate::ows::signing::build_solana_transfer_tx(
+            &from_addr, recipient, amount, &blockhash,
+        )
+        .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+        let signed_tx = crate::ows::signing::sign_solana_transaction(tx, &secret)
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        let sig = client
+            .send_transaction(&signed_tx)
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        let payload = PaymentPayload::hash(sig);
+        Ok(PaymentCredential::new(challenge_echo, payload))
+    }
 }
 
 impl PaymentProvider for GradienceMppProvider {
     fn supports(&self, method: &str, intent: &str) -> bool {
         (method == "tempo" && intent == "charge" && self.tempo_signer.is_some())
-            || (method == "evm" && intent == "charge" && self.evm_secret.is_some())
+            || (method == "evm" && intent == "charge" && !self.evm_chains.is_empty())
             || (method == "solana" && intent == "charge" && self.solana_secret.is_some())
             || (method == "gradience" && intent == "session")
     }
@@ -91,7 +268,7 @@ impl PaymentProvider for GradienceMppProvider {
         &self,
         challenge: &PaymentChallenge,
     ) -> Result<PaymentCredential, mpp::MppError> {
-        use mpp::protocol::core::{ChallengeEcho, PaymentPayload};
+        use mpp::protocol::core::ChallengeEcho;
         use mpp::protocol::intents::ChargeRequest;
 
         let charge_req: ChargeRequest = challenge
@@ -142,122 +319,14 @@ impl PaymentProvider for GradienceMppProvider {
             .await
             .map_err(|e| mpp::MppError::Http(e.to_string()))?;
 
-        // --- EVM charge ---
+        // --- EVM charge (multi-chain) ---
         if challenge.method.as_str() == "evm" && challenge.intent.as_str() == "charge" {
-            let secret = self
-                .evm_secret
-                .ok_or_else(|| mpp::MppError::Http("missing evm signer".into()))?;
-
-            let recipient = charge_req
-                .recipient
-                .as_deref()
-                .ok_or_else(|| mpp::MppError::InvalidConfig("missing recipient".into()))?;
-            let currency = &charge_req.currency;
-            let amount = charge_req
-                .amount
-                .parse::<u128>()
-                .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
-
-            let from_addr = crate::ows::signing::eth_address_from_secret_key(&secret)
-                .map_err(|e| mpp::MppError::InvalidConfig(e.to_string()))?;
-
-            let chain_id: u64 = if self.evm_rpc.contains("84532") || self.evm_rpc.contains("sepolia.base") {
-                84532
-            } else if self.evm_rpc.contains("8453") || self.evm_rpc.contains("base") {
-                8453
-            } else if self.evm_rpc.contains("1") || self.evm_rpc.contains("eth") {
-                1
-            } else {
-                8453
-            };
-
-            let client = crate::rpc::evm::EvmRpcClient::new("evm", &self.evm_rpc)
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-            let nonce = client
-                .get_transaction_count(&from_addr)
-                .await
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-            let gp_hex = client
-                .get_gas_price()
-                .await
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-            let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
-                .map_err(|e| mpp::MppError::InvalidConfig(format!("bad gas price: {}", e)))?;
-
-            let (to, value, data, gas_limit): (String, u128, Vec<u8>, u64) =
-                if currency == "0x0000000000000000000000000000000000000000"
-                    || currency.is_empty()
-                    || currency == "ETH"
-                {
-                    (recipient.into(), amount, vec![], 21000)
-                } else {
-                    let mut calldata = vec![0xa9, 0x05, 0x9c, 0xbb];
-                    let to_bytes = hex::decode(recipient.trim_start_matches("0x"))
-                        .map_err(|e| mpp::MppError::InvalidConfig(format!("bad recipient: {}", e)))?;
-                    calldata.extend_from_slice(&[0u8; 12]);
-                    calldata.extend_from_slice(&to_bytes);
-                    let amount_padded = pad_u128_to_32_bytes(amount);
-                    calldata.extend_from_slice(&amount_padded);
-                    (currency.into(), 0, calldata, 65000)
-                };
-
-            let signed_tx = crate::ows::signing::sign_eth_transaction(
-                &secret,
-                nonce,
-                gas_price,
-                gas_limit,
-                &to,
-                value,
-                &data,
-                chain_id,
-            )
-            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-
-            let tx_hash = client
-                .send_raw_transaction(&format!("0x{}", hex::encode(&signed_tx)))
-                .await
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-
-            let payload = PaymentPayload::hash(tx_hash);
-            return Ok(PaymentCredential::new(challenge_echo, payload));
+            return self.pay_evm_charge(&charge_req, challenge_echo).await;
         }
 
         // --- Solana charge ---
         if challenge.method.as_str() == "solana" && challenge.intent.as_str() == "charge" {
-            let secret = self
-                .solana_secret
-                .ok_or_else(|| mpp::MppError::Http("missing solana signer".into()))?;
-
-            let recipient = charge_req
-                .recipient
-                .as_deref()
-                .ok_or_else(|| mpp::MppError::InvalidConfig("missing recipient".into()))?;
-            let amount = charge_req
-                .amount
-                .parse::<u64>()
-                .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
-
-            let from_pubkey = ed25519_dalek::SigningKey::from_bytes(&secret).verifying_key().to_bytes();
-            let from_addr = bs58::encode(&from_pubkey).into_string();
-
-            let client = crate::rpc::solana::SolanaRpcClient::new(&self.solana_rpc);
-            let blockhash = client
-                .get_latest_blockhash()
-                .await
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-
-            let tx = crate::ows::signing::build_solana_transfer_tx(&from_addr, recipient, amount, &blockhash)
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-            let signed_tx = crate::ows::signing::sign_solana_transaction(tx, &secret)
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-
-            let sig = client
-                .send_transaction(&signed_tx)
-                .await
-                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
-
-            let payload = PaymentPayload::hash(sig);
-            return Ok(PaymentCredential::new(challenge_echo, payload));
+            return self.pay_solana_charge(&charge_req, challenge_echo).await;
         }
 
         Err(mpp::MppError::Http(

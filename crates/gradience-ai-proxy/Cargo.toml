@@ -1,10 +1,10 @@
 [package]
-name = "gradience-api"
+name = "gradience-ai-proxy"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "gradience-api"
+name = "gradience-ai-proxy"
 path = "src/main.rs"
 
 [dependencies]
@@ -16,20 +16,18 @@ serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 uuid.workspace = true
-axum = { version = "0.7", features = ["ws"] }
+axum.workspace = true
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
-webauthn-rs = "0.5"
 url = "2"
 hex.workspace = true
-rlp.workspace = true
 chrono.workspace = true
 reqwest.workspace = true
 rand = "0.8"
+ring.workspace = true
 
 gradience-core = { path = "../gradience-core" }
 gradience-db = { path = "../gradience-db" }
-gradience-mcp = { path = "../gradience-mcp" }
 mpp = { version = "0.9.1" }
 
 [dependencies.ows-lib]

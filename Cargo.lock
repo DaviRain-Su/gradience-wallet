@@ -3283,6 +3283,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
+name = "gradience-ai-proxy"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "gradience-core",
+ "gradience-db",
+ "hex",
+ "mpp",
+ "ows-lib",
+ "rand 0.8.5",
+ "reqwest 0.11.27",
+ "ring",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber 0.3.23",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "gradience-api"
 version = "0.1.0"
 dependencies = [
@@ -3297,7 +3324,6 @@ dependencies = [
  "ows-lib",
  "rand 0.8.5",
  "reqwest 0.11.27",
- "ring",
  "rlp",
  "serde",
  "serde_json",

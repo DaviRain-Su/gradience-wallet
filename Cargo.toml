@@ -6,6 +6,7 @@ members = [
     "crates/gradience-cli",
     "crates/gradience-db",
     "crates/gradience-api",
+    "crates/gradience-ai-proxy",
     "crates/gradience-sdk-node",
 ]
 
