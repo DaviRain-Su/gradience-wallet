@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO shared_budget_trackers (workspace_id, token_address, chain_id, period, spent_amount, reset_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id, token_address, chain_id, period) DO UPDATE SET spent_amount = excluded.spent_amount, reset_at = excluded.reset_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 6
+    },
+    "nullable": []
+  },
+  "hash": "be9b7247b719f9719907f574ffa5bc0d03b65a22974c91f7a88a9af7052b3a13"
+}

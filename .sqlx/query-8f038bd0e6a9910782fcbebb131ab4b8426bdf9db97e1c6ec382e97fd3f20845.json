@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM wallet_payment_routes WHERE wallet_id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "8f038bd0e6a9910782fcbebb131ab4b8426bdf9db97e1c6ec382e97fd3f20845"
+}
