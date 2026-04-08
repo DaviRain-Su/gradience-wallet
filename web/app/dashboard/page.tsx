@@ -74,6 +74,12 @@ export default function Dashboard() {
   const [showApiConfig, setShowApiConfig] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState(0);
   const [mounted, setMounted] = useState(false);
+  const [needsPassphrase, setNeedsPassphrase] = useState(false);
+  const [passphrase, setPassphrase] = useState("");
+  const [confirmPassphrase, setConfirmPassphrase] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockError, setUnlockError] = useState("");
+  const [username, setUsername] = useState("");
 
   useEffect(() => {
     setMounted(true);
@@ -82,6 +88,17 @@ export default function Dashboard() {
       setApiBaseState(saved);
       setShowApiConfig(window.location.protocol === "https:" && saved.startsWith("http:"));
     }
+    apiGet("/api/auth/me")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.username) setUsername(data.username);
+        if (!data.has_passphrase) {
+          setNeedsPassphrase(true);
+        }
+      })
+      .catch(() => {
+        // 401 will be handled by handleAuthError redirect
+      });
   }, []);
 
   async function fetchWallets() {
@@ -123,11 +140,53 @@ export default function Dashboard() {
     }
   }
 
+  async function handleUnlock() {
+    if (passphrase.length < 12) {
+      setUnlockError("Passphrase must be at least 12 characters");
+      return;
+    }
+    if (passphrase !== confirmPassphrase) {
+      setUnlockError("Passphrases do not match");
+      return;
+    }
+    setUnlocking(true);
+    setUnlockError("");
+    try {
+      await apiPost("/api/auth/unlock", { passphrase });
+      setNeedsPassphrase(false);
+      await fetchWallets();
+    } catch (e: unknown) {
+      setUnlockError(`Unlock failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  async function handleLogout() {
+    try {
+      await apiPost("/api/auth/logout", {});
+    } catch {
+      // ignore
+    }
+    localStorage.removeItem("gradience_token");
+    window.location.href = "/login";
+  }
+
   return (
     <div className="min-h-screen p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Wallet Dashboard</h1>
         <div className="flex items-center gap-3">
+          {username && (
+            <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>{username}</span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="text-sm px-3 py-1.5 rounded"
+            style={{ backgroundColor: "var(--muted)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+          >
+            Log out
+          </button>
           <a
             href="/policies"
             className="text-sm px-3 py-1.5 rounded"
@@ -203,6 +262,42 @@ export default function Dashboard() {
           <WalletCard key={w.id} wallet={w} />
         ))}
       </div>
+
+      {needsPassphrase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="w-full max-w-md rounded-lg p-6 shadow-xl" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+            <h2 className="text-xl font-bold mb-2">Set your vault passphrase</h2>
+            <p className="text-sm mb-4" style={{ color: "var(--muted-foreground)" }}>
+              This passphrase encrypts your local vault. Make sure to remember it — it cannot be recovered.
+            </p>
+            <input
+              className="border rounded px-3 py-2 w-full mb-3"
+              style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              type="password"
+              placeholder="Passphrase (≥12 chars)"
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+            />
+            <input
+              className="border rounded px-3 py-2 w-full mb-3"
+              style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              type="password"
+              placeholder="Confirm passphrase"
+              value={confirmPassphrase}
+              onChange={(e) => setConfirmPassphrase(e.target.value)}
+            />
+            <button
+              onClick={handleUnlock}
+              disabled={unlocking || passphrase.length < 12 || confirmPassphrase !== passphrase}
+              className="w-full rounded py-2 disabled:opacity-50"
+              style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+            >
+              {unlocking ? "Setting..." : "Unlock Vault & Continue"}
+            </button>
+            {unlockError && <p className="text-sm mt-2" style={{ color: "#B45309" }}>{unlockError}</p>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

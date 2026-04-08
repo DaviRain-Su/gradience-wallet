@@ -614,6 +614,35 @@ async fn unlock(
     Ok(StatusCode::OK)
 }
 
+#[derive(Serialize)]
+struct AuthMeResp {
+    user_id: String,
+    username: String,
+    has_passphrase: bool,
+}
+
+async fn auth_me(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<AuthMeResp>, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    Ok(Json(AuthMeResp {
+        user_id: session.user_id,
+        username: session.username,
+        has_passphrase: session.passphrase.is_some(),
+    }))
+}
+
+async fn logout(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Result<StatusCode, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    state.sessions.remove(&token).await;
+    Ok(StatusCode::OK)
+}
+
 // ==================== Recovery ====================
 
 #[derive(Deserialize)]
@@ -2859,6 +2888,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/passkey/login/start", post(login_start))
         .route("/api/auth/passkey/login/finish", post(login_finish))
         .route("/api/auth/unlock", post(unlock))
+        .route("/api/auth/me", get(auth_me))
+        .route("/api/auth/logout", post(logout))
         .route("/api/auth/recover/initiate", post(recover_initiate))
         .route("/api/auth/recover/verify", post(recover_verify))
         .route("/api/auth/recover/register", post(recover_register))
@@ -2900,12 +2931,24 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/policy-approvals/:id/reject", post(reject_policy_approval))
         .route("/api/tg/webhook", post(tg_webhook))
         .route("/health", get(health_check))
-        .layer(
-            tower_http::cors::CorsLayer::new()
-                .allow_origin(tower_http::cors::Any)
-                .allow_methods(tower_http::cors::Any)
-                .allow_headers(tower_http::cors::Any),
-        )
+        .layer({
+            let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "https://wallets.gradiences.xyz".to_string());
+            if origin.trim() == "*" {
+                tower_http::cors::CorsLayer::new()
+                    .allow_origin(tower_http::cors::Any)
+                    .allow_methods(tower_http::cors::Any)
+                    .allow_headers(tower_http::cors::Any)
+            } else {
+                let origins: Vec<axum::http::HeaderValue> = vec![
+                    origin.parse().unwrap_or_else(|_| "https://wallets.gradiences.xyz".parse().unwrap()),
+                    "http://localhost:3000".parse().unwrap(),
+                ];
+                tower_http::cors::CorsLayer::new()
+                    .allow_origin(tower_http::cors::AllowOrigin::list(origins))
+                    .allow_methods(tower_http::cors::Any)
+                    .allow_headers(tower_http::cors::Any)
+            }
+        })
         .with_state(Arc::clone(&state));
 
     let anchor_state = Arc::clone(&state);
