@@ -178,16 +178,6 @@ export default function Dashboard() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Wallet Dashboard</h1>
         <div className="flex items-center gap-3">
-          {username && (
-            <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>{username}</span>
-          )}
-          <button
-            onClick={handleLogout}
-            className="text-sm px-3 py-1.5 rounded"
-            style={{ backgroundColor: "var(--muted)", color: "var(--foreground)", border: "1px solid var(--border)" }}
-          >
-            Log out
-          </button>
           <a
             href="/policies"
             className="text-sm px-3 py-1.5 rounded"
@@ -210,6 +200,16 @@ export default function Dashboard() {
               </span>
             )}
           </a>
+          {username && (
+            <span className="text-sm hidden sm:inline" style={{ color: "var(--muted-foreground)" }}>{username}</span>
+          )}
+          <button
+            onClick={handleLogout}
+            className="text-sm px-3 py-1.5 rounded font-medium"
+            style={{ backgroundColor: "#EF4444", color: "#fff" }}
+          >
+            Log out
+          </button>
         </div>
       </div>
 
