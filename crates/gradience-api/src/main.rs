@@ -869,7 +869,7 @@ async fn wallet_portfolio(
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
-                native_balance: "unsupported".into(),
+                native_balance: "0x0".into(),
                 assets: vec![],
             });
         }

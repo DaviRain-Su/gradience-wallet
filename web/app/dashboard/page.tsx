@@ -328,27 +328,31 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   });
 
   function parseNativeBalance(hex: string, chainId: string) {
-    const val = BigInt(hex || "0x0");
-    if (val === BigInt(0)) {
-      if (chainId.startsWith("solana:")) return "0 SOL";
-      if (chainId.startsWith("ton:")) return "0 TON";
-      if (chainId.startsWith("cfx:")) return "0 CFX";
+    try {
+      const val = BigInt(hex || "0x0");
+      if (val === BigInt(0)) {
+        if (chainId.startsWith("solana:")) return "0 SOL";
+        if (chainId.startsWith("ton:")) return "0 TON";
+        if (chainId.startsWith("cfx:")) return "0 CFX";
+        return "0 ETH";
+      }
+      if (chainId.startsWith("solana:")) {
+        const sol = Number(val) / 1e9;
+        return `${sol.toFixed(6)} SOL`;
+      }
+      if (chainId.startsWith("ton:")) {
+        const ton = Number(val) / 1e9;
+        return `${ton.toFixed(6)} TON`;
+      }
+      if (chainId.startsWith("cfx:")) {
+        const cfx = Number(val) / 1e18;
+        return `${cfx.toFixed(6)} CFX`;
+      }
+      const eth = Number(val) / 1e18;
+      return `${eth.toFixed(6)} ETH`;
+    } catch {
       return "0 ETH";
     }
-    if (chainId.startsWith("solana:")) {
-      const sol = Number(val) / 1e9;
-      return `${sol.toFixed(6)} SOL`;
-    }
-    if (chainId.startsWith("ton:")) {
-      const ton = Number(val) / 1e9;
-      return `${ton.toFixed(6)} TON`;
-    }
-    if (chainId.startsWith("cfx:")) {
-      const cfx = Number(val) / 1e18;
-      return `${cfx.toFixed(6)} CFX`;
-    }
-    const eth = Number(val) / 1e18;
-    return `${eth.toFixed(6)} ETH`;
   }
 
   function copy(text: string) {
