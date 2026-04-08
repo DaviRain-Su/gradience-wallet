@@ -9,6 +9,7 @@ fn test_x402_create_requirement_success() {
         "1000000",
         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         9999999999,
+        None,
     ).unwrap();
     assert_eq!(req.scheme, "exact");
     assert_eq!(req.network, "base");
@@ -18,8 +19,8 @@ fn test_x402_create_requirement_success() {
 #[test]
 fn test_x402_invalid_recipient_fails() {
     let svc = X402Service::new();
-    let err = svc.create_requirement("not-an-address", "100", "0xabc", 0).unwrap_err();
-    assert!(err.to_string().contains("invalid recipient"));
+    let err = svc.create_requirement("not-an-address", "100", "0xabc", 0, None).unwrap_err();
+    assert!(err.to_string().contains("invalid"));
 }
 
 #[test]
@@ -30,6 +31,7 @@ fn test_x402_sign_and_verify_success() {
         "1000000",
         "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         9999999999,
+        None,
     ).unwrap();
     let payment = svc.sign_payment(req, "0xdeadbeefsig").unwrap();
     assert!(svc.verify_receipt(&payment, 1000).unwrap());
@@ -43,6 +45,7 @@ fn test_x402_verify_expired_fails() {
         "100",
         "0xabc",
         1000,
+        None,
     ).unwrap();
     let payment = svc.sign_payment(req, "0xdeadbeefsig").unwrap();
     assert!(!svc.verify_receipt(&payment, 2000).unwrap());
@@ -51,7 +54,7 @@ fn test_x402_verify_expired_fails() {
 #[test]
 fn test_x402_verify_empty_signature_fails() {
     let svc = X402Service::new();
-    let req = svc.create_requirement("0xabc", "100", "0xabc", 9999).unwrap();
+    let req = svc.create_requirement("0xabc", "100", "0xabc", 9999, None).unwrap();
     let payment = svc.sign_payment(req, "0x0123456789abcdef").unwrap();
     // sign_payment enforces min length, so this path is already covered
     assert!(svc.verify_receipt(&payment, 1000).unwrap());

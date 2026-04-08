@@ -23,6 +23,8 @@ reqwest.workspace = true
 secp256k1.workspace = true
 rand = "0.8"
 tokio.workspace = true
+mpp = { version = "0.9.1", features = ["tempo", "client"] }
+alloy = { version = "1.8", features = ["signer-local", "contract"] }
 
 [dependencies.ows-core]
 git = "https://github.com/open-wallet-standard/core"

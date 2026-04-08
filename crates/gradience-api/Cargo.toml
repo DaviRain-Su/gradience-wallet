@@ -16,7 +16,7 @@ serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true
 uuid.workspace = true
-axum = "0.7"
+axum = { version = "0.7", features = ["ws"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
 webauthn-rs = "0.5"
@@ -30,6 +30,7 @@ rand = "0.8"
 gradience-core = { path = "../gradience-core" }
 gradience-db = { path = "../gradience-db" }
 gradience-mcp = { path = "../gradience-mcp" }
+mpp = { version = "0.9.1" }
 
 [dependencies.ows-lib]
 git = "https://github.com/open-wallet-standard/core"

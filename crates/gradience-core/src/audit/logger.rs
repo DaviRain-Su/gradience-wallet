@@ -1,6 +1,13 @@
+// DEPRECATED: This in-memory audit logger is kept only for backward compatibility.
+// All new audit logging should go through `crate::audit::service::log_wallet_action`,
+// which persists logs to the database and maintains an HMAC chain.
+#![allow(deprecated)]
+
 use crate::error::{GradienceError, Result};
 use sha3::{Sha3_256, Digest};
 use serde::{Serialize, Deserialize};
+
+#[deprecated(since = "0.1.0", note = "Use `crate::audit::service` for DB-backed audit logging")]
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogEntry {

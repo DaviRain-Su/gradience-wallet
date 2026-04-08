@@ -1,6 +1,6 @@
 # Gradience Wallet
 
-An **Agent Wallet Orchestration Platform** built on the [Open Wallet Standard (OWS)](https://github.com/open-wallet-standard/core), designed for the **HashKey Chain Horizon Hackathon 2026**.
+An **Agent Wallet Orchestration Platform** built on the [Open Wallet Standard (OWS)](https://github.com/open-wallet-standard/core).
 
 Gradience enables users to create passkey-backed identities, manage multi-chain wallets locally, and delegate fine-grained, policy-gated access to AI agents via a standardized MCP (Model Context Protocol) interface.
 
@@ -12,10 +12,12 @@ Gradience enables users to create passkey-backed identities, manage multi-chain 
 - **Policy Engine**: Multi-layer policy system — Spend limits, Intent analysis, Dynamic risk signals, Time windows, Chain/Contract whitelist.
 - **Web UI + Passkey**: Next.js frontend with WebAuthn passkey registration/login, local-first architecture.
 - **DEX Integration**: Real 1inch Swap API + Uniswap V3 fallback, executable via Web UI, CLI, and MCP.
-- **MCP Server**: JSON-RPC MCP server exposing `sign_transaction`, `get_balance`, `swap`, `pay`, `llm_generate`, `ai_balance`, `ai_models` tools.
-- **AI Gateway**: Pre-paid LLM generation with cost tracking and reconciliation.
+- **MCP Server**: JSON-RPC MCP server exposing `sign_transaction`, `sign_message`, `sign_and_send`, `get_balance`, `swap`, `pay`, `llm_generate`, `ai_balance`, `ai_models`, `verify_api_key` tools.
+- **AI Gateway**: Real Anthropic Messages API integration with pre-paid balance, cost tracking, and model-whitelist reconciliation.
 - **Audit & Integrity**: HMAC-chained audit logs with Merkle tree anchoring for tamper detection.
-- **Multi-Platform SDKs**: Node.js (napi-rs) and Python SDKs for external integrations.
+- **x402 Payments**: Real OWS-signed x402 settlement with ERC-20 transfer on Base/Ethereum.
+- **Shared Budget**: Workspace-level team budgets with `shared_budget` policy rules and cross-wallet spending tracking.
+- **Multi-Platform SDKs**: Python SDK + TypeScript SDK for external integrations.
 - **Telegram Mini App**: TWA wallet UI with bot webhook support.
 - **Local-First**: SQLite + local vault; all data stays on your device, fully self-hostable.
 
@@ -68,7 +70,38 @@ cargo run --bin gradience -- agent balance <wallet-id> --chain base
 
 # Execute a real DEX swap
 cargo run --bin gradience -- dex swap <wallet-id> --from 0x8335... --to 0x4200... --amount 1
+
+# Export audit logs
+cargo run --bin gradience -- audit export <wallet-id> --format json
 ```
+
+### SDK Usage
+
+**Python SDK**
+```bash
+pip install ./sdk/python
+```
+```python
+from gradience_sdk import GradienceClient
+
+client = GradienceClient("http://localhost:8080", api_token="YOUR_TOKEN")
+wallet = client.create_wallet("demo")
+balance = client.get_balance(wallet["id"])
+```
+
+**TypeScript SDK**
+```bash
+npm install ./sdk/typescript
+```
+```typescript
+import { GradienceClient } from "@gradience/sdk";
+
+const client = new GradienceClient("http://localhost:8080", { apiToken: "YOUR_TOKEN" });
+const wallet = await client.createWallet("demo");
+const balance = await client.getBalance(wallet.id);
+```
+
+See [`docs/06-sdk-guide.md`](docs/06-sdk-guide.md) for the full SDK development guide.
 
 ### Run MCP Server
 
@@ -89,15 +122,20 @@ cargo test --workspace
 ```
 gradience-wallet/
 ├── crates/
-│   ├── gradience-core/      # Domain logic: OWS adapter, policy engine, audit, signing, RPC, DEX
+│   ├── gradience-core/      # Domain logic: OWS adapter, policy engine, audit, signing, RPC, DEX, HD, team
 │   ├── gradience-cli/       # Command-line wallet (clap)
 │   ├── gradience-db/        # SQLite/PostgreSQL layer with sqlx
 │   ├── gradience-api/       # Axum REST API server
 │   ├── gradience-mcp/       # MCP stdio server and tool handlers
 │   └── gradience-sdk-node/  # Node.js NAPI bindings
 ├── contracts/               # Solidity contracts (Merkle anchor)
-├── docs/                    # PRD, architecture, technical spec, tests spec
-├── sdk/python/              # Python SDK
+├── docs/                    # PRD, architecture, technical spec, tests spec, SDK guide
+├── sdk/
+│   ├── python/              # Python SDK
+│   ├── typescript/          # TypeScript SDK
+│   ├── go/                  # Go SDK
+│   ├── java/                # Java SDK
+│   └── ruby/                # Ruby SDK
 ├── web/                     # Next.js web frontend
 ├── start-local.sh           # One-click local launcher (macOS/Linux)
 ├── start-local.ps1          # One-click local launcher (Windows)
@@ -120,8 +158,9 @@ gradience-wallet/
 - [`docs/01-prd.md`](docs/01-prd.md) — Product Requirements & Roadmap
 - [`docs/02-architecture.md`](docs/02-architecture.md) — System Architecture & ADRs
 - [`docs/03-technical-spec.md`](docs/03-technical-spec.md) — Interfaces, DB Schema, Algorithms
-- [`docs/04-task-breakdown.md`](docs/04-task-breakdown.md) — Hackathon Sprint Plan
+- [`docs/04-task-breakdown.md`](docs/04-task-breakdown.md) — Development Plan & Milestones
 - [`docs/05-test-spec.md`](docs/05-test-spec.md) — TDD Test Definitions
+- [`docs/06-sdk-guide.md`](docs/06-sdk-guide.md) — SDK Development Guide & Roadmap
 
 ---
 
@@ -134,18 +173,20 @@ gradience-wallet/
 - **Crypto**: `ows-lib` / `ows-signer` (OWS native), `secp256k1`, `rlp`
 - **Networking**: `reqwest`, `axum`
 - **MCP**: Custom JSON-RPC stdio server
-- **SDKs**: `napi-rs` (Node.js), Python `requests`
+- **SDKs**: Python `requests`, TypeScript `fetch`, Go `net/http`, Java OkHttp, Ruby `net/http`, `napi-rs` (Node.js native)
 
 ---
 
-## Hackathon
+## Development Status
 
-- **Event**: HashKey Chain Horizon Hackathon 2026
-- **Deadline**: April 15, 2026
-- **Status**: Core platform implemented, 51 tests passing, OWS genuine integration complete.
+Core platform is feature-complete. All backend APIs, MCP tools, frontend pages, policy engine, audit, shared budget, HD derivation, and multi-chain support are implemented. SDKs are available in Python & TypeScript.
 
 ---
 
 ## License
 
 MIT (or as specified by the repository owner)
+
+---
+
+English | [简体中文](README.zh-CN.md)

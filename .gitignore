@@ -4,4 +4,5 @@ gradience.db
 vault/
 *.session
 .env
-
+node_modules
+dist

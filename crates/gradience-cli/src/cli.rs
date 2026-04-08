@@ -181,6 +181,21 @@ pub enum AuditCommands {
     Verify {
         wallet_id: String,
     },
+    /// Export audit logs to csv or json
+    Export {
+        #[arg(long)]
+        wallet_id: String,
+        #[arg(long, value_enum)]
+        format: AuditFormat,
+        #[arg(long)]
+        output: String,
+    },
+}
+
+#[derive(clap::ValueEnum, Clone, Debug)]
+pub enum AuditFormat {
+    Csv,
+    Json,
 }
 
 #[derive(Subcommand, Debug)]
@@ -196,6 +211,28 @@ pub enum TeamCommands {
         user_email: String,
         #[arg(long, value_enum)]
         role: String,
+    },
+    /// Set workspace shared budget
+    BudgetSet {
+        workspace_id: String,
+        #[arg(long)]
+        amount: String,
+        #[arg(long, default_value = "ETH")]
+        token: String,
+        #[arg(long, default_value = "eip155:1")]
+        chain_id: String,
+        #[arg(long, default_value = "monthly")]
+        period: String,
+    },
+    /// Check workspace shared budget remaining
+    BudgetStatus {
+        workspace_id: String,
+        #[arg(long, default_value = "ETH")]
+        token: String,
+        #[arg(long, default_value = "eip155:1")]
+        chain_id: String,
+        #[arg(long, default_value = "monthly")]
+        period: String,
     },
 }
 

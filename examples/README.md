@@ -106,7 +106,7 @@ Then open `basic-wallet/index.html` and `x402-payment/index.html` directly in yo
 
 | Example            | Stack        | Best For                              |
 |--------------------|--------------|---------------------------------------|
-| `basic-wallet`     | HTML + JS    | Hackathon live demo, visual impact    |
+| `basic-wallet`     | HTML + JS    | Development live demo, visual impact    |
 | `mcp-client`       | Node.js      | Showing MCP interoperability          |
 | `x402-payment`     | HTML + JS    | Demonstrating real on-chain payments  |
 | `embedded-wallet`  | HTML + iframe| dApp integration & wallet embedding   |

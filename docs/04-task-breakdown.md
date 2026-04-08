@@ -1,15 +1,14 @@
 # Phase 4: Task Breakdown — 任务拆解
 
-> Deadline: 2026-04-15 (HashKey Chain Horizon Hackathon)
 > Rule: 每个任务 ≤ 4h，必须有验收标准
 
 ---
 
 ## 执行原则
 
-1. **P0 = Demo 必备** (没它就没法演示)
-2. **P1 = Demo 加分** (有它更完整)
-3. **P2 = 锦上添花** (时间够就做)
+1. **P0 = 核心功能** (平台必备)
+2. **P1 = 重要增强** (显著提升体验)
+3. **P2 = 扩展优化** (长期价值)
 4. **阻塞关系**: 上层任务依赖下层任务完成
 
 ---
@@ -277,7 +276,7 @@
 
 **验收标准**:
 - 前端能连接本地 gradience-api (mock 或真实)
-- Hackathon 演示时可用 Web 页面做 backdrop
+- Development 演示时可用 Web 页面做 backdrop
 
 ---
 
@@ -314,7 +313,7 @@
 - 修复 show-stopper bug
 - 更新 README (安装/运行说明)
 
-### T6.2 — Hackathon 提交
+### T6.2 — Development 提交
 **优先级**: P0  
 **预估**: 1h  
 **依赖**: T6.1

@@ -54,17 +54,46 @@ impl AiGatewayService {
 
         let start = Instant::now();
 
-        // Mock LLM call
-        let output_text = format!(
-            "This is a mock response from {} {} for prompt length {} chars.",
-            provider, model, input_chars
-        );
-        let actual_output_tokens = (output_text.len() as i64 / 4).max(1);
+        // Try real API, fallback to mock
+        let (output_text, actual_input_tokens, actual_output_tokens, status_str) =
+            if provider.eq_ignore_ascii_case("anthropic") {
+                if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+                    match super::providers::anthropic::call_anthropic(&key, model, prompt).await {
+                        Ok(res) => {
+                            (
+                                res.content,
+                                res.input_tokens,
+                                res.output_tokens,
+                                "success"
+                            )
+                        }
+                        Err(e) => {
+                            tracing::warn!("Anthropic call failed: {}", e);
+                            let fallback = format!(
+                                "[Anthropic unavailable] This is a mock response from {} {} for prompt length {} chars.",
+                                provider, model, input_chars
+                            );
+                            (fallback, estimated_input_tokens, 25i64, "fallback_mock")
+                        }
+                    }
+                } else {
+                    let fallback = format!(
+                        "[ANTHROPIC_API_KEY not set] This is a mock response from {} {} for prompt length {} chars.",
+                        provider, model, input_chars
+                    );
+                    (fallback, estimated_input_tokens, 25i64, "fallback_mock")
+                }
+            } else {
+                let fallback = format!(
+                    "This is a mock response from {} {} for prompt length {} chars.",
+                    provider, model, input_chars
+                );
+                (fallback, estimated_input_tokens, 25i64, "fallback_mock")
+            };
 
         let duration_ms = start.elapsed().as_millis() as i32;
 
-        // Actual cost
-        let actual_cost = (estimated_input_tokens * pricing.input_per_m + actual_output_tokens * pricing.output_per_m) / 1_000_000;
+        let actual_cost = (actual_input_tokens * pricing.input_per_m + actual_output_tokens * pricing.output_per_m) / 1_000_000;
         let actual_cost_raw = (actual_cost * scale).to_string();
 
         // Refund over-estimation
@@ -74,6 +103,11 @@ impl AiGatewayService {
             if est > act {
                 let _ = self.balance.topup(pool, wallet_id, &pricing.currency, &(est - act).to_string()).await;
             }
+        } else if actual_cost_raw.parse::<i64>().unwrap_or(0) > est_cost_raw.parse::<i64>().unwrap_or(0) {
+            // Under-estimation: deduct additional
+            let est: i64 = est_cost_raw.parse().unwrap_or(0);
+            let act: i64 = actual_cost_raw.parse().unwrap_or(0);
+            let _ = self.balance.deduct(pool, wallet_id, &pricing.currency, &(act - est).to_string()).await;
         }
 
         // Log
@@ -83,21 +117,21 @@ impl AiGatewayService {
             api_key_id,
             provider,
             model,
-            estimated_input_tokens,
+            actual_input_tokens,
             actual_output_tokens,
             None,
             &actual_cost_raw,
             duration_ms,
-            "success",
+            status_str,
         )
         .await?;
 
         Ok(LlmResponse {
             content: output_text,
-            input_tokens: estimated_input_tokens,
+            input_tokens: actual_input_tokens,
             output_tokens: actual_output_tokens,
             cost_raw: actual_cost_raw,
-            status: "success".into(),
+            status: if status_str == "success" { "success".into() } else { status_str.into() },
         })
     }
 

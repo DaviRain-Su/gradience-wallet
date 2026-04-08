@@ -77,13 +77,7 @@ fn build_balance_of_data(owner: &str) -> String {
 }
 
 fn resolve_rpc(chain_id: &str) -> &str {
-    match chain_id {
-        "eip155:8453" => "https://mainnet.base.org",
-        "eip155:137" => "https://polygon-rpc.com",
-        "eip155:42161" => "https://arb1.arbitrum.io/rpc",
-        "eip155:10" => "https://mainnet.optimism.io",
-        _ => "https://eth.llamarpc.com",
-    }
+    crate::chain::resolve_rpc(chain_id)
 }
 
 pub struct TokenDiscoveryService;

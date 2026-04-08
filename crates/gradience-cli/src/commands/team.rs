@@ -26,3 +26,43 @@ pub async fn invite(ctx: &AppContext, workspace_id: String, user_email: String, 
     println!("Invited {} to workspace {} as {:?}", user_email, workspace_id, role);
     Ok(())
 }
+
+pub async fn budget_set(
+    ctx: &AppContext,
+    workspace_id: String,
+    amount: String,
+    token: String,
+    chain_id: String,
+    period: String,
+) -> Result<()> {
+    let wei = gradience_core::eth_to_wei(&amount)?;
+    let svc = gradience_core::team::shared_budget::SharedBudgetService::new();
+    svc.allocate_workspace_budget(
+        &ctx.db, &workspace_id, wei, &token, &chain_id, &period,
+    ).await?;
+    println!(
+        "Set workspace {} budget to {} {} on {} (period: {})",
+        workspace_id, amount, token, chain_id, period
+    );
+    Ok(())
+}
+
+pub async fn budget_status(
+    ctx: &AppContext,
+    workspace_id: String,
+    token: String,
+    chain_id: String,
+    period: String,
+) -> Result<()> {
+    let svc = gradience_core::team::shared_budget::SharedBudgetService::new();
+    let remaining = svc.get_remaining_budget(
+        &ctx.db, &workspace_id, &token, &chain_id, &period,
+    ).await?;
+    // rough conversion back to ETH string for display
+    let eth = remaining as f64 / 1e18;
+    println!(
+        "Workspace {} remaining budget: {:.6} {} on {} (period: {})",
+        workspace_id, eth, token, chain_id, period
+    );
+    Ok(())
+}

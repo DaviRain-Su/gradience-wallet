@@ -14,7 +14,7 @@ highlighter: shiki
 </p>
 
 <div class="mt-12 text-sm opacity-60">
-HashKey Chain Horizon Hackathon 2026
+
 </div>
 
 <style>

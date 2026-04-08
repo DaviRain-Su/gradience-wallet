@@ -125,6 +125,13 @@ pub async fn get_wallet_by_id(pool: &Pool<Sqlite>, id: &str) -> Result<Option<Wa
     Ok(wallet)
 }
 
+pub async fn update_wallet_status(pool: &Pool<Sqlite>, id: &str, status: &str) -> Result<()> {
+    sqlx::query!("UPDATE wallets SET status = ?, updated_at = datetime('now') WHERE id = ?", status, id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 // ========== Wallet Addresses ==========
 pub async fn create_wallet_address(
     pool: &Pool<Sqlite>,
@@ -339,6 +346,72 @@ pub async fn get_spending(
     Ok(st)
 }
 
+// ========== Shared Budget Trackers ==========
+pub async fn upsert_shared_budget_total(
+    pool: &Pool<Sqlite>,
+    workspace_id: &str,
+    token_address: &str,
+    chain_id: &str,
+    period: &str,
+    total_amount: &str,
+    reset_at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO shared_budget_trackers (workspace_id, token_address, chain_id, period, total_amount, reset_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id, token_address, chain_id, period) DO UPDATE SET total_amount = excluded.total_amount, reset_at = excluded.reset_at",
+        workspace_id,
+        token_address,
+        chain_id,
+        period,
+        total_amount,
+        reset_at
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn upsert_shared_budget_spending(
+    pool: &Pool<Sqlite>,
+    workspace_id: &str,
+    token_address: &str,
+    chain_id: &str,
+    period: &str,
+    amount: &str,
+    reset_at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO shared_budget_trackers (workspace_id, token_address, chain_id, period, spent_amount, reset_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(workspace_id, token_address, chain_id, period) DO UPDATE SET spent_amount = excluded.spent_amount, reset_at = excluded.reset_at",
+        workspace_id,
+        token_address,
+        chain_id,
+        period,
+        amount,
+        reset_at
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_shared_budget_spending(
+    pool: &Pool<Sqlite>,
+    workspace_id: &str,
+    token_address: &str,
+    chain_id: &str,
+    period: &str,
+) -> Result<Option<SharedBudgetTracker>> {
+    let st = sqlx::query_as::<_, SharedBudgetTracker>(
+        "SELECT workspace_id, token_address, chain_id, period, spent_amount, total_amount, reset_at FROM shared_budget_trackers WHERE workspace_id = ? AND token_address = ? AND chain_id = ? AND period = ?"
+    )
+    .bind(workspace_id)
+    .bind(token_address)
+    .bind(chain_id)
+    .bind(period)
+    .fetch_optional(pool)
+    .await?;
+    Ok(st)
+}
+
 // ========== AI Balances ==========
 pub async fn get_ai_balance(pool: &Pool<Sqlite>, wallet_id: &str, token: &str) -> Result<Option<AiBalance>> {
     let bal = sqlx::query_as::<_, AiBalance>(
@@ -405,6 +478,15 @@ pub async fn get_model_pricing(pool: &Pool<Sqlite>, provider: &str, model: &str)
     .fetch_optional(pool)
     .await?;
     Ok(pricing)
+}
+
+pub async fn get_all_model_pricing(pool: &Pool<Sqlite>) -> Result<Vec<ModelPricing>> {
+    let rows = sqlx::query_as::<_, ModelPricing>(
+        "SELECT id, provider, model, input_per_m, output_per_m, cache_per_m, currency, effective_from, effective_to FROM model_pricing WHERE effective_to IS NULL OR effective_to > datetime('now') ORDER BY provider, model"
+    )
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }
 
 pub async fn seed_model_pricing(pool: &Pool<Sqlite>) -> Result<()> {
@@ -653,4 +735,59 @@ pub async fn get_oauth_identity(
     .fetch_optional(pool)
     .await?;
     Ok(row)
+}
+
+// ========== Payment Routes ==========
+pub async fn create_payment_route(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    wallet_id: &str,
+    chain_id: &str,
+    token_address: &str,
+    priority: i32,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO wallet_payment_routes (id, wallet_id, chain_id, token_address, priority) VALUES (?, ?, ?, ?, ?)",
+        id,
+        wallet_id,
+        chain_id,
+        token_address,
+        priority
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn list_payment_routes_by_wallet(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+) -> Result<Vec<WalletPaymentRoute>> {
+    let rows = sqlx::query_as::<_, WalletPaymentRoute>(
+        "SELECT id, wallet_id, chain_id, token_address, priority, created_at, updated_at FROM wallet_payment_routes WHERE wallet_id = ? ORDER BY priority ASC"
+    )
+    .bind(wallet_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn clear_payment_routes_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str) -> Result<()> {
+    sqlx::query!("DELETE FROM wallet_payment_routes WHERE wallet_id = ?", wallet_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn list_payment_records_by_wallet(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+) -> Result<Vec<PaymentRecord>> {
+    let rows = sqlx::query_as::<_, PaymentRecord>(
+        "SELECT id, wallet_id, protocol, amount, token, recipient, status, tx_hash, created_at FROM payment_records WHERE wallet_id = ? ORDER BY created_at DESC"
+    )
+    .bind(wallet_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
 }

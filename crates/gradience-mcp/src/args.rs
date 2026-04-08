@@ -53,5 +53,23 @@ pub struct AiBalanceArgs {
     pub token: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct SignMessageArgs {
+    pub wallet_id: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct SignAndSendArgs {
+    pub wallet_id: String,
+    pub chain_id: String,
+    pub transaction: TxBody,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct VerifyApiKeyArgs {
+    pub api_key: String,
+}
+
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct AiModelsArgs {}

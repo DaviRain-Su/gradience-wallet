@@ -6,6 +6,7 @@ pub struct MergedPolicy {
     pub spend_limit: Option<String>,
     pub daily_limit: Option<String>,
     pub monthly_limit: Option<String>,
+    pub shared_budget: Option<String>,
     pub chain_whitelist: Option<Vec<String>>,
     pub contract_whitelist: Option<Vec<String>>,
     pub operation_type: Option<Vec<String>>,
@@ -62,6 +63,13 @@ pub fn merge_policies_strictest(
         .filter_map(|r| match r { Rule::MonthlyLimit { max, .. } => Some(max.clone()), _ => None })
         .collect();
     merged.monthly_limit = min_str(monthly);
+
+    // shared_budget: min
+    let shared: Vec<String> = all.iter()
+        .flat_map(|p| p.rules.iter())
+        .filter_map(|r| match r { Rule::SharedBudget { max, .. } => Some(max.clone()), _ => None })
+        .collect();
+    merged.shared_budget = min_str(shared);
 
     // contract_whitelist: intersection
     let contract_lists: Vec<Vec<String>> = all.iter()

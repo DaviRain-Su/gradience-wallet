@@ -6,7 +6,7 @@ Solidity contract for tamper-proof Merkle root anchoring of audit logs on HashKe
 
 ### 1. Install dependencies (choose one)
 
-#### Option A: Remix (easiest for hackathons)
+#### Option A: Remix (easiest for developments)
 1. Open [Remix IDE](https://remix.ethereum.org)
 2. Create file `AuditAnchor.sol` and paste the source
 3. Compile with Solidity `0.8.24`

@@ -1,233 +1,172 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { registerPasskey, registerPasskeyForRecovery, loginPasskey, unlockVault } from "@/lib/webauthn";
-import { apiPost } from "@/lib/api";
+import Link from "next/link";
 
-export default function Home() {
-  const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
-  const [passphrase, setPassphrase] = useState("");
-  const [step, setStep] = useState<"login" | "forgot" | "recover_register" | "unlock">("login");
-  const [recoveryCode, setRecoveryCode] = useState("");
-  const [recoveryToken, setRecoveryToken] = useState("");
-  const [msg, setMsg] = useState("");
-  const router = useRouter();
+const features = [
+  {
+    title: "OWS Native Vault",
+    desc: "Local mnemonic generation, encrypted storage, and multi-chain signing via ows-lib.",
+  },
+  {
+    title: "Policy Engine",
+    desc: "Spend limits, intent analysis, dynamic risk signals, time windows, and chain/contract whitelists.",
+  },
+  {
+    title: "DEX Integration",
+    desc: "Real 1inch Swap API + Uniswap V3 fallback, executable via Web, CLI, or MCP.",
+  },
+  {
+    title: "MCP Server",
+    desc: "JSON-RPC MCP exposing sign_transaction, swap, pay, llm_generate, and more.",
+  },
+  {
+    title: "AI Gateway",
+    desc: "Real Anthropic API integration with prepaid balance, cost tracking, and model whitelist.",
+  },
+  {
+    title: "Shared Budget",
+    desc: "Workspace-level team budgets with cross-wallet spending tracking and policy enforcement.",
+  },
+];
 
-  async function handleRegister() {
-    try {
-      await registerPasskey(username, passphrase, email);
-      router.push("/dashboard");
-    } catch (e: unknown) {
-      setMsg(`Register failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
+const sdks = ["Python", "TypeScript", "Go", "Java", "Ruby"];
 
-  async function handleLogin() {
-    try {
-      await loginPasskey(username);
-      setStep("unlock");
-      setMsg("");
-    } catch (e: unknown) {
-      setMsg(`Login failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  async function handleUnlock() {
-    try {
-      await unlockVault(passphrase);
-      router.push("/dashboard");
-    } catch (e: unknown) {
-      setMsg(`Unlock failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  async function handleSendRecovery() {
-    try {
-      await apiPost("/api/auth/recover/initiate", { username });
-      setMsg("Recovery code sent (check API console output for mock email).");
-    } catch (e: unknown) {
-      setMsg(`Send failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  async function handleVerifyRecovery() {
-    try {
-      const res = await apiPost("/api/auth/recover/verify", { username, code: recoveryCode });
-      const data = await res.json();
-      if (!data.recovery_token) {
-        throw new Error("Invalid recovery response");
-      }
-      setRecoveryToken(data.recovery_token);
-      setStep("recover_register");
-      setMsg("Identity verified. Register a new Passkey on this device.");
-    } catch (e: unknown) {
-      setMsg(`Recovery failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  async function handleRegisterNewPasskey() {
-    try {
-      await registerPasskeyForRecovery(username, recoveryToken);
-      setStep("unlock");
-      setMsg("New Passkey registered. Unlock your vault to continue.");
-    } catch (e: unknown) {
-      setMsg(`Passkey registration failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
+export default function LandingPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center p-8" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
-      <main className="max-w-sm w-full flex flex-col gap-4">
-        <h1 className="text-3xl font-bold text-center">Gradience Wallet</h1>
-        <p className="text-center" style={{ color: "var(--muted-foreground)" }}>Passkey-backed identity</p>
+    <div className="min-h-screen" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
+      {/* Hero */}
+      <section className="relative px-6 pt-24 pb-16 text-center">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-5xl md:text-6xl font-extrabold tracking-tight mb-6">
+            Agent Wallet
+            <br />
+            <span style={{ color: "var(--primary)" }}>Orchestration Platform</span>
+          </h1>
+          <p className="text-lg md:text-xl mb-8" style={{ color: "var(--muted-foreground)" }}>
+            Passkey-backed identities. Local multi-chain vaults. Fine-grained policy-gated access for AI agents via MCP.
+          </p>
+          <div className="flex justify-center gap-4">
+            <Link
+              href="/login"
+              className="inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold transition"
+              style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+            >
+              Get Started
+            </Link>
+            <a
+              href="https://github.com/open-wallet-standard/core"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold border transition"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)" }}
+            >
+              Learn about OWS
+            </a>
+          </div>
+        </div>
+      </section>
 
-        {step === "login" && (
-          <>
-            <input
-              className="border rounded px-4 py-2"
-              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <input
-              className="border rounded px-4 py-2"
-              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
-              type="email"
-              placeholder="Email (optional)"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              className="border rounded px-4 py-2"
-              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
-              type="password"
-              placeholder="Vault passphrase (≥12 chars)"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-            />
-            <div className="flex gap-4">
-              <button
-                onClick={handleRegister}
-                className="flex-1 rounded py-2"
-                style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
-              >
-                Register
-              </button>
-              <button
-                onClick={handleLogin}
-                className="flex-1 border rounded py-2"
-                style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}
-              >
-                Login
-              </button>
+      {/* How it works */}
+      <section className="px-6 py-16" style={{ backgroundColor: "var(--muted)" }}>
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-10">How it works</h2>
+          <div className="grid gap-8 md:grid-cols-3 text-center">
+            <div>
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>1</div>
+              <h3 className="font-semibold mb-1">Create Identity</h3>
+              <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Register with Passkey and set your local vault passphrase.</p>
             </div>
-            <p className="text-center text-sm mt-2">
-              <button onClick={() => { setStep("forgot"); setMsg(""); }} className="underline" style={{ color: "var(--primary)" }}>
-                Forgot Passkey?
-              </button>
-            </p>
-
-            <div className="mt-2 text-center text-xs" style={{ color: "var(--muted-foreground)" }}>
-              Or continue with{" "}
-              <a href="/api/auth/oauth/google/start" className="underline" style={{ color: "var(--primary)" }}>Google</a>
-              {" / "}
-              <a href="/api/auth/oauth/github/start" className="underline" style={{ color: "var(--primary)" }}>GitHub</a>
+            <div>
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>2</div>
+              <h3 className="font-semibold mb-1">Set Policies</h3>
+              <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Define spend limits, time windows, and whitelists for your agents.</p>
             </div>
-          </>
-        )}
+            <div>
+              <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full text-lg font-bold" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>3</div>
+              <h3 className="font-semibold mb-1">Connect Agents</h3>
+              <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Use MCP or SDKs to let AI agents act within your policy guardrails.</p>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        {step === "forgot" && (
-          <>
-            <input
-              className="border rounded px-4 py-2"
-              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <button
-              onClick={handleSendRecovery}
-              className="rounded py-2"
-              style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
-            >
-              Send recovery code
-            </button>
-            <input
-              className="border rounded px-4 py-2"
-              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
-              placeholder="Recovery code"
-              value={recoveryCode}
-              onChange={(e) => setRecoveryCode(e.target.value)}
-            />
-            <button
-              onClick={handleVerifyRecovery}
-              className="border rounded py-2"
-              style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}
-            >
-              Verify code
-            </button>
-            <p className="text-center text-sm">
-              <button onClick={() => { setStep("login"); setMsg(""); }} className="underline" style={{ color: "var(--primary)" }}>
-                Back to login
-              </button>
-            </p>
-          </>
-        )}
+      {/* Features */}
+      <section className="px-6 py-16">
+        <div className="max-w-5xl mx-auto">
+          <h2 className="text-3xl font-bold text-center mb-10">Core Features</h2>
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {features.map((f) => (
+              <div
+                key={f.title}
+                className="rounded-xl border p-6 transition"
+                style={{ backgroundColor: "var(--muted)", borderColor: "var(--border)" }}
+              >
+                <h3 className="font-semibold mb-2">{f.title}</h3>
+                <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
+                  {f.desc}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-        {step === "recover_register" && (
-          <>
-            <p className="text-center text-sm" style={{ color: "var(--muted-foreground)" }}>
-              Your identity is verified. Register a new Passkey on this device.
-            </p>
-            <button
-              onClick={handleRegisterNewPasskey}
-              className="rounded py-2"
-              style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+      {/* SDKs */}
+      <section className="px-6 py-16" style={{ backgroundColor: "var(--background)" }}>
+        <div className="max-w-4xl mx-auto text-center">
+          <h2 className="text-3xl font-bold mb-4">Multi-Language SDKs</h2>
+          <p className="mb-8" style={{ color: "var(--muted-foreground)" }}>
+            Build on top of Gradience with idiomatic SDKs in your favorite language.
+          </p>
+          <div className="flex flex-wrap justify-center gap-3">
+            {sdks.map((sdk) => (
+              <span
+                key={sdk}
+                className="rounded-full px-4 py-1 text-sm font-medium border"
+                style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}
+              >
+                {sdk}
+              </span>
+            ))}
+          </div>
+          <div className="mt-8">
+            <Link
+              href="/docs/06-sdk-guide.md"
+              className="text-sm underline"
+              style={{ color: "var(--primary)" }}
             >
-              Register New Passkey
-            </button>
-            <p className="text-center text-sm">
-              <button onClick={() => { setStep("login"); setMsg(""); }} className="underline" style={{ color: "var(--primary)" }}>
-                Back to login
-              </button>
-            </p>
-          </>
-        )}
+              Read the SDK Guide →
+            </Link>
+          </div>
+        </div>
+      </section>
 
-        {step === "unlock" && (
-          <>
-            <p className="text-center text-sm" style={{ color: "var(--muted-foreground)" }}>
-              Passkey verified. Unlock your vault to continue.
-            </p>
-            <input
-              className="border rounded px-4 py-2"
-              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
-              type="password"
-              placeholder="Vault passphrase"
-              value={passphrase}
-              onChange={(e) => setPassphrase(e.target.value)}
-            />
-            <button
-              onClick={handleUnlock}
-              className="rounded py-2"
-              style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
-            >
-              Unlock Vault
-            </button>
-            <p className="text-center text-sm">
-              <button onClick={() => { setStep("login"); setMsg(""); }} className="underline" style={{ color: "var(--primary)" }}>
-                Switch account
-              </button>
-            </p>
-          </>
-        )}
+      {/* CTA */}
+      <section className="px-6 py-16 text-center" style={{ backgroundColor: "var(--muted)" }}>
+        <div className="max-w-2xl mx-auto">
+          <h2 className="text-3xl font-bold mb-4">Ready to get started?</h2>
+          <p className="mb-8" style={{ color: "var(--muted-foreground)" }}>
+            Create your Passkey identity, set policies, and connect your agents in minutes.
+          </p>
+          <Link
+            href="/login"
+            className="inline-flex items-center justify-center rounded-lg px-8 py-3 font-semibold transition"
+            style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+          >
+            Launch App
+          </Link>
+        </div>
+      </section>
 
-        {msg && <p className="text-center text-sm" style={{ color: "#B45309" }}>{msg}</p>}
-      </main>
+      {/* Footer */}
+      <footer className="px-6 py-8 text-center text-sm" style={{ color: "var(--muted-foreground)" }}>
+        <p>
+          Built for the  ·{" "}
+          <a href="https://github.com/open-wallet-standard/core" target="_blank" rel="noreferrer" className="underline">
+            OWS
+          </a>
+        </p>
+      </footer>
     </div>
   );
 }
-

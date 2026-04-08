@@ -72,9 +72,14 @@ export const CHAIN_NAMES: Record<string, string> = {
   "eip155:177": "HashKey Chain",
   "eip155:133": "HashKey Chain Testnet",
 
-  // Solana
+  // Arbitrum Stylus (Stylus is deployed on Arbitrum testnets)
+  // "eip155:421614" already mapped above as Arbitrum Sepolia
+
+  // Stellar (placeholder for future support)
+  "stellar:pubnet": "Stellar Mainnet",
+  "stellar:testnet": "Stellar Testnet",
   "solana:4sGjMW1sUnHzSxGspuhpqLDx6miyAjh93kWrQX5L9rD": "Solana Mainnet",
-  "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": "Solana Devnet",
+  // "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" already mapped above as Solana Devnet
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "Solana Testnet",
   "solana:11111111111111111111111111111111": "Solana Localnet",
 };

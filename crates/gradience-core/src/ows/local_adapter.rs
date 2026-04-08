@@ -82,6 +82,41 @@ impl OwsAdapter for LocalOwsAdapter {
         })
     }
 
+    async fn derive_account(
+        &self,
+        _vault: &VaultHandle,
+        wallet_id: &str,
+        chain: &str,
+        derivation_path: &str,
+    ) -> Result<AccountDescriptor> {
+        // Deterministic address generation for demo purposes using SHA3 hash of wallet_id + chain + path.
+        // In a real production system this would derive the private key from the HD seed.
+        use sha3::{Digest, Sha3_256};
+        let mut hasher = Sha3_256::new();
+        hasher.update(wallet_id.as_bytes());
+        hasher.update(chain.as_bytes());
+        hasher.update(derivation_path.as_bytes());
+        let hash = hasher.finalize();
+        let secret: [u8; 32] = hash.as_slice()[..32].try_into().unwrap();
+
+        let address = if chain.starts_with("eip155:") || chain.starts_with("base:") {
+            crate::ows::signing::eth_address_from_secret_key(&secret)?
+        } else if chain.starts_with("solana:") {
+            // Stub: Solana addresses are base58-encoded ed25519 pubkeys.
+            // For demo we return a deterministic fake base58 string.
+            format!("sol{}", hex::encode(&secret[..16]))
+        } else {
+            format!("0x{}", hex::encode(&secret[..20]))
+        };
+
+        Ok(AccountDescriptor {
+            account_id: format!("{}:{}", chain, address),
+            address,
+            chain_id: chain.into(),
+            derivation_path: derivation_path.into(),
+        })
+    }
+
     async fn attach_api_key_and_policies(
         &self,
         vault: &VaultHandle,

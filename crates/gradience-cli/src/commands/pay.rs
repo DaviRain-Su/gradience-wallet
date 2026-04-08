@@ -38,7 +38,7 @@ pub async fn x402(
     });
 
     let svc = gradience_core::payment::x402::X402Service::new();
-    let req = svc.create_requirement(&recipient, &amount, &token, deadline)?;
+    let req = svc.create_requirement(&recipient, &amount, &token, deadline, Some(&chain))?;
     let sig = "dummy-signature-for-demo"; // In production this would be a real EIP-191/712 signature
     let mut payment = svc.sign_payment(req, sig)?;
 

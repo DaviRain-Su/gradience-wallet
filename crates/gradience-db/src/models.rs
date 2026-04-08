@@ -217,3 +217,25 @@ pub struct OAuthIdentity {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct WalletPaymentRoute {
+    pub id: String,
+    pub wallet_id: String,
+    pub chain_id: String,
+    pub token_address: String,
+    pub priority: i32,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct SharedBudgetTracker {
+    pub workspace_id: String,
+    pub token_address: String,
+    pub chain_id: String,
+    pub period: String,
+    pub spent_amount: String,
+    pub total_amount: String,
+    pub reset_at: DateTime<Utc>,
+}

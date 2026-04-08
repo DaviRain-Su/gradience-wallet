@@ -86,6 +86,13 @@ async fn main() -> anyhow::Result<()> {
             AuditCommands::Verify { wallet_id } => {
                 commands::audit::verify(&ctx, wallet_id).await
             }
+            AuditCommands::Export { wallet_id, format, output } => {
+                let fmt_str = match format {
+                    crate::cli::AuditFormat::Csv => "csv",
+                    crate::cli::AuditFormat::Json => "json",
+                };
+                commands::audit::export(&ctx, wallet_id, fmt_str, output).await
+            }
         },
         Commands::Team { cmd } => match cmd {
             TeamCommands::CreateWorkspace { name } => {
@@ -93,6 +100,12 @@ async fn main() -> anyhow::Result<()> {
             }
             TeamCommands::Invite { workspace_id, user_email, role } => {
                 commands::team::invite(&ctx, workspace_id, user_email, role).await
+            }
+            TeamCommands::BudgetSet { workspace_id, amount, token, chain_id, period } => {
+                commands::team::budget_set(&ctx, workspace_id, amount, token, chain_id, period).await
+            }
+            TeamCommands::BudgetStatus { workspace_id, token, chain_id, period } => {
+                commands::team::budget_status(&ctx, workspace_id, token, chain_id, period).await
             }
         },
         Commands::Ai { cmd } => match cmd {

@@ -9,6 +9,10 @@ struct TestOwsAdapter;
 
 #[async_trait::async_trait]
 impl OwsAdapter for TestOwsAdapter {
+    fn adapter_kind(&self) -> crate::ows::adapter::AdapterKind {
+        crate::ows::adapter::AdapterKind::Local
+    }
+
     async fn init_vault(
         &self, _passphrase: &str,
     ) -> Result<VaultHandle, GradienceError> {
@@ -49,6 +53,21 @@ impl OwsAdapter for TestOwsAdapter {
                 chain_id: "eip155:8453".into(),
                 derivation_path: "m/44'/60'/0'/0/0".into(),
             }],
+        })
+    }
+
+    async fn derive_account(
+        &self,
+        _vault: &VaultHandle,
+        wallet_id: &str,
+        chain: &str,
+        derivation_path: &str,
+    ) -> Result<crate::wallet::manager::AccountDescriptor, GradienceError> {
+        Ok(crate::wallet::manager::AccountDescriptor {
+            account_id: format!("{}:0xderived", chain),
+            address: "0xderived".into(),
+            chain_id: chain.into(),
+            derivation_path: derivation_path.into(),
         })
     }
 
@@ -124,4 +143,27 @@ async fn test_api_key_empty_name_error() {
     let svc = ApiKeyService::new();
     let err = svc.create_key("wallet-1", "  ").await.unwrap_err();
     assert!(matches!(err, GradienceError::InvalidCredential(_)));
+}
+
+#[tokio::test]
+async fn test_wallet_manager_derive_account() {
+    let adapter = TestOwsAdapter;
+    let vault = adapter.init_vault("test-pass-123").await.unwrap();
+    let acc = adapter
+        .derive_account(&vault, "wallet-1", "eip155:8453", "m/44'/60'/0'/0/1")
+        .await
+        .unwrap();
+    assert_eq!(acc.chain_id, "eip155:8453");
+    assert_eq!(acc.derivation_path, "m/44'/60'/0'/0/1");
+    assert_eq!(acc.address, "0xderived");
+}
+
+#[test]
+fn test_hd_paths() {
+    use crate::wallet::hd;
+    assert_eq!(hd::path_for_evm(0), "m/44'/60'/0'/0/0");
+    assert_eq!(hd::path_for_solana(2), "m/44'/501'/2'");
+    assert_eq!(hd::path_for_stellar(3), "m/44'/148'/3'");
+    assert_eq!(hd::path_for("eip155:1", 5), "m/44'/60'/0'/0/5");
+    assert_eq!(hd::path_for("solana:mainnet", 0), "m/44'/501'/0'");
 }

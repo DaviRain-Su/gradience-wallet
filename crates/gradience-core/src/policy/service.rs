@@ -41,19 +41,35 @@ pub async fn create_policy_sync(
         policy_value["action"] = "deny".into();
     }
 
-    let ows_policy: ows_core::Policy = serde_json::from_value(policy_value.clone())
-        .map_err(|e| GradienceError::InvalidCredential(format!("Policy not compatible with OWS: {}", e)))?;
+    let ows_policy_result: std::result::Result<ows_core::Policy, _> = serde_json::from_value(policy_value.clone());
 
-    // Write to OWS vault
-    ows_lib::policy_store::save_policy(&ows_policy, vault_path)
-        .map_err(map_ows_err)?;
+    let (policy_id_out, name_out) = match ows_policy_result {
+        Ok(ows_policy) => {
+            // Write to OWS vault if compatible
+            if let Some(vp) = vault_path {
+                let _ = ows_lib::policy_store::save_policy(&ows_policy, Some(vp));
+            }
+            (ows_policy.id, ows_policy.name)
+        }
+        Err(_) => {
+            // Gradience-only policy: skip OWS, generate id/name from JSON
+            let id = policy_value.get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&policy_id)
+                .to_string();
+            let name = policy_value.get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("gradience-policy")
+                .to_string();
+            (id, name)
+        }
+    };
 
     // Write to Gradience DB
-    let name = ows_policy.name.clone();
     gradience_db::queries::create_policy(
         pool,
-        &ows_policy.id,
-        &name,
+        &policy_id_out,
+        &name_out,
         wallet_id,
         workspace_id,
         content,
@@ -62,5 +78,5 @@ pub async fn create_policy_sync(
     .await
     .map_err(|e| GradienceError::Database(e.to_string()))?;
 
-    Ok(ows_policy.id)
+    Ok(policy_id_out)
 }

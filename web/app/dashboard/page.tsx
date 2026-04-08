@@ -52,6 +52,19 @@ interface ApiKey {
   expired: boolean;
 }
 
+interface Policy {
+  id: string;
+  name: string;
+  wallet_id: string | null;
+  workspace_id: string | null;
+  rules_json: string;
+  status: string;
+}
+
+interface PendingApproval {
+  status: string;
+}
+
 export default function Dashboard() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [name, setName] = useState("");
@@ -59,6 +72,7 @@ export default function Dashboard() {
   const [msg, setMsg] = useState("");
   const [apiBase, setApiBaseState] = useState("");
   const [showApiConfig, setShowApiConfig] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState(0);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -78,8 +92,19 @@ export default function Dashboard() {
     }
   }
 
+  async function fetchPendingApprovals() {
+    try {
+      const res = await apiGet("/api/policy-approvals");
+      const data: PendingApproval[] = await res.json();
+      setPendingApprovals(data.filter((a) => a.status === "pending").length);
+    } catch {
+      // ignore
+    }
+  }
+
   useEffect(() => {
     fetchWallets();
+    fetchPendingApprovals();
   }, []);
 
   async function handleCreate() {
@@ -98,7 +123,33 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
-      <h1 className="text-2xl font-bold mb-6">Wallet Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Wallet Dashboard</h1>
+        <div className="flex items-center gap-3">
+          <a
+            href="/policies"
+            className="text-sm px-3 py-1.5 rounded"
+            style={{ backgroundColor: "var(--muted)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+          >
+            Policies
+          </a>
+          <a
+            href="/approvals"
+            className="text-sm px-3 py-1.5 rounded relative"
+            style={{ backgroundColor: "var(--muted)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+          >
+            Approvals
+            {pendingApprovals > 0 && (
+              <span
+                className="absolute -top-1.5 -right-1.5 text-xs font-bold px-1.5 py-0.5 rounded-full"
+                style={{ backgroundColor: "#F59E0B", color: "#fff" }}
+              >
+                {pendingApprovals}
+              </span>
+            )}
+          </a>
+        </div>
+      </div>
 
       <div className="flex gap-2 mb-6">
         <input
@@ -159,6 +210,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [txs, setTxs] = useState<Tx[]>([]);
   const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
   const [newApiKeyToken, setNewApiKeyToken] = useState<string | null>(null);
   const [showFund, setShowFund] = useState(false);
   const [showKey, setShowKey] = useState(false);
@@ -183,6 +235,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     });
     apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json().then(setTxs)).catch((e) => console.error("txs fetch failed", e));
     apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json().then(setKeys)).catch((e) => console.error("keys fetch failed", e));
+    apiGet(`/api/wallets/${wallet.id}/policies`).then((r) => r.json().then(setPolicies)).catch((e) => console.error("policies fetch failed", e));
   }, [wallet.id]);
 
   async function handleFund() {
@@ -325,6 +378,30 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       </div>
 
       <div className="mt-4">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Policies</p>
+          <a
+            href="/policies"
+            className="text-xs px-2 py-1 rounded"
+            style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+          >
+            Manage
+          </a>
+        </div>
+        {policies.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No policies.</p>}
+        <div className="mt-2 space-y-2">
+          {policies.map((p: Policy) => (
+            <div key={p.id} className="rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: "var(--muted)" }}>
+              <span className="font-medium">{p.name}</span>
+              <span className="text-xs ml-2" style={{ color: "var(--muted-foreground)" }}>
+                {formatPolicySummary(p.rules_json)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Balances</p>
         {portfolio.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
         <div className="mt-2 grid grid-cols-1 gap-3">
@@ -422,4 +499,33 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       {msg && <p className="text-xs mt-2" style={{ color: "#B45309" }}>{msg}</p>}
     </div>
   );
+}
+
+function formatPolicySummary(rulesJson: string): string {
+  try {
+    const obj = JSON.parse(rulesJson);
+    const rules = obj.rules || [];
+    const parts: string[] = [];
+    for (const r of rules) {
+      if (r.type === "chain_whitelist" && r.chain_ids?.length) {
+        parts.push(`Chains: ${r.chain_ids.join(", ")}`);
+      }
+      if (r.type === "spend_limit") {
+        const eth = (parseInt(r.max, 10) / 1e18).toFixed(4);
+        parts.push(`Limit: ${eth} ${r.token || "ETH"}`);
+      }
+      if (r.type === "contract_whitelist" && r.contracts?.length) {
+        parts.push(`Contracts: ${r.contracts.length}`);
+      }
+      if (r.type === "operation_type" && r.allowed?.length) {
+        parts.push(`Ops: ${r.allowed.join(", ")}`);
+      }
+      if (r.type === "time_window") {
+        parts.push(`Window: ${r.start_hour}-${r.end_hour} ${r.timezone}`);
+      }
+    }
+    return parts.join(" | ") || "No rules";
+  } catch {
+    return "Invalid policy";
+  }
 }

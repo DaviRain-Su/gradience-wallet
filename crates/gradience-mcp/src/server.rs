@@ -51,12 +51,15 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
         "tools/list" => {
             let tools = vec![
                 Tool::with_schema::<SignTxArgs>("sign_transaction", "Sign a blockchain transaction"),
+                Tool::with_schema::<SignMessageArgs>("sign_message", "Sign a raw message"),
+                Tool::with_schema::<SignAndSendArgs>("sign_and_send", "Sign and broadcast a transaction"),
                 Tool::with_schema::<GetBalanceArgs>("get_balance", "Get wallet balance"),
                 Tool::with_schema::<SwapArgs>("swap", "Execute DEX swap"),
-                Tool::with_schema::<PayArgs>("pay", "Execute x402 payment"),
+                Tool::with_schema::<PayArgs>("pay", "Execute payment or MPP service call"),
                 Tool::with_schema::<LlmGenerateArgs>("llm_generate", "Generate text via AI Gateway"),
                 Tool::with_schema::<AiBalanceArgs>("ai_balance", "Query AI Gateway balance"),
                 Tool::with_schema::<AiModelsArgs>("ai_models", "List available LLM models and pricing"),
+                Tool::with_schema::<VerifyApiKeyArgs>("verify_api_key", "Verify an API key hash"),
             ];
             let result = ToolsListResult { tools };
             Ok(JsonRpcResponse::success(req.id, serde_json::to_value(result)?))
@@ -131,6 +134,36 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                     Ok(v) => v,
                     Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                 },
+                "sign_message" => {
+                    let a: SignMessageArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
+                    match crate::tools::handle_sign_message(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "sign_and_send" => {
+                    let a: SignAndSendArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
+                    match crate::tools::handle_sign_and_send(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "verify_api_key" => {
+                    let a: VerifyApiKeyArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                    };
+                    match crate::tools::handle_verify_api_key(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
                 _ => return Ok(JsonRpcResponse::error(req.id, -32601, format!("Unknown tool: {}", name))),
             };
 

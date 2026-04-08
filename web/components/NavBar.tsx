@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
+  { href: "/agents", label: "Agents" },
   { href: "/policies", label: "Policies" },
   { href: "/ai", label: "AI" },
   { href: "/workspaces", label: "Workspaces" },
@@ -18,7 +19,7 @@ export default function NavBar() {
   return (
     <nav className="border-b" style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}>
       <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-        <Link href="/dashboard" className="font-bold text-lg" style={{ color: "var(--foreground)" }}>
+        <Link href="/" className="font-bold text-lg" style={{ color: "var(--foreground)" }}>
           Gradience
         </Link>
         <div className="flex gap-4">

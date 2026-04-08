@@ -4,6 +4,8 @@ pub type Result<T> = std::result::Result<T, GradienceError>;
 
 #[derive(Debug, Error)]
 pub enum GradienceError {
+    #[error("Not found: {0}")]
+    NotFound(String),
     #[error("Wallet not found: {0}")]
     WalletNotFound(String),
     #[error("Policy denied: {0}")]
@@ -24,4 +26,8 @@ pub enum GradienceError {
     InvalidCredential(String),
     #[error("Validation error: {0}")]
     Validation(String),
+    #[error("Invalid config: {0}")]
+    InvalidConfig(String),
+    #[error("Blockchain error: {0}")]
+    Blockchain(String),
 }

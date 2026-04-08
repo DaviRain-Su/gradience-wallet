@@ -64,6 +64,16 @@ class GradienceClient:
     def list_transactions(self, wallet_id: str) -> List[Dict[str, Any]]:
         return self._request("GET", f"/api/wallets/{wallet_id}/transactions")
 
+    def swap_quote(self, wallet_id: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        query = {
+            "wallet_id": wallet_id,
+            "from_token": params.get("from_token"),
+            "to_token": params.get("to_token"),
+            "amount": params.get("amount"),
+            "chain": params.get("chain", "base"),
+        }
+        return self._request("GET", "/api/swap/quote", params=query)
+
     def get_ai_balance(self, wallet_id: str) -> Dict[str, Any]:
         return self._request("GET", f"/api/ai/balance/{wallet_id}")
 
@@ -72,4 +82,28 @@ class GradienceClient:
             "POST",
             "/api/ai/generate",
             json={"wallet_id": wallet_id, "model": model, "prompt": prompt},
+        )
+
+    def list_policies(self, wallet_id: str) -> List[Dict[str, Any]]:
+        return self._request("GET", f"/api/wallets/{wallet_id}/policies")
+
+    def create_policy(self, wallet_id: str, content: str) -> Dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/api/wallets/{wallet_id}/policies",
+            json={"content": content},
+        )
+
+    def create_workspace_policy(self, workspace_id: str, content: str) -> Dict[str, Any]:
+        return self._request(
+            "POST",
+            f"/api/workspaces/{workspace_id}/policies",
+            json={"content": content},
+        )
+
+    def export_audit(self, wallet_id: str, fmt: str = "json") -> Any:
+        return self._request(
+            "GET",
+            f"/api/wallets/{wallet_id}/audit/export",
+            params={"format": fmt},
         )

@@ -54,11 +54,7 @@ fn build_unsigned_tx(
 }
 
 fn resolve_rpc(chain_id: &str) -> &str {
-    if chain_id.contains("8453") {
-        "https://mainnet.base.org"
-    } else {
-        "https://eth.llamarpc.com"
-    }
+    gradience_core::chain::resolve_rpc(chain_id)
 }
 
 pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<serde_json::Value> {
@@ -88,6 +84,11 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         let policies: Vec<gradience_core::policy::engine::Policy> = db_policies.iter()
             .filter_map(|p| gradience_core::policy::engine::Policy::try_from_db(p).ok())
             .collect();
+
+        let wm = gradience_core::wallet::service::WalletManagerService::new();
+        if let Err(e) = wm.require_status_active(&db, wallet_id).await {
+            return anyhow::Result::<_>::Err(anyhow::anyhow!("wallet status check failed: {}", e));
+        }
 
         let rpc_url = resolve_rpc(chain_id);
         let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
@@ -133,7 +134,7 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         Decision::Allow => {
             let (passphrase, vault_dir) = get_vault_config()?;
 
-            let chain_num = if chain_id.contains("8453") { 8453u64 } else { 1u64 };
+            let chain_num = gradience_core::chain::evm_chain_num(chain_id);
             let value_raw: u128 = value.parse().unwrap_or(0);
             let tx_hex = build_unsigned_tx(nonce, gas_price, to, value_raw, &data, chain_num);
 
@@ -177,6 +178,29 @@ pub fn handle_get_balance(args: crate::args::GetBalanceArgs) -> anyhow::Result<s
     let balance = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
+
+        if chain_id.starts_with("solana:") {
+            let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+            for a in addrs {
+                if a.chain_id.starts_with("solana:") {
+                    let lamports = client.get_balance(&a.address).await.ok()?;
+                    return Some(gradience_core::rpc::solana::lamports_to_sol(lamports));
+                }
+            }
+            return None;
+        }
+
+        if chain_id.starts_with("stellar:") {
+            let client = gradience_core::rpc::stellar::StellarHorizonClient::new(rpc_url);
+            for a in addrs {
+                if a.chain_id.starts_with("stellar:") {
+                    let stroops = client.get_balance(&a.address).await.ok()?;
+                    return Some(gradience_core::rpc::stellar::stroops_to_xlm(stroops));
+                }
+            }
+            return None;
+        }
+
         let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url).ok()?;
         for a in addrs {
             if a.chain_id.starts_with("eip155:") {
@@ -186,13 +210,21 @@ pub fn handle_get_balance(args: crate::args::GetBalanceArgs) -> anyhow::Result<s
         None
     });
 
+    let (symbol, decimals) = if chain_id.starts_with("solana:") {
+        ("SOL", 9)
+    } else if chain_id.starts_with("stellar:") {
+        ("XLM", 7)
+    } else {
+        ("ETH", 18)
+    };
+
     Ok(json!({
         "walletId": wallet_id,
         "chainId": chain_id,
         "native": {
-            "symbol": "ETH",
-            "balance": balance.unwrap_or_else(|| "0x0".into()),
-            "decimals": 18,
+            "symbol": symbol,
+            "balance": balance.unwrap_or_else(|| "0".into()),
+            "decimals": decimals,
         },
         "tokens": []
     }))
@@ -204,7 +236,7 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
     let to_token = &args.to;
     let amount = &args.amount;
     let chain = args.chain.as_deref().unwrap_or("base");
-    let chain_num = if chain.contains("8453") || chain == "base" { 8453u64 } else { 1u64 };
+    let chain_num = gradience_core::chain::evm_chain_num(chain);
     let chain_id_str = format!("eip155:{}", chain_num);
 
     let (passphrase, vault_dir) = get_vault_config()?;
@@ -218,6 +250,12 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
             Ok(db) => db,
             Err(_) => return anyhow::Result::<_>::Err(anyhow::anyhow!("db connect failed")),
         };
+
+        let wm = gradience_core::wallet::service::WalletManagerService::new();
+        if let Err(e) = wm.require_status_active(&db, wallet_id).await {
+            return anyhow::Result::<_>::Err(anyhow::anyhow!("wallet status check failed: {}", e));
+        }
+
         let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
         let mut from_addr = None;
         for a in &addrs {
@@ -238,7 +276,7 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
             .map_err(|_| anyhow::anyhow!("bad gas price"))?;
 
         let dex = gradience_core::dex::service::DexService::new();
-        let tx = dex.build_swap_tx(&addr, from_token, to_token, amount, chain_num).await
+        let tx = dex.build_swap_tx(&addr, from_token, to_token, amount, chain_num, 50).await
             .map_err(|e| anyhow::anyhow!("build swap tx failed: {}", e))?;
 
         let to = tx.to.as_deref().unwrap_or("");
@@ -271,25 +309,78 @@ pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Valu
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
+    // If recipient looks like an HTTP URL, attempt MPP 402 payment flow.
+    if recipient.starts_with("http://") || recipient.starts_with("https://") {
+        let mpp_result = block_on_async(async {
+            use gradience_core::payment::router::{PaymentRoutePreference, PaymentRouter};
+            use gradience_core::payment::mpp_client::{GradienceMppProvider, MppClient};
+
+            let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+            let routes = gradience_db::queries::list_payment_routes_by_wallet(&db, wallet_id).await.ok()?;
+            let preferences: Vec<PaymentRoutePreference> = routes.into_iter().map(|r| PaymentRoutePreference {
+                chain_id: r.chain_id,
+                token_address: r.token_address,
+                priority: r.priority as u32,
+            }).collect();
+
+            let router = if preferences.is_empty() {
+                PaymentRouter::new(vec![
+                    PaymentRoutePreference { chain_id: "eip155:8453".into(), token_address: token.into(), priority: 1 },
+                    PaymentRoutePreference { chain_id: "eip155:1".into(), token_address: "".into(), priority: 2 },
+                ])
+            } else {
+                PaymentRouter::new(preferences)
+            };
+
+            let provider = GradienceMppProvider::new(wallet_id, router);
+            let client = MppClient::new(provider);
+            client.send(reqwest::Client::new().get(recipient)).await.ok()
+        });
+
+        if let Some(resp) = mpp_result {
+            return Ok(json!({"mppStatus": resp.status().as_u16(), "mppUrl": recipient}));
+        }
+        return Err(anyhow::anyhow!("MPP payment failed (Tempo wallet may not be configured)"));
+    }
+
+    // Otherwise fall back to direct on-chain transfer via payment router.
     let tx_hash = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+        let routes = gradience_db::queries::list_payment_routes_by_wallet(&db, wallet_id).await.ok()?;
         let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
+
+        let selected_chain = if let Some(first) = routes.first() {
+            first.chain_id.clone()
+        } else {
+            format!("eip155:{}", if chain == "base" { 8453 } else { 1 })
+        };
+
         let mut addr = None;
         for a in addrs {
-            if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
-                addr = Some(a.address.clone());
+            if a.chain_id == selected_chain || a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+                addr = Some((a.address.clone(), a.chain_id.clone()));
                 break;
             }
         }
-        let from_addr = addr?;
+        let (from_addr, used_chain) = addr?;
 
         let svc = gradience_core::payment::x402::X402Service::new();
         let deadline = (std::time::SystemTime::now() + std::time::Duration::from_secs(3600))
             .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs();
-        let req = svc.create_requirement(recipient, amount, token, deadline).ok()?;
-        let sig = "dummy-signature-for-demo";
-        let mut payment = svc.sign_payment(req, sig).ok()?;
-        svc.settle_payment(&mut payment, wallet_id, &from_addr, chain, &passphrase, &vault_dir).await.ok()
+        let req = svc.create_requirement(recipient, amount, token, deadline, Some(chain)).ok()?;
+        let sign_payload = format!("x402:{}:{}:{}", recipient, amount, deadline);
+        let sign_result = ows_lib::sign_message(
+            wallet_id,
+            "eip155:1",
+            &sign_payload,
+            Some(&passphrase),
+            Some("utf8"),
+            None,
+            Some(&vault_dir),
+        ).ok()?;
+        let mut payment = svc.sign_payment(req, &sign_result.signature).ok()?;
+        let chain_str = if used_chain.contains("8453") { "base" } else { "ethereum" };
+        svc.settle_payment(&mut payment, wallet_id, &from_addr, chain_str, &passphrase, &vault_dir).await.ok()
     });
 
     match tx_hash {
@@ -353,5 +444,114 @@ pub fn handle_ai_models() -> anyhow::Result<serde_json::Value> {
             { "provider": "anthropic", "model": "claude-3-5-sonnet", "priceInput": "3000000", "priceOutput": "15000000" },
             { "provider": "openai", "model": "gpt-4o", "priceInput": "2500000", "priceOutput": "10000000" },
         ]
+    }))
+}
+
+pub fn handle_sign_message(args: crate::args::SignMessageArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let message = &args.message;
+    let (passphrase, vault_dir) = get_vault_config()?;
+
+    let result = ows_lib::sign_message(
+        wallet_id,
+        "eip155:1",
+        message,
+        Some(&passphrase),
+        Some("utf8"),
+        None,
+        Some(&vault_dir),
+    ).map_err(|e| anyhow::anyhow!("ows sign_message failed: {}", e))?;
+
+    Ok(json!({
+        "signature": result.signature,
+        "walletId": wallet_id,
+    }))
+}
+
+pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Result<serde_json::Value> {
+    let wallet_id = &args.wallet_id;
+    let chain_id = &args.chain_id;
+    let to = &args.transaction.to;
+    let value = &args.transaction.value;
+    let data_hex = args.transaction.data.as_deref().unwrap_or("0x");
+    let data = hex::decode(data_hex.trim_start_matches("0x")).unwrap_or_default();
+
+    let (passphrase, vault_dir) = get_vault_config()?;
+    let chain_num = gradience_core::chain::evm_chain_num(chain_id);
+    let value_raw: u128 = value.parse().unwrap_or(0);
+
+    let result = block_on_async(async {
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+        let db = match sqlx::SqlitePool::connect(&db_path).await {
+            Ok(db) => db,
+            Err(_) => return anyhow::Result::<_>::Err(anyhow::anyhow!("db connect failed")),
+        };
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
+        let mut from_addr = None;
+        for a in &addrs {
+            if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+                from_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let addr = from_addr.ok_or_else(|| anyhow::anyhow!("wallet address not found"))?;
+
+        let rpc_url = resolve_rpc(chain_id);
+        let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+            .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
+        let nonce = client.get_transaction_count(&addr).await
+            .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
+        let gp_hex = client.get_gas_price().await
+            .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
+        let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
+            .map_err(|_| anyhow::anyhow!("bad gas price"))?;
+
+        let tx_hex = build_unsigned_tx(nonce, gas_price, to, value_raw, &data, chain_num);
+
+        let res = ows_lib::sign_and_send(
+            wallet_id,
+            chain_id,
+            &tx_hex,
+            Some(&passphrase),
+            None,
+            Some(rpc_url),
+            Some(&vault_dir),
+        ).map_err(|e| anyhow::anyhow!("sign_and_send failed: {}", e))?;
+
+        let _ = gradience_core::audit::service::log_wallet_action(
+            &db,
+            wallet_id,
+            None,
+            "mcp_sign_and_send",
+            &serde_json::json!({"to": to, "value": value, "chain_id": chain_id, "tx_hash": res.tx_hash}).to_string(),
+            "allow",
+        ).await;
+
+        anyhow::Result::Ok(res)
+    });
+
+    match result {
+        Ok(res) => Ok(json!({"txHash": res.tx_hash, "walletId": wallet_id})),
+        Err(e) => Err(e),
+    }
+}
+
+pub fn handle_verify_api_key(args: crate::args::VerifyApiKeyArgs) -> anyhow::Result<serde_json::Value> {
+    let api_key = &args.api_key;
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+
+    let valid = block_on_async(async {
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+        let hash = ring::digest::digest(&ring::digest::SHA256, api_key.as_bytes());
+        gradience_db::queries::get_api_key_by_hash(&db, hash.as_ref()).await.ok()
+    });
+
+    Ok(json!({
+        "valid": valid.is_some(),
+        "apiKeyPrefix": api_key.get(..8).unwrap_or(""),
     }))
 }

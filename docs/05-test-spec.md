@@ -2,7 +2,7 @@
 
 > Project: Gradience Wallet
 > Date: 2026-04-07
-> Scope: Hackathon Demo 核心路径
+> Scope: Development Demo 核心路径
 > Rule: 每个接口必须先定义测试，再写实现 (TDD)
 
 ---

@@ -7,6 +7,10 @@ struct TestOwsAdapter;
 
 #[async_trait::async_trait]
 impl OwsAdapter for TestOwsAdapter {
+    fn adapter_kind(&self) -> crate::ows::adapter::AdapterKind {
+        crate::ows::adapter::AdapterKind::Local
+    }
+
     async fn init_vault(
         &self,
         passphrase: &str,

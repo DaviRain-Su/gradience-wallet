@@ -6,3 +6,4 @@ pub mod audit_logger_tests;
 pub mod merkle_tests;
 pub mod team_tests;
 pub mod payment_tests;
+pub mod dex_service_tests;

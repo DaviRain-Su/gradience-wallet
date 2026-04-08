@@ -19,10 +19,11 @@ impl DexService {
         Self
     }
 
-    /// Mock quote for demo. In production, wire 1inch / Jupiter Quote API.
+    /// Multi-chain quote aggregator.
+    /// Priority: Jupiter (Solana) > 1inch (EVM, key required) > Uniswap V3 eth_call > estimate.
     pub async fn get_quote(
         &self,
-        wallet_id: &str,
+        _wallet_id: &str,
         from: &str,
         to: &str,
         amount: &str,
@@ -32,7 +33,33 @@ impl DexService {
             return Err(GradienceError::InvalidCredential("same token swap".into()));
         }
 
-        // Try 1inch quote if API key is present
+        // 1) Jupiter for Solana
+        if chain_num == 101 {
+            let jup = super::jupiter::JupiterClient::new();
+            let input_mint = super::jupiter::resolve_solana_mint(from);
+            let output_mint = super::jupiter::resolve_solana_mint(to);
+            match jup.quote(&input_mint, &output_mint, amount, 50).await {
+                Ok(q) => {
+                    // Jupiter returns amount in output token raw units
+                    let out_f = q.out_amount.parse::<f64>().unwrap_or(0.0);
+                    // priceImpactPct is a string like "0.1234"
+                    let impact = format!("{}%", q.price_impact_pct);
+                    return Ok(SwapQuote {
+                        from_token: from.into(),
+                        to_token: to.into(),
+                        from_amount: amount.into(),
+                        to_amount: format!("{:.0}", out_f),
+                        price_impact: impact,
+                        provider: "jupiter".into(),
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("Jupiter quote failed: {}, falling back", e);
+                }
+            }
+        }
+
+        // 2) 1inch for EVM if API key present
         if let Ok(key) = std::env::var("ONEINCH_API_KEY") {
             let client = super::oneinch::OneInchClient::new(key);
             match client.quote(chain_num, from, to, amount).await {
@@ -47,12 +74,12 @@ impl DexService {
                     });
                 }
                 Err(e) => {
-                    tracing::warn!("1inch quote failed: {}, falling back to estimate", e);
+                    tracing::warn!("1inch quote failed: {}, falling back", e);
                 }
             }
         }
 
-        // Fallback: Uniswap V3 QuoterV2 via eth_call
+        // 3) Uniswap V3 QuoterV2 via eth_call
         let rpc_url = rpc_url_for_chain(chain_num);
         let client = crate::rpc::evm::EvmRpcClient::new("evm", rpc_url)?;
         let cfg = super::uniswap::router_for_chain(chain_num);
@@ -61,8 +88,8 @@ impl DexService {
             let data = super::uniswap::encode_quote_exact_input_single(
                 from, to, 3000, amount_u, 0
             )?;
-            match client.eth_call(&quoter, &format!("0x{}", hex::encode(&data))
-            ).await {
+            match client.eth_call(&quoter, &format!("0x{}", hex::encode(&data)))
+                .await {
                 Ok(resp) => {
                     let hex = resp.trim_start_matches("0x");
                     if hex.len() >= 64 {
@@ -83,7 +110,7 @@ impl DexService {
             }
         }
 
-        // Ultimate fallback: heuristic estimate (0.997 of input in same-decimal assumption)
+        // 4) Heuristic estimate
         let amount_f64: f64 = amount.parse().unwrap_or(0.0);
         let out = amount_f64 * 0.997;
         Ok(SwapQuote {
@@ -96,9 +123,9 @@ impl DexService {
         })
     }
 
-    /// Build a real unsigned swap transaction.
-    /// Tries 1inch Swap API first (requires ONEINCH_API_KEY env).
-    /// Falls back to raw Uniswap V3 exactInputSingle calldata.
+    /// Build an unsigned swap transaction.
+    /// Priority: LI.FI (cross-chain / EVM aggregator) > 1inch > Uniswap V3 fallback.
+    /// Solana (Jupiter) returns a placeholder because Solana tx signing is not yet wired.
     pub async fn build_swap_tx(
         &self,
         from_addr: &str,
@@ -106,43 +133,78 @@ impl DexService {
         to_token: &str,
         amount: &str,
         chain_num: u64,
+        slippage_bps: u16,
     ) -> Result<Transaction> {
-        // Try 1inch if API key is present
-        if let Ok(key) = std::env::var("ONEINCH_API_KEY") {
-            let client = super::oneinch::OneInchClient::new(key);
-            let inch_tx = client
-                .swap(
-                    chain_num,
-                    from_token,
-                    to_token,
-                    amount,
-                    from_addr,
-                    1.0, // 1% slippage
-                )
-                .await?;
-            return Ok(Transaction {
-                to: Some(inch_tx.to),
-                value: inch_tx.value,
-                data: hex::decode(inch_tx.data.trim_start_matches("0x"))
-                    .unwrap_or_default(),
-                raw_hex: inch_tx.data,
-            });
+        let slippage_pct = slippage_bps as f64 / 100.0;
+
+        // 1) Solana placeholder via Jupiter
+        if chain_num == 101 {
+            let jup = super::jupiter::JupiterClient::new();
+            let input_mint = super::jupiter::resolve_solana_mint(from_token);
+            let output_mint = super::jupiter::resolve_solana_mint(to_token);
+            let _quote = jup.quote(&input_mint, &output_mint, amount, slippage_bps).await?;
+            return Err(GradienceError::InvalidCredential(
+                "Solana swap execution requires Jupiter signer integration (not yet wired)".into(),
+            ));
         }
 
-        // Fallback: Uniswap V3 exactInputSingle (multi-chain)
+        // 2) LI.FI for EVM / cross-chain
+        let lifi_from = super::lifi::resolve_token_address(chain_num, from_token);
+        let lifi_to = super::lifi::resolve_token_address(chain_num, to_token);
+        let lifi_client = super::lifi::LiFiClient::new();
+        match lifi_client.quote(
+            chain_num, chain_num, &lifi_from, &lifi_to, amount, from_addr, slippage_pct
+        ).await {
+            Ok(lq) => {
+                if let Some(tx_req) = lq.transaction_request {
+                    return Ok(Transaction {
+                        to: Some(tx_req.to),
+                        value: tx_req.value,
+                        data: hex::decode(tx_req.data.trim_start_matches("0x")).unwrap_or_default(),
+                        raw_hex: tx_req.data,
+                    });
+                }
+                // No transactionRequest returned: build Uniswap fallback using LI.FI min out
+                let amount_hex = format!("0x{:x}", amount.parse::<u128>().unwrap_or(0));
+                let to_amount = lq.estimate.to_amount_min.parse::<u128>().unwrap_or(0);
+                let min_out = to_amount.saturating_mul((10000u128 - slippage_bps as u128) / 10000);
+                let min_out_hex = format!("0x{:x}", min_out);
+                let uni = super::uniswap::encode_exact_input_single(
+                    from_token, to_token, 3000, from_addr, &amount_hex, &min_out_hex, "0x0", chain_num,
+                )?;
+                return Ok(Transaction {
+                    to: Some(uni.to),
+                    value: uni.value,
+                    data: uni.data.clone(),
+                    raw_hex: hex::encode(&uni.data),
+                });
+            }
+            Err(e) => {
+                tracing::warn!("LI.FI swap routing failed: {}, trying next fallback", e);
+            }
+        }
+
+        // 3) 1inch if API key is present
+        if let Ok(key) = std::env::var("ONEINCH_API_KEY") {
+            let client = super::oneinch::OneInchClient::new(key);
+            if let Ok(inch_tx) = client.swap(chain_num, from_token, to_token, amount, from_addr, slippage_pct).await {
+                return Ok(Transaction {
+                    to: Some(inch_tx.to),
+                    value: inch_tx.value,
+                    data: hex::decode(inch_tx.data.trim_start_matches("0x")).unwrap_or_default(),
+                    raw_hex: inch_tx.data,
+                });
+            }
+        }
+
+        // 4) Uniswap V3 exactInputSingle fallback
         let amount_hex = format!("0x{:x}", amount.parse::<u128>().unwrap_or(0));
-        // For demo, 0 minOut. In production derive from quote with slippage.
-        let min_out = "0x0";
-        let sqrt_price_limit = "0x0";
+        let quote = self.get_quote("", from_token, to_token, amount, chain_num).await?;
+        let to_amount = quote.to_amount.parse::<u128>().unwrap_or(0);
+        let min_out = to_amount.saturating_mul((10000u128 - slippage_bps as u128) / 10000);
+        let min_out_hex = format!("0x{:x}", min_out);
         let uni = super::uniswap::encode_exact_input_single(
-            from_token,
-            to_token,
-            3000, // 0.3% pool
-            from_addr,
-            &amount_hex,
-            min_out,
-            sqrt_price_limit,
-            chain_num,
+            from_token, to_token, 3000, from_addr, &amount_hex, &min_out_hex, "0x0", chain_num,
         )?;
 
         Ok(Transaction {

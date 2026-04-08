@@ -36,7 +36,22 @@ signed = client.sign_transaction(wallet["id"], {
     "chainId": "8453"
 })
 print(signed["signed_tx"])
+
+# DEX swap quote
+quote = client.swap_quote(wallet["id"], {
+    "from_token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "to_token": "0x4200000000000000000000000000000000000006",
+    "amount": "1000000",
+    "chain": "base",
+})
+print(quote["to_amount"])
+
+# AI generation
+ai = client.ai_generate(wallet["id"], "claude-3-5-sonnet", "Summarize DeFi trends")
+print(ai["text"])
 ```
+
+See [`docs/06-sdk-guide.md`](../../docs/06-sdk-guide.md) for the full SDK roadmap.
 
 ## License
 

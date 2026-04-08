@@ -56,15 +56,27 @@ fn test_chain_whitelist_deny() {
 }
 
 #[test]
-fn test_spend_limit_allow_boundary() {
+fn test_spend_limit_allow_under_threshold() {
     let engine = PolicyEngine;
     let policy = Policy {
         rules: vec![Rule::SpendLimit { max: "1000".into(), token: "USDC".into() }],
         ..default_policy()
     };
-    let ctx = make_ctx("eip155:8453", "1000");
+    let ctx = make_ctx("eip155:8453", "700");
     let result = engine.evaluate(ctx, vec![&policy]).unwrap();
     assert_eq!(result.decision, Decision::Allow);
+}
+
+#[test]
+fn test_spend_limit_warn_at_threshold() {
+    let engine = PolicyEngine;
+    let policy = Policy {
+        rules: vec![Rule::SpendLimit { max: "1000".into(), token: "USDC".into() }],
+        ..default_policy()
+    };
+    let ctx = make_ctx("eip155:8453", "900");
+    let result = engine.evaluate(ctx, vec![&policy]).unwrap();
+    assert_eq!(result.decision, Decision::Warn);
 }
 
 #[test]

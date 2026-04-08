@@ -26,7 +26,7 @@ pub async fn swap(ctx: &AppContext, wallet_id: String, from: String, to: String,
     let from_addr = from_addr.ok_or_else(|| anyhow::anyhow!("wallet address not found"))?;
 
     let dex = gradience_core::dex::service::DexService::new();
-    let tx = dex.build_swap_tx(&from_addr, &from, &to, &amount, chain_num).await?;
+    let tx = dex.build_swap_tx(&from_addr, &from, &to, &amount, chain_num, 50).await?;
 
     let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)?;
     let nonce = client.get_transaction_count(&from_addr).await?;

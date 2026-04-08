@@ -30,6 +30,7 @@ pub enum Rule {
     ModelWhitelist { models: Vec<String> },
     IntentRisk { max_risk: f64 },
     DynamicRisk { max_forta: f64, max_chainalysis: f64 },
+    SharedBudget { max: String, token: String, period: String },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -212,8 +213,8 @@ impl PolicyEngine {
                         }
                     }
                     Rule::SpendLimit { max, .. } => {
-                        let val = ctx.transaction.value.parse::<u64>().unwrap_or(0);
-                        let limit = max.parse::<u64>().unwrap_or(u64::MAX);
+                        let val = crate::eth_to_wei(&ctx.transaction.value).unwrap_or(0);
+                        let limit = crate::eth_to_wei(max).unwrap_or(u128::MAX);
                         if val > limit {
                             deny_reasons.push("spend limit exceeded".into());
                         } else if val > limit / 5 * 4 {

@@ -1,6 +1,6 @@
-**是的，Gradience Wallet 项目可以比较好地支持这个 Stellar Agents x402 + Stripe MPP Hackathon 的核心链路**，但需要做一些针对性扩展（主要是新增 Stellar 支持 + 优化 x402/MPP 支付适配器），而不是从零开始。整体匹配度较高，尤其在 **Agent 钱包编排 + 策略控制 + Agentic 支付** 这块。
+**是的，Gradience Wallet 项目可以比较好地支持这个 Stellar Agents x402 + Stripe MPP Development 的核心链路**，但需要做一些针对性扩展（主要是新增 Stellar 支持 + 优化 x402/MPP 支付适配器），而不是从零开始。整体匹配度较高，尤其在 **Agent 钱包编排 + 策略控制 + Agentic 支付** 这块。
 
-### Hackathon 核心要求总结（基于最新信息）
+### Development 核心要求总结（基于最新信息）
 - **主题**：Stellar Hacks: Agents —— 聚焦 **AI Agents + x402 + MPP（Machine Payments Protocol，由 Stripe & Tempo 主导）** 的 Agentic Payments/Commerce。
 - **关键技术要求**：
   - 必须集成 **x402**（HTTP 402 Payment Required 协议），让 Agent 能为 API 调用即时支付（Stellar 上通过 Soroban authorization entry signing 或 facilitator）。
@@ -11,13 +11,13 @@
 - **时间**：提交截止 **2026 年 4 月 13 日**（仅剩约 6 天，比较紧急）。
 - **奖项**：总奖金池 $10,000 USD，侧重 Agent 基础设施、支付工具、自主经济应用。
 
-Hackathon 鼓励构建或增强 **Agent 友好支付基础设施**，让 Agent 能安全、自主地处理 micropayments，而不需要传统账户/账单系统。
+Development 鼓励构建或增强 **Agent 友好支付基础设施**，让 Agent 能安全、自主地处理 micropayments，而不需要传统账户/账单系统。
 
-### Gradience Wallet 与 Hackathon 的匹配度
+### Gradience Wallet 与 Development 的匹配度
 你的项目定位（Passkey 身份 + OWS 多链钱包 + **智能策略引擎（静态+动态+交易意图）** + x402/MPP 支付抽象）与赛道高度契合：
 
 **强支持点（已有基础）**：
-- **支付协议抽象层**：PRD 和架构里已经设计了 `payment/` 模块（x402.rs + mpp.rs + budget.rs），并强调 **协议无关路由**（根据金额、频率自动选择 x402 或 MPP）。这正是 hackathon 最需要的。
+- **支付协议抽象层**：PRD 和架构里已经设计了 `payment/` 模块（x402.rs + mpp.rs + budget.rs），并强调 **协议无关路由**（根据金额、频率自动选择 x402 或 MPP）。这正是 development 最需要的。
 - **Agent 友好访问**：MCP Server + SDK + API Key 机制，让外部 AI Agent（Claude、Cursor 等）能安全调用 sign_transaction、pay 等工具。
 - **策略引擎控制支付**：所有支付（包括 x402/MPP）都走 Policy Engine（限额、预算、意图匹配、动态调整）。这比单纯的支付 SDK 更有价值——Agent 不会乱花钱，用户可审计。
 - **审计日志 + warn 审批**：完美支持合规模型和 demo 展示。

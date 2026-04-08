@@ -31,13 +31,29 @@ impl X402Service {
         amount: &str,
         token_address: &str,
         deadline: u64,
+        network: Option<&str>,
     ) -> Result<X402Requirement> {
-        if recipient.is_empty() || !recipient.starts_with("0x") {
+        if recipient.is_empty() {
             return Err(GradienceError::InvalidCredential("invalid recipient address".into()));
+        }
+        let net = network.unwrap_or("base");
+        if net.starts_with("stellar") {
+            // Stellar addresses are not hex
+            return Ok(X402Requirement {
+                scheme: "exact".into(),
+                network: net.into(),
+                token_address: token_address.into(),
+                recipient: recipient.into(),
+                amount: amount.into(),
+                deadline,
+            });
+        }
+        if !recipient.starts_with("0x") {
+            return Err(GradienceError::InvalidCredential("invalid evm recipient address".into()));
         }
         Ok(X402Requirement {
             scheme: "exact".into(),
-            network: "base".into(),
+            network: net.into(),
             token_address: token_address.into(),
             recipient: recipient.into(),
             amount: amount.into(),
@@ -87,6 +103,12 @@ impl X402Service {
             .as_secs();
         if !self.verify_receipt(payment, now)? {
             return Err(GradienceError::Signature("x402 receipt invalid or expired".into()));
+        }
+
+        if payment.requirement.network.starts_with("stellar") {
+            return Err(GradienceError::Validation(
+                "Stellar settlement not yet implemented (requires Stellar signer integration)".into(),
+            ));
         }
 
         let token = &payment.requirement.token_address;

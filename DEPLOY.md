@@ -99,7 +99,7 @@ Passkeys are strict about domains. Make sure:
 
 ## 6. (Optional) Custom Domain
 
-For a polished hackathon demo, buy a cheap domain and point both Vercel and your API host to it:
+For a production deployment, configure a custom domain and point both Vercel and your API host to it:
 
 - **Frontend**: `wallet.yourdomain.com` → CNAME to `cname.vercel-dns.com`
 - **API**: `api.yourdomain.com` → CNAME to your Railway/Fly domain

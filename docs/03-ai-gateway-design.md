@@ -506,7 +506,7 @@ AI Gateway 复用 Gradience 已有的策略引擎，新增规则类型：
 
 ---
 
-## 9. Hackathon 匹配
+## 9. Development 匹配
 
 | 比赛 | 赛道 | 如何展示 |
 |---|---|---|
@@ -763,7 +763,7 @@ impl PaymentRouter {
 
 ---
 
-## 13. 更新后的 Hackathon 展示路径
+## 13. 更新后的 Development 展示路径
 
 整合 MPP 后，Demo 更全面：
 

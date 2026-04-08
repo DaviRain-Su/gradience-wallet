@@ -11,7 +11,7 @@ pub async fn create(ctx: &AppContext, name: String, _workspace: Option<String>) 
     let passphrase = ctx.read_passphrase()
         .ok_or_else(|| anyhow::anyhow!("No session found. Run 'gradience auth login' first."))?;
 
-    // Demo: owner_id fixed to "user-1" for hackathon simplicity
+    // Demo: owner_id fixed to "user-1" for development simplicity
     let owner_id = "user-1";
     if queries::get_user_by_email(&ctx.db, "demo@gradience.io").await?.is_none() {
         queries::create_user(&ctx.db, owner_id, "demo@gradience.io").await?;

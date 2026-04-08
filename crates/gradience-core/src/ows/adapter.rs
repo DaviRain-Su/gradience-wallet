@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use std::path::Path;
 
 use crate::error::GradienceError;
-use crate::wallet::manager::WalletDescriptor;
+use crate::wallet::manager::{WalletDescriptor, AccountDescriptor};
 use super::vault::VaultHandle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +85,18 @@ pub trait OwsAdapter: Send + Sync {
         name: &str,
         derivation_params: DerivationParams,
     ) -> Result<WalletDescriptor, GradienceError>;
+
+    /// Derive a new HD account for an existing wallet.
+    /// Default implementation returns an error (adapters that don't support HD derivation).
+    async fn derive_account(
+        &self,
+        _vault: &VaultHandle,
+        _wallet_id: &str,
+        _chain: &str,
+        _derivation_path: &str,
+    ) -> Result<AccountDescriptor, GradienceError> {
+        Err(GradienceError::InvalidConfig("derive_account not supported by this adapter".into()))
+    }
 
     async fn sign_transaction(
         &self,
