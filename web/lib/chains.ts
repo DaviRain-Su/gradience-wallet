@@ -82,6 +82,26 @@ export const CHAIN_NAMES: Record<string, string> = {
   // "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" already mapped above as Solana Devnet
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "Solana Testnet",
   "solana:11111111111111111111111111111111": "Solana Localnet",
+
+  // Cosmos ecosystem
+  "cosmos:cosmoshub-4": "Cosmos Hub",
+  "cosmos:theta-testnet-001": "Cosmos Theta Testnet",
+
+  // TON (The Open Network)
+  "ton:-239": "TON Mainnet",
+  "ton:-3": "TON Testnet",
+
+  // Filecoin
+  "filecoin:f": "Filecoin Mainnet",
+  "filecoin:t": "Filecoin Testnet",
+
+  // XRP Ledger
+  "xrpl:mainnet": "XRP Ledger",
+  "xrpl:testnet": "XRPL Testnet",
+
+  // Conflux Core
+  "cfx:1029": "Conflux Core",
+  "cfx:1": "Conflux Testnet",
 };
 
 export function formatChainName(caip2ChainId: string): string {

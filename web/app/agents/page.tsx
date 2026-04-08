@@ -107,25 +107,26 @@ export default function AgentsPage() {
   }, []);
 
   return (
-    <div className="min-h-screen p-8 max-w-4xl mx-auto">
+    <div className="min-h-screen p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold">Agent Monitor</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm mt-1" style={{ color: "var(--muted-foreground)" }}>
             Real-time overview of agent activity and system health
           </p>
         </div>
         <button
           onClick={fetchAll}
           disabled={loading}
-          className="text-sm px-4 py-2 rounded border hover:bg-gray-50 disabled:opacity-50"
+          className="text-sm px-4 py-2 rounded border disabled:opacity-50"
+          style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)" }}
         >
           {loading ? "Loading..." : "Refresh"}
         </button>
       </div>
 
       {msg && (
-        <p className="text-sm bg-red-50 text-red-600 px-4 py-2 rounded mb-6">
+        <p className="text-sm px-4 py-2 rounded mb-6" style={{ backgroundColor: "var(--muted)", color: "#B45309" }}>
           {msg}
         </p>
       )}
@@ -149,10 +150,10 @@ export default function AgentsPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="border rounded-lg p-5 bg-white">
+        <div className="border rounded-lg p-5" style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}>
           <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
           {activities.length === 0 && (
-            <p className="text-gray-500 text-sm">
+            <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
               No recent activity to display.
             </p>
           )}
@@ -160,23 +161,26 @@ export default function AgentsPage() {
             {activities.map((a) => (
               <div
                 key={a.id + a.type}
-                className="flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex items-start gap-3 p-3 rounded-lg transition-colors"
+                style={{ backgroundColor: "var(--muted)" }}
               >
                 <div
-                  className={`w-2 h-2 mt-2 rounded-full shrink-0 ${
-                    a.type === "tx"
-                      ? a.status === "allow"
-                        ? "bg-green-500"
-                        : "bg-red-500"
-                      : "bg-yellow-500"
-                  }`}
+                  className="w-2 h-2 mt-2 rounded-full shrink-0"
+                  style={{
+                    backgroundColor:
+                      a.type === "tx"
+                        ? a.status === "allow"
+                          ? "#22c55e"
+                          : "#ef4444"
+                        : "#eab308",
+                  }}
                 />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{a.title}</p>
-                  <p className="text-xs text-gray-500 truncate">
+                  <p className="text-xs truncate" style={{ color: "var(--muted-foreground)" }}>
                     {a.wallet_name} • {a.subtitle}
                   </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs mt-0.5" style={{ color: "var(--muted-foreground)" }}>
                     {new Date(a.created_at).toLocaleString()}
                   </p>
                 </div>
@@ -185,7 +189,7 @@ export default function AgentsPage() {
           </div>
         </div>
 
-        <div className="border rounded-lg p-5 bg-white">
+        <div className="border rounded-lg p-5" style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}>
           <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
           <div className="space-y-3">
             <QuickAction href="/ai" label="AI Gateway" desc="Top up balance or run inference" />
@@ -209,17 +213,17 @@ function MetricCard({
   trend: "up" | "down" | "warning";
 }) {
   const colors = {
-    up: "text-green-600",
-    down: "text-red-600",
-    warning: "text-yellow-600",
+    up: { text: "#22c55e", icon: "●" },
+    down: { text: "#ef4444", icon: "▼" },
+    warning: { text: "#eab308", icon: "▲" },
   };
   return (
-    <div className="border rounded-lg p-4 bg-white">
-      <p className="text-sm text-gray-500">{label}</p>
+    <div className="border rounded-lg p-4" style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}>
+      <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>{label}</p>
       <div className="flex items-baseline gap-2 mt-1">
         <p className="text-2xl font-bold">{value}</p>
-        <span className={`text-xs font-medium ${colors[trend]}`}>
-          {trend === "up" ? "●" : trend === "warning" ? "▲" : "▼"}
+        <span className="text-xs font-medium" style={{ color: colors[trend].text }}>
+          {colors[trend].icon}
         </span>
       </div>
     </div>
@@ -238,13 +242,14 @@ function QuickAction({
   return (
     <a
       href={href}
-      className="flex items-center justify-between p-3 rounded-lg border hover:bg-gray-50 transition-colors"
+      className="flex items-center justify-between p-3 rounded-lg border transition-colors"
+      style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)" }}
     >
       <div>
         <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs text-gray-500">{desc}</p>
+        <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>{desc}</p>
       </div>
-      <span className="text-gray-400">→</span>
+      <span style={{ color: "var(--muted-foreground)" }}>→</span>
     </a>
   );
 }

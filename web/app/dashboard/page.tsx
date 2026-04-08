@@ -313,6 +313,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [showFund, setShowFund] = useState(false);
   const [showKey, setShowKey] = useState(false);
   const [showSwap, setShowSwap] = useState(false);
+  const [showAllAddresses, setShowAllAddresses] = useState(false);
   const [fundTo, setFundTo] = useState("");
   const [fundAmount, setFundAmount] = useState("0.001");
   const [keyName, setKeyName] = useState("");
@@ -423,31 +424,36 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     if (!addressMap.has(a.chain_id)) addressMap.set(a.chain_id, a.address);
   });
 
+  function getNativeSymbol(chainId: string) {
+    if (chainId.startsWith("solana:")) return "SOL";
+    if (chainId.startsWith("ton:")) return "TON";
+    if (chainId.startsWith("cfx:")) return "CFX";
+    if (chainId.startsWith("cosmos:")) return "ATOM";
+    if (chainId.startsWith("filecoin:")) return "FIL";
+    if (chainId.startsWith("xrpl:") || chainId.startsWith("xrp:")) return "XRP";
+    return "ETH";
+  }
+
+  function getNativeDecimals(chainId: string) {
+    if (chainId.startsWith("solana:")) return 1e9;
+    if (chainId.startsWith("ton:")) return 1e9;
+    if (chainId.startsWith("cfx:")) return 1e18;
+    if (chainId.startsWith("cosmos:")) return 1e6;
+    if (chainId.startsWith("filecoin:")) return 1e18;
+    if (chainId.startsWith("xrpl:") || chainId.startsWith("xrp:")) return 1e6;
+    return 1e18;
+  }
+
   function parseNativeBalance(hex: string, chainId: string) {
     try {
       const val = BigInt(hex || "0x0");
-      if (val === BigInt(0)) {
-        if (chainId.startsWith("solana:")) return "0 SOL";
-        if (chainId.startsWith("ton:")) return "0 TON";
-        if (chainId.startsWith("cfx:")) return "0 CFX";
-        return "0 ETH";
-      }
-      if (chainId.startsWith("solana:")) {
-        const sol = Number(val) / 1e9;
-        return `${sol.toFixed(6)} SOL`;
-      }
-      if (chainId.startsWith("ton:")) {
-        const ton = Number(val) / 1e9;
-        return `${ton.toFixed(6)} TON`;
-      }
-      if (chainId.startsWith("cfx:")) {
-        const cfx = Number(val) / 1e18;
-        return `${cfx.toFixed(6)} CFX`;
-      }
-      const eth = Number(val) / 1e18;
-      return `${eth.toFixed(6)} ETH`;
+      const symbol = getNativeSymbol(chainId);
+      const dec = getNativeDecimals(chainId);
+      if (val === BigInt(0)) return `0 ${symbol}`;
+      const amt = Number(val) / dec;
+      return `${amt.toFixed(6)} ${symbol}`;
     } catch {
-      return "0 ETH";
+      return `0 ${getNativeSymbol(chainId)}`;
     }
   }
 
@@ -482,7 +488,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Addresses</p>
         {addressMap.size === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No addresses loaded.</p>}
         <div className="mt-2 grid grid-cols-1 gap-2">
-          {Array.from(addressMap.entries()).map(([chain, addr]) => (
+          {(showAllAddresses ? Array.from(addressMap.entries()) : Array.from(addressMap.entries()).slice(0, 2)).map(([chain, addr]) => (
             <div key={chain} className="rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
               <div className="flex items-center gap-2">
                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "var(--card)", color: "var(--primary)", border: "1px solid var(--border)" }}>
@@ -497,6 +503,15 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
             </div>
           ))}
         </div>
+        {addressMap.size > 2 && (
+          <button
+            onClick={() => setShowAllAddresses((s) => !s)}
+            className="text-xs mt-2 underline"
+            style={{ color: "var(--primary)" }}
+          >
+            {showAllAddresses ? "Collapse addresses" : `Show all addresses (${addressMap.size})`}
+          </button>
+        )}
       </div>
 
       <div className="mt-4">
@@ -527,7 +542,13 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Balances</p>
         {portfolio.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
         <div className="mt-2 grid grid-cols-1 gap-3">
-          {portfolio.map((p) => (
+          {[...portfolio].sort((a, b) => {
+            const aVal = BigInt(a.native_balance || "0x0");
+            const bVal = BigInt(b.native_balance || "0x0");
+            const aScore = (aVal > BigInt(0) ? 2 : 0) + (a.assets.length > 0 ? 1 : 0);
+            const bScore = (bVal > BigInt(0) ? 2 : 0) + (b.assets.length > 0 ? 1 : 0);
+            return bScore - aScore;
+          }).map((p) => (
             <div key={p.chain_id} className="rounded-lg p-3" style={{ backgroundColor: "var(--muted)" }}>
               <div className="flex items-center gap-2">
                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "var(--card)", color: "var(--primary)", border: "1px solid var(--border)" }}>
