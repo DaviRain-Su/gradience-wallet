@@ -791,3 +791,136 @@ pub async fn list_payment_records_by_wallet(
     .await?;
     Ok(rows)
 }
+
+// ========== Email Verifications ==========
+pub async fn upsert_email_verification(
+    pool: &Pool<Sqlite>,
+    email: &str,
+    code: &str,
+    expires_at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO email_verifications (email, code, expires_at, attempts) VALUES (?, ?, ?, 0)\n         ON CONFLICT(email) DO UPDATE SET code = excluded.code, expires_at = excluded.expires_at, attempts = 0, created_at = datetime('now')",
+        email,
+        code,
+        expires_at
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_email_verification(
+    pool: &Pool<Sqlite>,
+    email: &str,
+) -> Result<Option<(String, DateTime<Utc>, i64)>> {
+    let row = sqlx::query(
+        "SELECT code, expires_at, attempts FROM email_verifications WHERE email = ?"
+    )
+    .bind(email)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        (
+            r.get::<String, _>("code"),
+            r.get::<DateTime<Utc>, _>("expires_at"),
+            r.get::<i64, _>("attempts"),
+        )
+    }))
+}
+
+pub async fn increment_email_verification_attempts(
+    pool: &Pool<Sqlite>,
+    email: &str,
+) -> Result<()> {
+    sqlx::query!("UPDATE email_verifications SET attempts = attempts + 1 WHERE email = ?", email)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_email_verification(pool: &Pool<Sqlite>, email: &str) -> Result<()> {
+    sqlx::query!("DELETE FROM email_verifications WHERE email = ?", email)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+// ========== Sessions ==========
+pub async fn create_session(
+    pool: &Pool<Sqlite>,
+    token: &str,
+    user_id: &str,
+    username: &str,
+    passphrase: Option<&str>,
+    expires_at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO sessions (token, user_id, username, passphrase, expires_at) VALUES (?, ?, ?, ?, ?)",
+        token,
+        user_id,
+        username,
+        passphrase,
+        expires_at
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_session_by_token(
+    pool: &Pool<Sqlite>,
+    token: &str,
+) -> Result<Option<(String, String, Option<String>)>> {
+    let row = sqlx::query(
+        "SELECT user_id, username, passphrase FROM sessions WHERE token = ? AND expires_at > datetime('now')"
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        (
+            r.get::<String, _>("user_id"),
+            r.get::<String, _>("username"),
+            r.get::<Option<String>, _>("passphrase"),
+        )
+    }))
+}
+
+pub async fn update_session_passphrase(
+    pool: &Pool<Sqlite>,
+    token: &str,
+    passphrase: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "UPDATE sessions SET passphrase = ? WHERE token = ?",
+        passphrase,
+        token
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn delete_session(pool: &Pool<Sqlite>, token: &str) -> Result<()> {
+    sqlx::query!("DELETE FROM sessions WHERE token = ?", token)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn delete_expired_sessions(pool: &Pool<Sqlite>) -> Result<u64> {
+    let res = sqlx::query!("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected())
+}
+
+pub async fn delete_sessions_by_user(pool: &Pool<Sqlite>, user_id: &str) -> Result<()> {
+    sqlx::query!("DELETE FROM sessions WHERE user_id = ?", user_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}

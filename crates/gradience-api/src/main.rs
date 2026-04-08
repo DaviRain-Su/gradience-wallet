@@ -34,6 +34,69 @@ struct Session {
     passphrase: Option<String>,
 }
 
+#[derive(Clone)]
+struct SessionStore {
+    cache: Arc<Mutex<HashMap<String, Session>>>,
+    db: Pool<Sqlite>,
+}
+
+impl SessionStore {
+    async fn insert(
+        &self,
+        token: String,
+        session: Session,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) {
+        let _ = gradience_db::queries::create_session(
+            &self.db,
+            &token,
+            &session.user_id,
+            &session.username,
+            session.passphrase.as_deref(),
+            expires_at,
+        )
+        .await;
+        self.cache.lock().await.insert(token, session);
+    }
+
+    async fn get(&self, token: &str) -> Option<Session> {
+        if let Some(s) = self.cache.lock().await.get(token).cloned() {
+            return Some(s);
+        }
+        let row = gradience_db::queries::get_session_by_token(&self.db, token)
+            .await
+            .ok()
+            .flatten()?;
+        let session = Session {
+            user_id: row.0,
+            username: row.1,
+            passphrase: row.2,
+        };
+        self.cache.lock().await.insert(token.to_string(), session.clone());
+        Some(session)
+    }
+
+    async fn update_passphrase(&self, token: &str, passphrase: String) -> bool {
+        if gradience_db::queries::update_session_passphrase(&self.db, token, &passphrase)
+            .await
+            .is_err()
+        {
+            return false;
+        }
+        if let Some(s) = self.cache.lock().await.get_mut(token) {
+            s.passphrase = Some(passphrase);
+            true
+        } else {
+            false
+        }
+    }
+
+    async fn remove(&self, token: &str) {
+        let _ = gradience_db::queries::delete_session(&self.db, token).await;
+        self.cache.lock().await.remove(token);
+    }
+}
+
 struct AppState {
     db: Pool<Sqlite>,
     webauthn: Webauthn,
@@ -42,7 +105,7 @@ struct AppState {
     reg_challenges: Mutex<HashMap<String, PasskeyRegistration>>,
     auth_challenges: Mutex<HashMap<String, PasskeyAuthentication>>,
     credentials: Mutex<HashMap<String, Passkey>>,
-    sessions: Mutex<HashMap<String, Session>>,
+    sessions: SessionStore,
     recovery_sessions: Mutex<HashMap<String, RecoverySession>>,
     device_auths: Mutex<HashMap<String, DeviceAuth>>,
     risk_cache: gradience_core::policy::dynamic::RiskSignalCache,
@@ -57,7 +120,7 @@ fn auth_token(headers: &axum::http::HeaderMap) -> Option<String> {
 }
 
 async fn get_session(state: &AppState, token: &str) -> Option<Session> {
-    state.sessions.lock().await.get(token).cloned()
+    state.sessions.get(token).await
 }
 
 async fn require_wallet_owner(
@@ -135,6 +198,139 @@ struct TokenResp {
 #[derive(Deserialize)]
 struct UnlockReq {
     passphrase: String,
+}
+
+#[derive(Deserialize)]
+struct EmailSendCodeReq {
+    email: String,
+}
+
+#[derive(Deserialize)]
+struct EmailVerifyReq {
+    email: String,
+    code: String,
+}
+
+async fn send_email_via_resend(email: &str, code: &str) -> Result<(), String> {
+    let api_key = std::env::var("RESEND_API_KEY").unwrap_or_default();
+    if api_key.is_empty() {
+        warn!("RESEND_API_KEY not set; cannot send email");
+        return Err("RESEND_API_KEY not configured".into());
+    }
+    let client = reqwest::Client::new();
+    let from = std::env::var("RESEND_FROM_EMAIL")
+        .unwrap_or_else(|_| "Gradience <noreply@gradiences.xyz>".to_string());
+    let res = client
+        .post("https://api.resend.com/emails")
+        .header("Authorization", format!("Bearer {}", api_key))
+        .json(&serde_json::json!({
+            "from": from,
+            "to": [email],
+            "subject": "Your Gradience verification code",
+            "html": format!("<p>Your verification code is: <strong>{}</strong></p><p>This code expires in 10 minutes.</p>", code)
+        }))
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+    if !res.status().is_success() {
+        let body = res.text().await.unwrap_or_default();
+        warn!("Resend API error: {}", body);
+        return Err(format!("Resend API error: {}", body));
+    }
+    Ok(())
+}
+
+fn generate_otp_code() -> String {
+    format!("{:06}", rand::random::<u32>() % 1_000_000)
+}
+
+async fn email_send_code(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<EmailSendCodeReq>,
+) -> Result<StatusCode, StatusCode> {
+    let email = body.email.trim().to_lowercase();
+    if email.is_empty() || !email.contains('@') {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let code = generate_otp_code();
+    if let Err(e) = send_email_via_resend(&email, &code).await {
+        warn!("Failed to send verification email to {}: {}", email, e);
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(10);
+    gradience_db::queries::upsert_email_verification(&state.db, &email, &code, expires_at
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    info!("Verification code sent to {}", email);
+    Ok(StatusCode::OK)
+}
+
+async fn email_verify_code(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<EmailVerifyReq>,
+) -> Result<Json<TokenResp>, StatusCode> {
+    let email = body.email.trim().to_lowercase();
+    let code = body.code.trim();
+    if email.is_empty() || code.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let (stored_code, expires_at, attempts) = gradience_db::queries::get_email_verification(&state.db, &email
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+    .ok_or(StatusCode::BAD_REQUEST)?;
+
+    if chrono::Utc::now() > expires_at {
+        let _ = gradience_db::queries::delete_email_verification(&state.db, &email).await;
+        return Err(StatusCode::GONE);
+    }
+
+    if attempts >= 5 {
+        let _ = gradience_db::queries::delete_email_verification(&state.db, &email).await;
+        return Err(StatusCode::FORBIDDEN);
+    }
+
+    if stored_code != code {
+        gradience_db::queries::increment_email_verification_attempts(&state.db, &email
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    gradience_db::queries::delete_email_verification(&state.db, &email
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user = gradience_db::queries::get_user_by_email(&state.db, &email
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let user_id = if let Some(u) = user {
+        u.id
+    } else {
+        let new_id = uuid::Uuid::new_v4().to_string();
+        gradience_db::queries::create_user(&state.db, &new_id, &email
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        new_id
+    };
+
+    let username = email.split('@').next().unwrap_or(&email).to_string();
+    let token = uuid::Uuid::new_v4().to_string();
+    let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
+    state.sessions.insert(token.clone(), Session {
+        user_id,
+        username,
+        passphrase: None,
+    }, expires_at).await;
+    info!("Email login success for {}", email);
+    Ok(Json(TokenResp { token }))
 }
 
 // ==================== Auth Handlers ====================
@@ -289,11 +485,12 @@ async fn register_finish(
     state.credentials.lock().await.insert(username.clone(), pk);
 
     let token = uuid::Uuid::new_v4().to_string();
-    state.sessions.lock().await.insert(token.clone(), Session {
+    let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
+    state.sessions.insert(token.clone(), Session {
         user_id: user_id.clone(),
         username,
         passphrase: Some(body.passphrase),
-    });
+    }, expires_at).await;
 
     Ok(Json(TokenResp { token }))
 }
@@ -391,10 +588,12 @@ async fn login_finish(
     let user = user.ok_or(StatusCode::NOT_FOUND)?;
 
     let token = uuid::Uuid::new_v4().to_string();
-    state.recovery_sessions.lock().await.insert(token.clone(), RecoverySession {
+    let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
+    state.sessions.insert(token.clone(), Session {
         user_id: user.id,
         username,
-    });
+        passphrase: None,
+    }, expires_at).await;
     Ok(Json(TokenResp { token }))
 }
 
@@ -404,14 +603,14 @@ async fn unlock(
     Json(body): Json<UnlockReq>,
 ) -> Result<StatusCode, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let mut sessions = state.sessions.lock().await;
-    let session = sessions.get_mut(&token).ok_or(StatusCode::UNAUTHORIZED)?;
     if body.passphrase.len() < 12 {
         return Err(StatusCode::BAD_REQUEST);
     }
     let vault = state.ows.init_vault(&body.passphrase).await.map_err(|_| StatusCode::UNAUTHORIZED)?;
     drop(vault);
-    session.passphrase = Some(body.passphrase);
+    if !state.sessions.update_passphrase(&token, body.passphrase).await {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
     Ok(StatusCode::OK)
 }
 
@@ -523,11 +722,12 @@ async fn recover_register(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let token = uuid::Uuid::new_v4().to_string();
-    state.sessions.lock().await.insert(token.clone(), Session {
+    let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
+    state.sessions.insert(token.clone(), Session {
         user_id: rec.user_id,
         username: rec.username,
         passphrase: None,
-    });
+    }, expires_at).await;
 
     Ok((StatusCode::OK, axum::Json(serde_json::json!({"token": token, "registered": true}))))
 }
@@ -2605,6 +2805,7 @@ async fn main() -> anyhow::Result<()> {
     std::fs::create_dir_all(&vault_dir)?;
 
     let risk_cache = gradience_core::policy::dynamic::RiskSignalCache::new();
+    let db_clone = db.clone();
     let state = Arc::new(AppState {
         db,
         webauthn,
@@ -2613,11 +2814,20 @@ async fn main() -> anyhow::Result<()> {
         reg_challenges: Mutex::new(HashMap::new()),
         auth_challenges: Mutex::new(HashMap::new()),
         credentials: Mutex::new(HashMap::new()),
-        sessions: Mutex::new(HashMap::new()),
+        sessions: SessionStore {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            db: db_clone,
+        },
         recovery_sessions: Mutex::new(HashMap::new()),
         device_auths: Mutex::new(HashMap::new()),
         risk_cache: risk_cache.clone(),
     });
+
+    if let Ok(count) = gradience_db::queries::delete_expired_sessions(&state.db).await {
+        if count > 0 {
+            info!("Cleaned up {} expired sessions", count);
+        }
+    }
 
     let use_mock_risk = std::env::var("USE_MOCK_RISK")
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
@@ -2642,6 +2852,8 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = Router::new()
+        .route("/api/auth/email/send-code", post(email_send_code))
+        .route("/api/auth/email/verify", post(email_verify_code))
         .route("/api/auth/passkey/register/start", post(register_start))
         .route("/api/auth/passkey/register/finish", post(register_finish))
         .route("/api/auth/passkey/login/start", post(login_start))
@@ -2757,15 +2969,16 @@ async fn main() -> anyhow::Result<()> {
         warn!("DEMO MODE ENABLED — do not deploy with GRADIENCE_DEMO_TOKEN in production");
         let demo_pass = std::env::var("GRADIENCE_DEMO_PASSPHRASE")
             .unwrap_or_else(|_| "demo-passphrase-123".into());
-        let mut sessions = state.sessions.lock().await;
-        sessions.insert(
+        let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
+        state.sessions.insert(
             demo_token,
             Session {
                 user_id: "user-1".into(),
                 username: "demo@gradience.io".into(),
                 passphrase: Some(demo_pass),
             },
-        );
+            expires_at,
+        ).await;
         info!("Demo session        : injected for user-1");
     }
 
