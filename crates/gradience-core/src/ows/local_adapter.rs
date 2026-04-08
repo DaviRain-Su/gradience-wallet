@@ -78,19 +78,36 @@ impl OwsAdapter for LocalOwsAdapter {
         )
         .map_err(map_ows_err)?;
 
+        let mut accounts: Vec<AccountDescriptor> = info
+            .accounts
+            .into_iter()
+            .map(|a| AccountDescriptor {
+                account_id: format!("{}:{}", a.chain_id, a.address),
+                address: a.address,
+                chain_id: a.chain_id,
+                derivation_path: a.derivation_path,
+            })
+            .collect();
+
+        // Append TON address deterministically
+        let ton_chain = "ton:0";
+        let ton_path = "m/44'/607'/0'/0/0";
+        let ton_seed = derive_demo_seed(&info.id, ton_chain, ton_path);
+        if let Ok(ton_addr) = crate::ows::signing::ton_address_from_seed(&ton_seed) {
+            if !ton_addr.is_empty() {
+                accounts.push(AccountDescriptor {
+                    account_id: format!("{}:{}", ton_chain, ton_addr),
+                    address: ton_addr,
+                    chain_id: ton_chain.into(),
+                    derivation_path: ton_path.into(),
+                });
+            }
+        }
+
         Ok(WalletDescriptor {
             id: info.id,
             name: info.name,
-            accounts: info
-                .accounts
-                .into_iter()
-                .map(|a| AccountDescriptor {
-                    account_id: format!("{}:{}", a.chain_id, a.address),
-                    address: a.address,
-                    chain_id: a.chain_id,
-                    derivation_path: a.derivation_path,
-                })
-                .collect(),
+            accounts,
         })
     }
 
@@ -133,7 +150,9 @@ impl OwsAdapter for LocalOwsAdapter {
 
         let secret = derive_demo_seed(wallet_id, chain, derivation_path);
 
-        let address = if chain.starts_with("eip155:") || chain.starts_with("base:") {
+        let address = if chain.starts_with("ton:") {
+            crate::ows::signing::ton_address_from_seed(&secret)?
+        } else if chain.starts_with("eip155:") || chain.starts_with("base:") {
             crate::ows::signing::eth_address_from_secret_key(&secret)?
         } else if chain.starts_with("stellar:") {
             crate::ows::signing::stellar_address_from_secret_key(&secret)?
@@ -192,6 +211,23 @@ impl OwsAdapter for LocalOwsAdapter {
             return Err(GradienceError::InvalidCredential("revoked".into()));
         }
 
+        if chain.starts_with("ton:") {
+            let seed = derive_demo_seed(wallet_id, chain, "m/44'/607'/0'/0/0");
+            let to = tx.to.as_deref().unwrap_or("");
+            let amount = tx.value.parse::<u64>()
+                .map_err(|_| GradienceError::Validation("invalid ton amount".into()))?;
+            let seqno = if tx.data.len() >= 4 {
+                u32::from_be_bytes([tx.data[0], tx.data[1], tx.data[2], tx.data[3]])
+            } else {
+                return Err(GradienceError::Validation("ton tx data must contain seqno (4 bytes)".into()));
+            };
+            let signed_bytes = crate::ows::signing::build_ton_transfer_tx(&seed, to, amount, seqno)?;
+            return Ok(SignedTransaction {
+                raw_hex: format!("0x{}", hex::encode(&signed_bytes)),
+                chain_id: chain.into(),
+            });
+        }
+
         let result = ows_lib::sign_transaction(
             wallet_id,
             chain,
@@ -222,6 +258,18 @@ impl OwsAdapter for LocalOwsAdapter {
                 .map_err(|e| GradienceError::Validation(format!("invalid hex signed tx: {}", e)))?;
             let sig = client.send_transaction(&signed_bytes).await?;
             return Ok(sig);
+        }
+
+        if chain.starts_with("ton:") {
+            use crate::rpc::ton::TonRpcClient;
+            let client = TonRpcClient::new_with_url(rpc_url);
+            let raw_hex = signed_tx.raw_hex.strip_prefix("0x").unwrap_or(&signed_tx.raw_hex);
+            let signed_bytes = hex::decode(raw_hex)
+                .map_err(|e| GradienceError::Validation(format!("invalid hex signed tx: {}", e)))?;
+            client.send_boc(&signed_bytes).await?;
+            // toncenter does not return the message hash easily; return a fingerprint
+            let fingerprint = hex::encode(&signed_bytes[..16.min(signed_bytes.len())]);
+            return Ok(format!("ton:0x{}", fingerprint));
         }
 
         use crate::rpc::evm::EvmRpcClient;

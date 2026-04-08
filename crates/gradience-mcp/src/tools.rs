@@ -220,6 +220,17 @@ pub fn handle_get_balance(args: crate::args::GetBalanceArgs) -> anyhow::Result<s
             return None;
         }
 
+        if chain_id.starts_with("ton:") {
+            let client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
+            for a in addrs {
+                if a.chain_id.starts_with("ton:") {
+                    let nanoton = client.get_balance(&a.address).await.ok()?;
+                    return Some((nanoton as f64 / 1e9).to_string());
+                }
+            }
+            return None;
+        }
+
         if chain_id.starts_with("stellar:") {
             let client = gradience_core::rpc::stellar::StellarHorizonClient::new(rpc_url);
             for a in addrs {
@@ -242,6 +253,8 @@ pub fn handle_get_balance(args: crate::args::GetBalanceArgs) -> anyhow::Result<s
 
     let (symbol, decimals) = if chain_id.starts_with("solana:") {
         ("SOL", 9)
+    } else if chain_id.starts_with("ton:") {
+        ("TON", 9)
     } else if chain_id.starts_with("stellar:") {
         ("XLM", 7)
     } else {
@@ -377,6 +390,44 @@ pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Valu
                 return Ok(r);
             }
             return Err(anyhow::anyhow!("Stellar x402 payment failed"));
+        }
+
+        if chain.starts_with("eip155") {
+            let x402_result = block_on_async(async {
+                let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+                let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
+                let evm_addr = addrs.iter().find(|a| a.chain_id == chain)
+                    .or_else(|| addrs.iter().find(|a| a.chain_id == "eip155:8453"))
+                    .or_else(|| addrs.iter().find(|a| a.chain_id == "eip155:1"))?
+                    .address.clone();
+
+                let derivation_path = gradience_core::wallet::hd::path_for(chain, 0);
+                let seed = gradience_core::ows::local_adapter::derive_demo_seed(wallet_id, chain, &derivation_path);
+                let private_key = format!("0x{}", hex::encode(&seed));
+
+                let bridge_dir = std::env::var("CARGO_MANIFEST_DIR")
+                    .map(|p| std::path::PathBuf::from(p).join("../../bridge/base-x402"))
+                    .unwrap_or_else(|_| std::path::PathBuf::from("./bridge/base-x402"));
+                let x402_client = gradience_core::payment::base_x402::BaseX402Client::new(bridge_dir);
+                let (status, _headers, body, tx_hash) = x402_client.pay(
+                    &private_key,
+                    chain,
+                    reqwest::Method::GET,
+                    recipient,
+                    vec![],
+                    None,
+                ).await.ok()?;
+                Some(json!({
+                    "status": status,
+                    "txHash": tx_hash,
+                    "body": body,
+                    "evmAddress": evm_addr,
+                }))
+            });
+            if let Some(r) = x402_result {
+                return Ok(r);
+            }
+            return Err(anyhow::anyhow!("Base/EVM x402 payment failed"));
         }
 
         let mpp_result = block_on_async(async {

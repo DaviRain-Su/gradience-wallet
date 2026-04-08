@@ -571,6 +571,85 @@ pub fn build_deactivate_stake_tx(
     Ok(tx)
 }
 
+// ==================== TON helpers ====================
+
+use ton_contracts::wallet::{KeyPair, Wallet, v4r2::V4R2};
+use tlb_ton::{
+    action::SendMsgAction,
+    message::Message,
+    ser::CellSerializeExt,
+    BoC,
+    BagOfCellsArgs,
+};
+use num_bigint::BigUint;
+
+pub fn ton_secret_from_seed(seed: &[u8]) -> [u8; 32] {
+    let mut hasher = sha2::Sha512::new();
+    hasher.update(seed);
+    hasher.update(b"TON");
+    let hash = hasher.finalize();
+    let mut secret = [0u8; 32];
+    secret.copy_from_slice(&hash[..32]);
+    secret
+}
+
+pub fn ton_address_from_seed(seed: &[u8]) -> Result<String> {
+    let secret = ton_secret_from_seed(seed);
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret);
+    let pubkey = signing_key.verifying_key().to_bytes();
+
+    // nacl/libsodium secret key format: [32 bytes seed][32 bytes pubkey]
+    let mut nacl_secret = [0u8; 64];
+    nacl_secret[..32].copy_from_slice(&secret);
+    nacl_secret[32..].copy_from_slice(&pubkey);
+
+    let keypair = KeyPair::new(nacl_secret, pubkey);
+    let wallet = Wallet::<V4R2>::derive_default(keypair)
+        .map_err(|e| GradienceError::Validation(format!("ton wallet derive failed: {}", e)))?;
+    Ok(wallet.address().to_base64_std())
+}
+
+pub fn build_ton_transfer_tx(
+    seed: &[u8],
+    to: &str,
+    amount_nanoton: u64,
+    seqno: u32,
+) -> Result<Vec<u8>> {
+    let secret = ton_secret_from_seed(seed);
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret);
+    let pubkey = signing_key.verifying_key().to_bytes();
+
+    let mut nacl_secret = [0u8; 64];
+    nacl_secret[..32].copy_from_slice(&secret);
+    nacl_secret[32..].copy_from_slice(&pubkey);
+    let keypair = KeyPair::new(nacl_secret, pubkey);
+
+    let wallet = Wallet::<V4R2>::derive_default(keypair.clone())
+        .map_err(|e| GradienceError::Validation(format!("ton wallet derive failed: {}", e)))?;
+
+    let dest_address = to.parse()
+        .map_err(|e: <tlb_ton::MsgAddress as std::str::FromStr>::Err| GradienceError::Validation(format!("invalid ton address: {}", e)))?;
+
+    let action = SendMsgAction {
+        mode: 3, // pay fees separately + carry remaining value
+        message: Message::<()>::transfer(dest_address, BigUint::from(amount_nanoton), false)
+            .normalize()
+            .map_err(|e| GradienceError::Validation(format!("ton message normalize failed: {}", e)))?,
+    };
+
+    let expire_at = chrono::DateTime::UNIX_EPOCH;
+    let msg = wallet.create_external_message(expire_at, seqno, [action], true)
+        .map_err(|e| GradienceError::Validation(format!("ton external message failed: {}", e)))?;
+
+    let cell = msg.to_cell(())
+        .map_err(|e| GradienceError::Validation(format!("ton cell build failed: {}", e)))?;
+    let boc = BoC::from_root(cell);
+
+    let bytes = boc.serialize(BagOfCellsArgs { has_idx: false, has_crc32c: true })
+        .map_err(|e| GradienceError::Validation(format!("ton boc serialize failed: {}", e)))?;
+    Ok(bytes)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -586,5 +665,16 @@ mod tests {
         // Length must be a valid base58-encoded 32-byte pubkey.
         let decoded = bs58::decode(&ata).into_vec().unwrap();
         assert_eq!(decoded.len(), 32);
+    }
+
+    #[test]
+    fn test_ton_address_derivation() {
+        // Known test vector from ton-contracts docs:
+        // Mnemonic: "jewel loop vast intact snack drip fatigue lunch erode green indoor balance together scrub hen monster hour narrow banner warfare increase panel sound spell"
+        // Expected address: UQA7RMTgzvcyxNNLmK2HdklOvFE8_KNMa-btKZ0dPU1UsqfC
+        // We won't replicate mnemonic here, but we can at least assert that a deterministic seed yields a valid TON address format.
+        let seed = [0u8; 32];
+        let addr = ton_address_from_seed(&seed).unwrap();
+        assert!(addr.starts_with("EQ") || addr.starts_with("UQ"));
     }
 }

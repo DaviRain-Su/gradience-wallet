@@ -1,0 +1,16 @@
+{
+  "name": "gradience-base-x402-bridge",
+  "version": "0.1.0",
+  "description": "Node.js bridge for Base x402 payments using @x402/evm and @x402/fetch",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "node index.mjs"
+  },
+  "dependencies": {
+    "@x402/core": "^2.8.0",
+    "@x402/evm": "^2.8.0",
+    "@x402/fetch": "^2.8.0",
+    "viem": "^2.39.3"
+  }
+}

@@ -25,8 +25,8 @@
 - 钱包创建成功后，展开 WalletCard。
 
 **[展示点]**
-- 地址列表里同时出现 `eip155:8453`（Base）和 `solana:103`（Solana devnet）两个地址。
-- 说明：同一个 Passkey，同一套派生参数，跨链地址 deterministic 生成。
+- 地址列表里同时出现 `eip155:8453`（Base）、`solana:103`（Solana devnet）和 `ton:0`（TON testnet）三个地址。
+- 说明：同一个 Passkey，同一套派生参数，跨 EVM / Solana / TON deterministic 生成。
 
 ---
 
@@ -64,6 +64,24 @@
 - 几秒后弹出提示：`Funded! Tx: 5jTT2zYN...`
 - 刷新 Balances，SOL 余额减少 `0.005` + 手续费。
 - 解释：底层调用 `ows_lib::sign_and_send`，Solana 交易由 OWS Core 本地签名，raw bytes 通过 `sendTransaction` 直接上链 devnet。
+
+---
+
+## 4.5 TON 转账（30s）
+
+**[讲者]**
+"同样的逻辑也跑在 TON 上。我们选一个 TON 地址，直接发 testnet TON。"
+
+**[动作]**
+- 在 WalletCard 上点击 **Fund**。
+- Chain 选择 **TON**。
+- To 地址留空（默认转回自己），或填另一个 TON testnet 地址；金额填 `0.001`。
+- 点击 **Send**。
+
+**[展示点]**
+- 提示 `Funded! Tx: ton:0x...`。
+- 余额从 `0 TON` 变为扣除 `0.001` + 手续费后的值。
+- 解释：TON 是基于 WalletV4R2 合约的地址，`sign_transaction` 里构造了 BoC 外部消息，`broadcast` 调用 toncenter `/sendBoc` 上链 testnet。
 
 ---
 
@@ -132,7 +150,7 @@
 ## 8. Closing（30s）
 
 **[讲者]**
-"Gradience 把助记词时代终结了：一个 Passkey，一个钱包，跨 EVM 和 Solana，能做人机转账、DEX Swap，也能被 AI Agent 安全调用。下一步我们会在 Web UI 和 Telegram Mini App 里继续完善 Solana 生态，然后接入 TON。"
+"Gradience 把助记词时代终结了：一个 Passkey，一个钱包，跨 EVM、Solana 和 TON，能做人机转账、DEX Swap，也能被 AI Agent 安全调用。"
 
 **[收尾动作]**
 - 展示 Pitch Deck 最后一页：Roadmap（T00–T17）。
@@ -157,8 +175,10 @@ solana transfer <address> 0.01 --allow-unfunded-recipient
 
 # 5. 确认余额
 gradience agent balance --chain solana --name demo-wallet
+gradience agent balance --chain ton --name demo-wallet
 
 # 6. 转账/换币（CLI 备用）
 gradience agent fund --chain solana --to <address> --amount 0.005 --name demo-wallet
+gradience agent fund --chain ton --to <address> --amount 0.001 --name demo-wallet
 gradience dex swap --chain solana --from SOL --to USDC --amount 0.001 --name demo-wallet
 ```

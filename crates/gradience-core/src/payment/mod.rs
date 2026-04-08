@@ -6,3 +6,4 @@ pub mod hsp;
 pub mod router;
 pub mod mpp_client;
 pub mod stellar_x402;
+pub mod base_x402;
