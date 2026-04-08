@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiPost, setApiBase } from "@/lib/api";
+import { registerPasskey } from "@/lib/webauthn";
 import WalletCard from "./components/WalletCard";
 import type { Wallet } from "./types";
 
@@ -24,6 +25,9 @@ export default function Dashboard() {
   const [unlocking, setUnlocking] = useState(false);
   const [unlockError, setUnlockError] = useState("");
   const [username, setUsername] = useState("");
+  const [showBindPasskey, setShowBindPasskey] = useState(false);
+  const [bindPassphrase, setBindPassphrase] = useState("");
+  const [bindLoading, setBindLoading] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -117,6 +121,25 @@ export default function Dashboard() {
     window.location.href = "/login";
   }
 
+  async function handleBindPasskey() {
+    if (!username || bindPassphrase.length < 12) {
+      setMsg("Please enter your current passphrase (≥12 chars)");
+      return;
+    }
+    setBindLoading(true);
+    setMsg("");
+    try {
+      await registerPasskey(username, bindPassphrase);
+      setShowBindPasskey(false);
+      setBindPassphrase("");
+      setMsg("Passkey bound successfully");
+    } catch (e: unknown) {
+      setMsg(`Bind failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setBindLoading(false);
+    }
+  }
+
   return (
     <div className="min-h-screen p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       <div className="flex items-center justify-between mb-6">
@@ -144,6 +167,13 @@ export default function Dashboard() {
               </span>
             )}
           </a>
+          <button
+            onClick={() => setShowBindPasskey(true)}
+            className="text-sm px-3 py-1.5 rounded"
+            style={{ backgroundColor: "var(--muted)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+          >
+            Passkey
+          </button>
           {username && (
             <span className="text-sm hidden sm:inline" style={{ color: "var(--muted-foreground)" }}>{username}</span>
           )}
@@ -240,6 +270,41 @@ export default function Dashboard() {
               {unlocking ? "Setting..." : "Unlock Vault & Continue"}
             </button>
             {unlockError && <p className="text-sm mt-2" style={{ color: "#B45309" }}>{unlockError}</p>}
+          </div>
+        </div>
+      )}
+      {showBindPasskey && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: "rgba(0,0,0,0.5)" }}>
+          <div className="w-full max-w-sm rounded-lg p-6 shadow-xl" style={{ backgroundColor: "var(--card)", border: "1px solid var(--border)" }}>
+            <h2 className="text-xl font-bold mb-2">Bind Passkey</h2>
+            <p className="text-sm mb-4" style={{ color: "var(--muted-foreground)" }}>
+              Add a Passkey to this account for faster and more secure sign-ins.
+            </p>
+            <input
+              className="border rounded px-3 py-2 w-full mb-3"
+              style={{ backgroundColor: "var(--background)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              type="password"
+              placeholder="Current passphrase (≥12 chars)"
+              value={bindPassphrase}
+              onChange={(e) => setBindPassphrase(e.target.value)}
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={handleBindPasskey}
+                disabled={bindLoading || bindPassphrase.length < 12}
+                className="flex-1 rounded py-2 disabled:opacity-50"
+                style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+              >
+                {bindLoading ? "Binding..." : "Confirm & Bind"}
+              </button>
+              <button
+                onClick={() => { setShowBindPasskey(false); setBindPassphrase(""); }}
+                className="flex-1 rounded py-2"
+                style={{ backgroundColor: "var(--muted)", color: "var(--foreground)", border: "1px solid var(--border)" }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}

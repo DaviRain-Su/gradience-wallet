@@ -133,11 +133,16 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(handlers::health_check))
         .layer({
             let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "https://wallets.gradiences.xyz".to_string());
+            let allowed_headers = vec![
+                axum::http::header::CONTENT_TYPE,
+                axum::http::header::AUTHORIZATION,
+                axum::http::header::ACCEPT,
+            ];
             if origin.trim() == "*" {
                 tower_http::cors::CorsLayer::new()
                     .allow_origin(tower_http::cors::Any)
                     .allow_methods(tower_http::cors::Any)
-                    .allow_headers(tower_http::cors::Any)
+                    .allow_headers(allowed_headers)
             } else {
                 let origins: Vec<axum::http::HeaderValue> = vec![
                     origin.parse().unwrap_or_else(|_| "https://wallets.gradiences.xyz".parse().unwrap()),
@@ -146,7 +151,7 @@ async fn main() -> anyhow::Result<()> {
                 tower_http::cors::CorsLayer::new()
                     .allow_origin(tower_http::cors::AllowOrigin::list(origins))
                     .allow_methods(tower_http::cors::Any)
-                    .allow_headers(tower_http::cors::Any)
+                    .allow_headers(allowed_headers)
             }
         })
         .with_state(Arc::clone(&state));

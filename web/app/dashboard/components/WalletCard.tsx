@@ -24,16 +24,29 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
   const [anchorLoading, setAnchorLoading] = useState(false);
 
   const [fundChain, setFundChain] = useState("base");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    apiGet(`/api/wallets/${wallet.id}/portfolio`).then((r) => r.json().then(setPortfolio)).catch((e) => console.error("portfolio fetch failed", e));
-    apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json().then(setAddresses)).catch((e) => {
-      console.error("addresses fetch failed", e);
-      setMsg(`Addresses load failed: ${e instanceof Error ? e.message : String(e)}`);
-    });
-    apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json().then(setTxs)).catch((e) => console.error("txs fetch failed", e));
-    apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json().then(setKeys)).catch((e) => console.error("keys fetch failed", e));
-    apiGet(`/api/wallets/${wallet.id}/policies`).then((r) => r.json().then(setPolicies)).catch((e) => console.error("policies fetch failed", e));
+    setLoading(true);
+    Promise.all([
+      apiGet(`/api/wallets/${wallet.id}/portfolio`).then((r) => r.json()),
+      apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json()),
+      apiGet(`/api/wallets/${wallet.id}/transactions`).then((r) => r.json()),
+      apiGet(`/api/wallets/${wallet.id}/api-keys`).then((r) => r.json()),
+      apiGet(`/api/wallets/${wallet.id}/policies`).then((r) => r.json()),
+    ])
+      .then(([p, a, t, k, po]) => {
+        setPortfolio(p);
+        setAddresses(a);
+        setTxs(t);
+        setKeys(k);
+        setPolicies(po);
+      })
+      .catch((e) => {
+        console.error("wallet data fetch failed", e);
+        setMsg(`Load failed: ${e instanceof Error ? e.message : String(e)}`);
+      })
+      .finally(() => setLoading(false));
   }, [wallet.id]);
 
   async function handleFund() {
@@ -145,6 +158,7 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
         <div>
           <p className="font-semibold text-lg">{wallet.name}</p>
           <p className="text-sm font-mono mt-0.5" style={{ color: "var(--muted-foreground)" }}>{wallet.id}</p>
+          {loading && <p className="text-xs mt-1" style={{ color: "var(--primary)" }}>Loading...</p>}
         </div>
         <div className="flex gap-2 flex-wrap justify-end">
           <button onClick={() => setShowFund(true)} className={btnClass} style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)" }}>Fund</button>
@@ -157,7 +171,7 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
 
       <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Addresses</p>
-        {addressMap.size === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No addresses loaded.</p>}
+        {!loading && addressMap.size === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No addresses loaded.</p>}
         <div className="mt-2 grid grid-cols-1 gap-2">
           {(showAllAddresses ? Array.from(addressMap.entries()) : Array.from(addressMap.entries()).slice(0, 2)).map(([chain, addr]) => (
             <div key={chain} className="rounded-lg px-3 py-2" style={{ backgroundColor: "var(--muted)" }}>
@@ -196,7 +210,7 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
             Manage
           </a>
         </div>
-        {policies.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No policies.</p>}
+        {!loading && policies.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No policies.</p>}
         <div className="mt-2 space-y-2">
           {policies.map((p: Policy) => (
             <div key={p.id} className="rounded-lg px-3 py-2 text-sm" style={{ backgroundColor: "var(--muted)" }}>
@@ -211,7 +225,7 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
 
       <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Balances</p>
-        {portfolio.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
+        {!loading && portfolio.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No balances loaded.</p>}
         <div className="mt-2 grid grid-cols-1 gap-3">
           {[...portfolio].sort((a, b) => {
             const aVal = BigInt(a.native_balance || "0x0");
@@ -245,7 +259,7 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
 
       <div className="mt-4">
         <p className="text-sm font-medium" style={{ color: "var(--foreground)" }}>Recent Transactions</p>
-        {txs.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No transactions.</p>}
+        {!loading && txs.length === 0 && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No transactions.</p>}
         <ul className="text-sm space-y-1 mt-1">
           {txs.map((t) => (
             <li key={t.id} className="flex justify-between items-center rounded-lg px-3 py-1.5" style={{ backgroundColor: "var(--muted)" }}>
@@ -270,7 +284,7 @@ export default function WalletCard({ wallet }: { wallet: Wallet }) {
           </div>
         )}
 
-        {keys.length === 0 && !newApiKeyToken && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No API keys.</p>}
+        {!loading && keys.length === 0 && !newApiKeyToken && <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>No API keys.</p>}
         <div className="flex flex-wrap gap-2 mt-2">
           {keys.map((k) => (
             <span key={k.id} className="text-xs px-2 py-1 rounded" style={{ backgroundColor: "var(--muted)", color: "var(--muted-foreground)" }}>
