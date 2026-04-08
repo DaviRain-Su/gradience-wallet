@@ -1,17 +1,12 @@
 use axum::{
     extract::{Json, Path, State},
-    http::{header::AUTHORIZATION, StatusCode},
+    http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
-    Router,
 };
 use gradience_core::ows::adapter::{DerivationParams, OwsAdapter};
-use gradience_core::ows::local_adapter::LocalOwsAdapter;
 use serde::{Deserialize, Serialize};
-use sqlx::{Pool, Sqlite};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tracing::{info, warn};
 use webauthn_rs::prelude::*;
 
@@ -699,7 +694,7 @@ pub async fn device_authorize(
     Json(body): Json<DeviceAuthorizeReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
 
     let mut auths = state.device_auths.lock().await;
     for (device_code, auth) in auths.iter_mut() {

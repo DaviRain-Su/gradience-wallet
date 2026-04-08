@@ -3,7 +3,7 @@ use serde_json::json;
 
 #[derive(Debug)]
 pub struct EvmRpcClient {
-    chain_id: String,
+    _chain_id: String,
     rpc_url: String,
     client: reqwest::Client,
 }
@@ -13,7 +13,7 @@ impl EvmRpcClient {
         let url = reqwest::Url::parse(rpc_url)
             .map_err(|e| GradienceError::Http(e.to_string()))?;
         Ok(Self {
-            chain_id: chain_id.into(),
+            _chain_id: chain_id.into(),
             rpc_url: url.to_string(),
             client: reqwest::Client::new(),
         })

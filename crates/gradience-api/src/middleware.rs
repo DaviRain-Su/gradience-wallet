@@ -1,5 +1,4 @@
 use axum::http::{header::AUTHORIZATION, StatusCode};
-use std::sync::Arc;
 use crate::state::{AppState, Session};
 
 pub fn auth_token(headers: &axum::http::HeaderMap) -> Option<String> {

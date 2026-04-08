@@ -1,4 +1,4 @@
-use crate::audit::merkle::{keccak256, MerkleTree};
+use crate::audit::merkle::MerkleTree;
 use crate::ows::signing::{eth_address_from_secret_key, sign_eth_transaction};
 use crate::rpc::evm::EvmRpcClient;
 use anyhow::Result;

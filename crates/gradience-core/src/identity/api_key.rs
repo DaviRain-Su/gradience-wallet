@@ -13,6 +13,7 @@ pub struct ApiKeyDescriptor {
     pub created_at: String,
 }
 
+#[allow(dead_code)]
 fn generate_token() -> String {
     format!("ows_key_{}", uuid::Uuid::new_v4().to_string().replace("-", ""))
 }

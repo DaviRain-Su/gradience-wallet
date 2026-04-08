@@ -78,7 +78,11 @@ class SecureVaultPlugin : Plugin() {
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: AuthenticationResult) {
                         try {
-                            val authCipher = result.cryptoObject?.cipher ?: cipher
+                            val authCipher = result.cryptoObject?.cipher
+                            if (authCipher == null) {
+                                call.reject("Authentication succeeded but cipher unavailable")
+                                return
+                            }
                             val decrypted = authCipher.doFinal(encrypted)
                             val key = String(decrypted, Charsets.UTF_8)
                             val ret = JSObject()

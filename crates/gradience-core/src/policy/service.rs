@@ -1,6 +1,7 @@
 use crate::error::{GradienceError, Result};
 use std::path::Path;
 
+#[allow(dead_code)]
 fn map_ows_err(e: ows_lib::OwsLibError) -> GradienceError {
     GradienceError::Ows(e.to_string())
 }

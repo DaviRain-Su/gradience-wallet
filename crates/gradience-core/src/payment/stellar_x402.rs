@@ -146,7 +146,7 @@ impl StellarX402Client {
             .get("payment-response")
             .and_then(|h| h.to_str().ok())
             .and_then(|s| {
-                let decoded = base64::decode(s).ok()?;
+                let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, s).ok()?;
                 let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
                 json.get("transaction")
                     .and_then(|t| t.as_str())

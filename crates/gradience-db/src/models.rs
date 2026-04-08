@@ -1,6 +1,4 @@
 use chrono::{DateTime, Utc};
-use serde_json::Value;
-use sqlx::types::Json;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct User {

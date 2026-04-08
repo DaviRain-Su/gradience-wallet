@@ -18,7 +18,7 @@ struct TonResponse<T> {
 struct AddressInfo {
     balance: String,
     #[serde(rename = "account_state")]
-    account_state: Option<serde_json::Value>,
+    _account_state: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -102,7 +102,7 @@ impl TonRpcClient {
 
     pub async fn send_boc(&self, boc_bytes: &[u8]) -> Result<String> {
         let url = format!("{}/sendBoc", self.base_url);
-        let boc_b64 = base64::encode(boc_bytes);
+        let boc_b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, boc_bytes);
         let resp = self
             .client
             .post(&url)

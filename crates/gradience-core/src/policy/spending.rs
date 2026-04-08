@@ -32,7 +32,7 @@ pub async fn evaluate_spending_limits(
                 Rule::DailyLimit { max, .. } => {
                     let limit_wei = max.parse::<u128>().unwrap_or(u128::MAX);
                     let now = chrono::Utc::now();
-                    let reset_at = resolve_reset_at("daily", now);
+                    let _reset_at = resolve_reset_at("daily", now);
                     let current = gradience_db::queries::get_spending(
                         db, wallet_id, "daily", token_address, chain_id, "daily",
                     )
@@ -57,7 +57,7 @@ pub async fn evaluate_spending_limits(
                 Rule::MonthlyLimit { max, .. } => {
                     let limit_wei = max.parse::<u128>().unwrap_or(u128::MAX);
                     let now = chrono::Utc::now();
-                    let reset_at = resolve_reset_at("monthly", now);
+                    let _reset_at = resolve_reset_at("monthly", now);
                     let current = gradience_db::queries::get_spending(
                         db, wallet_id, "monthly", token_address, chain_id, "monthly",
                     )

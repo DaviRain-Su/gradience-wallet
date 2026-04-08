@@ -1,4 +1,4 @@
-use crate::error::{GradienceError, Result};
+use crate::error::Result;
 use crate::policy::engine::Intent;
 use crate::ows::adapter::Transaction;
 

@@ -25,7 +25,7 @@ struct DeriveOutput {
     success: bool,
     address: Option<String>,
     #[serde(rename = "hexAddress")]
-    hex_address: Option<String>,
+    _hex_address: Option<String>,
     #[serde(default)]
     error: Option<String>,
 }

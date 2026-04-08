@@ -1,4 +1,3 @@
-use crate::error::GradienceError;
 
 #[derive(Debug, Clone)]
 pub struct WalletDescriptor {

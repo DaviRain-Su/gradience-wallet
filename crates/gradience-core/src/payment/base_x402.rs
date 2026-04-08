@@ -97,7 +97,7 @@ impl BaseX402Client {
             .get("payment-response")
             .or_else(|| resp_headers.get("Payment-Response"))
             .and_then(|s| {
-                let decoded = base64::decode(s).ok()?;
+                let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, s).ok()?;
                 let json: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
                 json.get("transaction")
                     .and_then(|t| t.as_str())
