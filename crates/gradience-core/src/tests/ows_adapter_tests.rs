@@ -163,3 +163,16 @@ async fn test_sign_tx_revoked_key_attack() {
     ).await.unwrap_err();
     assert!(matches!(err, GradienceError::InvalidCredential(_)));
 }
+
+#[tokio::test]
+async fn test_local_adapter_64_hex_passphrase() {
+    use crate::ows::local_adapter::LocalOwsAdapter;
+    let tmp = std::env::temp_dir().join(format!("gradience_test_vault_{}", uuid::Uuid::new_v4()));
+    let adapter = LocalOwsAdapter::new(tmp.clone());
+    let hex64 = "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456";
+    assert_eq!(hex64.len(), 64);
+    let vault = adapter.init_vault(hex64).await.unwrap();
+    let wallet = adapter.create_wallet(&vault, "hex-test-wallet", Default::default()).await;
+    std::fs::remove_dir_all(&tmp).ok();
+    assert!(wallet.is_ok(), "ows_lib should accept 64-char hex passphrase: {:?}", wallet.err());
+}
