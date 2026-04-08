@@ -699,10 +699,33 @@ async fn wallet_balance(
                 balance: bal,
             });
         } else if a.chain_id.starts_with("solana:") {
+            let sol_client = gradience_core::rpc::solana::SolanaRpcClient::new("https://api.devnet.solana.com");
+            let lamports = sol_client.get_balance(&a.address).await.unwrap_or(0);
+            let hex_bal = format!("0x{:x}", lamports);
             balances.push(BalanceResp {
                 chain_id: a.chain_id,
                 address: a.address,
-                balance: "0x0".into(),
+                balance: hex_bal,
+            });
+        } else if a.chain_id.starts_with("ton:") {
+            let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
+            let ton_client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
+            let nanoton = ton_client.get_balance(&a.address).await.unwrap_or(0);
+            let hex_bal = format!("0x{:x}", nanoton);
+            balances.push(BalanceResp {
+                chain_id: a.chain_id,
+                address: a.address,
+                balance: hex_bal,
+            });
+        } else if a.chain_id.starts_with("cfx:") {
+            let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
+            let cfx_client = gradience_core::rpc::conflux_core::ConfluxCoreRpcClient::new_with_url(rpc_url);
+            let drip = cfx_client.get_balance(&a.address).await.unwrap_or(0);
+            let hex_bal = format!("0x{:x}", drip);
+            balances.push(BalanceResp {
+                chain_id: a.chain_id,
+                address: a.address,
+                balance: hex_bal,
             });
         } else {
             balances.push(BalanceResp {
@@ -780,10 +803,24 @@ async fn wallet_portfolio(
                 assets,
             });
         } else if a.chain_id.starts_with("solana:") {
+            let sol_client = gradience_core::rpc::solana::SolanaRpcClient::new("https://api.devnet.solana.com");
+            let lamports = sol_client.get_balance(&a.address).await.unwrap_or(0);
+            let native_balance = format!("0x{:x}", lamports);
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
-                native_balance: "0x0".into(),
+                native_balance,
+                assets: vec![],
+            });
+        } else if a.chain_id.starts_with("ton:") {
+            let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
+            let ton_client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
+            let nanoton = ton_client.get_balance(&a.address).await.unwrap_or(0);
+            let native_balance = format!("0x{:x}", nanoton);
+            result.push(PortfolioResp {
+                chain_id: a.chain_id,
+                address: a.address,
+                native_balance,
                 assets: vec![],
             });
         } else {
@@ -885,6 +922,222 @@ async fn wallet_fund(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    // ---------- Solana branch ----------
+    if chain == "solana" {
+        let mut sol_addr = None;
+        for a in &addrs {
+            if a.chain_id.starts_with("solana:") {
+                sol_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = sol_addr.ok_or(StatusCode::BAD_REQUEST)?;
+        let to_addr = if body.to.trim().is_empty() { from_addr.clone() } else { body.to.clone() };
+
+        let sol_amount: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+        let lamports = (sol_amount * 1_000_000_000.0) as u64;
+
+        let rpc_url = "https://api.devnet.solana.com";
+        let sol_client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
+        let blockhash = sol_client.get_latest_blockhash().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let tx_bytes = gradience_core::ows::signing::build_solana_transfer_tx(
+            &from_addr,
+            &to_addr,
+            lamports,
+            &blockhash,
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let tx_hex = format!("0x{}", hex::encode(&tx_bytes));
+
+        let tx = gradience_core::ows::adapter::Transaction {
+            to: Some(to_addr.clone()),
+            value: lamports.to_string(),
+            data: vec![],
+            raw_hex: tx_hex.clone(),
+        };
+        let (eval, core_policies) = evaluate_wallet_policy(
+            &state, &wallet_id, "solana:103", tx.clone()).await?;
+
+        let mut approval_id = None;
+        if eval.decision == gradience_core::policy::engine::Decision::Deny {
+            let _ = gradience_core::audit::service::log_wallet_action(
+                &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(), "denied",
+            ).await;
+            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+        }
+        if eval.decision == gradience_core::policy::engine::Decision::Warn {
+            let aid = uuid::Uuid::new_v4().to_string();
+            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let request_json = serde_json::json!({
+                "action": "fund",
+                "wallet_id": wallet_id,
+                "to": to_addr,
+                "amount": body.amount,
+                "chain": chain,
+            }).to_string();
+            let _ = gradience_db::queries::create_policy_approval(
+                &state.db, &aid, &policy_id, &wallet_id, &request_json
+            ).await;
+            approval_id = Some(aid);
+        }
+
+        let result = ows_lib::sign_and_send(
+            &wallet_id,
+            &chain,
+            &tx_hex,
+            Some(&passphrase),
+            None,
+            Some(rpc_url),
+            Some(&state.vault_dir),
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let _ = gradience_core::audit::service::log_wallet_action(
+            &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allowed",
+        ).await;
+
+        let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
+        if let Some(aid) = approval_id {
+            resp["approval_id"] = aid.into();
+            resp["warning"] = true.into();
+            resp["reasons"] = eval.reasons.into();
+        }
+        return Ok((StatusCode::OK, axum::Json(resp)));
+    }
+
+    // ---------- TON branch ----------
+    if chain == "ton" || chain == "toncoin" {
+        let mut ton_addr = None;
+        for a in &addrs {
+            if a.chain_id.starts_with("ton:") {
+                ton_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = ton_addr.ok_or(StatusCode::BAD_REQUEST)?;
+        let to_addr = if body.to.trim().is_empty() { from_addr.clone() } else { body.to.clone() };
+
+        let ton_amount: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+        let nanoton = (ton_amount * 1_000_000_000.0) as u64;
+
+        let rpc_url = gradience_core::chain::resolve_rpc(&chain);
+        let ton_client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
+        let seqno = ton_client.get_seqno(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let tx = gradience_core::ows::adapter::Transaction {
+            to: Some(to_addr.clone()),
+            value: nanoton.to_string(),
+            data: seqno.to_be_bytes().to_vec(),
+            raw_hex: "".into(),
+        };
+        let (eval, core_policies) = evaluate_wallet_policy(
+            &state, &wallet_id, "ton:0", tx.clone()).await?;
+
+        let mut approval_id = None;
+        if eval.decision == gradience_core::policy::engine::Decision::Deny {
+            let _ = gradience_core::audit::service::log_wallet_action(
+                &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(), "denied",
+            ).await;
+            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+        }
+        if eval.decision == gradience_core::policy::engine::Decision::Warn {
+            let aid = uuid::Uuid::new_v4().to_string();
+            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let request_json = serde_json::json!({
+                "action": "fund",
+                "wallet_id": wallet_id,
+                "to": to_addr,
+                "amount": body.amount,
+                "chain": chain,
+            }).to_string();
+            let _ = gradience_db::queries::create_policy_approval(
+                &state.db, &aid, &policy_id, &wallet_id, &request_json
+            ).await;
+            approval_id = Some(aid);
+        }
+
+        let vault = state.ows.init_vault(&passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let signed = state.ows.sign_transaction(&vault, &wallet_id, "ton:0", &tx, &passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let result = state.ows.broadcast("ton:0", &signed, rpc_url).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let _ = gradience_core::audit::service::log_wallet_action(
+            &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result}).to_string(), "allowed",
+        ).await;
+
+        let mut resp = serde_json::json!({ "tx_hash": result });
+        if let Some(aid) = approval_id {
+            resp["approval_id"] = aid.into();
+            resp["warning"] = true.into();
+            resp["reasons"] = eval.reasons.into();
+        }
+        return Ok((StatusCode::OK, axum::Json(resp)));
+    }
+
+    // ---------- Conflux Core Space branch ----------
+    if chain == "conflux-core" || chain.starts_with("cfx:") {
+        let mut cfx_addr = None;
+        for a in &addrs {
+            if a.chain_id.starts_with("cfx:") {
+                cfx_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = cfx_addr.ok_or(StatusCode::BAD_REQUEST)?;
+        let to_addr = if body.to.trim().is_empty() { from_addr.clone() } else { body.to.clone() };
+
+        let amount_cfx: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
+        let drip = (amount_cfx * 1_000_000_000_000_000_000.0) as u128;
+        let value_hex = format!("0x{:x}", drip);
+
+        let tx = gradience_core::ows::adapter::Transaction {
+            to: Some(to_addr.clone()),
+            value: value_hex,
+            data: vec![],
+            raw_hex: "".into(),
+        };
+        let (eval, core_policies) = evaluate_wallet_policy(
+            &state, &wallet_id, "cfx:1", tx.clone()).await?;
+
+        let mut approval_id = None;
+        if eval.decision == gradience_core::policy::engine::Decision::Deny {
+            let _ = gradience_core::audit::service::log_wallet_action(
+                &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(), "denied",
+            ).await;
+            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+        }
+        if eval.decision == gradience_core::policy::engine::Decision::Warn {
+            let aid = uuid::Uuid::new_v4().to_string();
+            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let request_json = serde_json::json!({
+                "action": "fund",
+                "wallet_id": wallet_id,
+                "to": to_addr,
+                "amount": body.amount,
+                "chain": chain,
+            }).to_string();
+            let _ = gradience_db::queries::create_policy_approval(
+                &state.db, &aid, &policy_id, &wallet_id, &request_json
+            ).await;
+            approval_id = Some(aid);
+        }
+
+        let vault = state.ows.init_vault(&passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let signed = state.ows.sign_transaction(&vault, &wallet_id, "cfx:1", &tx, &passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let result = state.ows.broadcast("cfx:1", &signed, "").await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let _ = gradience_core::audit::service::log_wallet_action(
+            &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result}).to_string(), "allowed",
+        ).await;
+
+        let mut resp = serde_json::json!({ "tx_hash": result });
+        if let Some(aid) = approval_id {
+            resp["approval_id"] = aid.into();
+            resp["warning"] = true.into();
+            resp["reasons"] = eval.reasons.into();
+        }
+        return Ok((StatusCode::OK, axum::Json(resp)));
+    }
+
+    // ---------- EVM branch ----------
     let mut from_addr = None;
     for a in &addrs {
         if a.chain_id.starts_with("eip155:") {
@@ -892,14 +1145,7 @@ async fn wallet_fund(
             break;
         }
     }
-    let from_addr = match from_addr {
-        Some(addr) => addr,
-        None => {
-            return Ok((StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({
-                "error": "Solana/Stellar transaction signing is on the roadmap — please use an EVM chain (Base, Ethereum, BNB) for live transactions."
-            }))));
-        }
-    };
+    let from_addr = from_addr.ok_or(StatusCode::BAD_REQUEST)?;
 
     let wei = gradience_core::eth_to_wei(&body.amount)
         .map_err(|_| StatusCode::BAD_REQUEST)?;
@@ -1139,7 +1385,7 @@ struct SwapQuoteReq {
 async fn swap_quote(
     Json(body): Json<SwapQuoteReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let chain_num = gradience_core::chain::evm_chain_num(&body.chain);
+    let chain_num = if body.chain == "solana" { 101u64 } else { gradience_core::chain::evm_chain_num(&body.chain) };
     let dex = gradience_core::dex::service::DexService::new();
     let quote = dex.get_quote("", &body.from_token, &body.to_token, &body.amount, chain_num).await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1172,6 +1418,76 @@ async fn wallet_swap(
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    // ---------- Solana branch ----------
+    if body.chain == "solana" {
+        let mut sol_addr = None;
+        for a in &addrs {
+            if a.chain_id.starts_with("solana:") {
+                sol_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = sol_addr.ok_or(StatusCode::BAD_REQUEST)?;
+
+        let dex = gradience_core::dex::service::DexService::new();
+        let tx = dex.build_swap_tx(&from_addr, &body.from_token, &body.to_token, &body.amount, 101u64, body.slippage_bps.unwrap_or(50))
+            .await.map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let (eval, core_policies) = evaluate_wallet_policy(
+            &state, &wallet_id, "solana:103", tx.clone()).await?;
+
+        let mut approval_id = None;
+        if eval.decision == gradience_core::policy::engine::Decision::Deny {
+            let _ = gradience_core::audit::service::log_wallet_action(
+                &state.db, &wallet_id, None, "swap",
+                &serde_json::json!({"from_token": body.from_token, "to_token": body.to_token, "amount": body.amount}).to_string(), "denied",
+            ).await;
+            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+        }
+        if eval.decision == gradience_core::policy::engine::Decision::Warn {
+            let aid = uuid::Uuid::new_v4().to_string();
+            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let request_json = serde_json::json!({
+                "action": "swap",
+                "wallet_id": wallet_id,
+                "from_token": body.from_token,
+                "to_token": body.to_token,
+                "amount": body.amount,
+                "chain": body.chain,
+            }).to_string();
+            let _ = gradience_db::queries::create_policy_approval(
+                &state.db, &aid, &policy_id, &wallet_id, &request_json
+            ).await;
+            approval_id = Some(aid);
+        }
+
+        let rpc_url = "https://api.devnet.solana.com";
+        let result = ows_lib::sign_and_send(
+            &wallet_id,
+            "solana",
+            &tx.raw_hex,
+            Some(&passphrase),
+            None,
+            Some(rpc_url),
+            Some(&state.vault_dir),
+        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+        let _ = gradience_core::audit::service::log_wallet_action(
+            &state.db, &wallet_id, None, "swap",
+            &serde_json::json!({"from_token": body.from_token, "to_token": body.to_token, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allowed",
+        ).await;
+
+        let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
+        if let Some(aid) = approval_id {
+            resp["approval_id"] = aid.into();
+            resp["warning"] = true.into();
+            resp["reasons"] = eval.reasons.into();
+        }
+        return Ok((StatusCode::OK, axum::Json(resp)));
+    }
+
+    // ---------- EVM branch ----------
     let mut addr = None;
     for a in &addrs {
         if a.chain_id.starts_with("eip155:") {
@@ -1179,14 +1495,7 @@ async fn wallet_swap(
             break;
         }
     }
-    let from_addr = match addr {
-        Some(a) => a,
-        None => {
-            return Ok((StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({
-                "error": "Solana/Stellar transaction signing is on the roadmap — please use an EVM chain (Base, Ethereum, BNB) for live transactions."
-            }))));
-        }
-    };
+    let from_addr = addr.ok_or(StatusCode::BAD_REQUEST)?;
 
     let chain_num = gradience_core::chain::evm_chain_num(&body.chain);
     let rpc_url = gradience_core::chain::resolve_rpc(&body.chain);
@@ -1229,7 +1538,6 @@ async fn wallet_swap(
         approval_id = Some(aid);
     }
 
-    // Estimate gas for the swap tx
     let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let nonce = client.get_transaction_count(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1243,7 +1551,7 @@ async fn wallet_swap(
     let mut rlp = rlp::RlpStream::new_list(9);
     rlp.append(&nonce);
     rlp.append(&gas_price);
-    rlp.append(&300000u64); // higher gas limit for DEX swaps
+    rlp.append(&300000u64);
     rlp.append(&to_bytes);
     rlp.append(&value_wei);
     rlp.append(&data_bytes);

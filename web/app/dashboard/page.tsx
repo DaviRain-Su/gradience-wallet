@@ -227,6 +227,9 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [anchorLoading, setAnchorLoading] = useState(false);
   const [swapLoading, setSwapLoading] = useState(false);
 
+  const [fundChain, setFundChain] = useState("base");
+  const [swapChain, setSwapChain] = useState("base");
+
   useEffect(() => {
     apiGet(`/api/wallets/${wallet.id}/portfolio`).then((r) => r.json().then(setPortfolio)).catch((e) => console.error("portfolio fetch failed", e));
     apiGet(`/api/wallets/${wallet.id}/addresses`).then((r) => r.json().then(setAddresses)).catch((e) => {
@@ -241,7 +244,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   async function handleFund() {
     setFundLoading(true);
     try {
-      const res = await apiPost(`/api/wallets/${wallet.id}/fund`, { to: fundTo, amount: fundAmount, chain: "base" });
+      const res = await apiPost(`/api/wallets/${wallet.id}/fund`, { to: fundTo, amount: fundAmount, chain: fundChain });
       const data = await res.json();
       setMsg(`Funded! Tx: ${data.tx_hash}`);
       setShowFund(false);
@@ -296,7 +299,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     setSwapLoading(true);
     try {
       const res = await apiPost(`/api/wallets/${wallet.id}/swap`, {
-        chain: "base",
+        chain: swapChain,
         from_token: swapFrom,
         to_token: swapTo,
         amount: swapAmount,
@@ -322,9 +325,26 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
     if (!addressMap.has(a.chain_id)) addressMap.set(a.chain_id, a.address);
   });
 
-  function parseNativeBalance(hex: string) {
+  function parseNativeBalance(hex: string, chainId: string) {
     const val = BigInt(hex || "0x0");
-    if (val === BigInt(0)) return "0 ETH";
+    if (val === BigInt(0)) {
+      if (chainId.startsWith("solana:")) return "0 SOL";
+      if (chainId.startsWith("ton:")) return "0 TON";
+      if (chainId.startsWith("cfx:")) return "0 CFX";
+      return "0 ETH";
+    }
+    if (chainId.startsWith("solana:")) {
+      const sol = Number(val) / 1e9;
+      return `${sol.toFixed(6)} SOL`;
+    }
+    if (chainId.startsWith("ton:")) {
+      const ton = Number(val) / 1e9;
+      return `${ton.toFixed(6)} TON`;
+    }
+    if (chainId.startsWith("cfx:")) {
+      const cfx = Number(val) / 1e18;
+      return `${cfx.toFixed(6)} CFX`;
+    }
     const eth = Number(val) / 1e18;
     return `${eth.toFixed(6)} ETH`;
   }
@@ -411,7 +431,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
                 <span className="text-xs px-1.5 py-0.5 rounded" style={{ backgroundColor: "var(--card)", color: "var(--primary)", border: "1px solid var(--border)" }}>
                   {formatChainName(p.chain_id)}
                 </span>
-                <span className="text-xs font-mono" style={{ color: "var(--muted-foreground)" }}>{parseNativeBalance(p.native_balance)}</span>
+                <span className="text-xs font-mono" style={{ color: "var(--muted-foreground)" }}>{parseNativeBalance(p.native_balance, p.chain_id)}</span>
               </div>
               {p.assets.length > 0 && (
                 <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -468,8 +488,25 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
 
       {showFund && (
         <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--border)" }}>
-          <div className="flex gap-2">
-            <input className={`${inputClass} flex-1`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder="To address" value={fundTo} onChange={(e) => setFundTo(e.target.value)} />
+          <div className="flex gap-2 flex-wrap items-center">
+            <select
+              className={`${inputClass}`}
+              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              value={fundChain}
+              onChange={(e) => {
+                const c = e.target.value;
+                setFundChain(c);
+                if (c === "solana" || c === "ton" || c === "conflux-core") setFundAmount("0.01");
+                else setFundAmount("0.001");
+              }}
+            >
+              <option value="base">Base</option>
+              <option value="conflux">Conflux eSpace</option>
+              <option value="conflux-core">Conflux Core</option>
+              <option value="solana">Solana</option>
+              <option value="ton">TON</option>
+            </select>
+            <input className={`${inputClass} flex-1 min-w-[8rem]`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder={fundChain === "solana" ? "Solana address" : fundChain === "ton" ? "TON address" : fundChain === "conflux-core" ? "cfxtest:..." : "0x..."} value={fundTo} onChange={(e) => setFundTo(e.target.value)} />
             <input className={`${inputClass} w-24`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} value={fundAmount} onChange={(e) => setFundAmount(e.target.value)} />
             <button onClick={handleFund} disabled={fundLoading} className="px-3 py-1 rounded text-sm disabled:opacity-50" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>{fundLoading ? "Sending..." : "Send"}</button>
           </div>
@@ -487,9 +524,41 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
 
       {showSwap && (
         <div className="mt-4 border-t pt-3" style={{ borderColor: "var(--border)" }}>
-          <div className="flex gap-2 flex-wrap">
-            <input className={`${inputClass} flex-1 min-w-[8rem]`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder="From token" value={swapFrom} onChange={(e) => setSwapFrom(e.target.value)} />
-            <input className={`${inputClass} flex-1 min-w-[8rem]`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder="To token" value={swapTo} onChange={(e) => setSwapTo(e.target.value)} />
+          <div className="flex gap-2 flex-wrap items-center">
+            <select
+              className={`${inputClass}`}
+              style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
+              value={swapChain}
+              onChange={(e) => {
+                const c = e.target.value;
+                setSwapChain(c);
+                if (c === "solana") {
+                  setSwapFrom("SOL");
+                  setSwapTo("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+                  setSwapAmount("0.1");
+                } else if (c === "ton") {
+                  setSwapFrom("TON");
+                  setSwapTo("Swap DEX TBD");
+                  setSwapAmount("0.1");
+                } else if (c === "conflux-core") {
+                  setSwapFrom("CFX");
+                  setSwapTo("Swap DEX TBD");
+                  setSwapAmount("0.1");
+                } else {
+                  setSwapFrom("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+                  setSwapTo("0x4200000000000000000000000000000000000006");
+                  setSwapAmount("1");
+                }
+              }}
+            >
+              <option value="base">Base</option>
+              <option value="conflux">Conflux eSpace</option>
+              <option value="conflux-core">Conflux Core</option>
+              <option value="solana">Solana</option>
+              <option value="ton">TON</option>
+            </select>
+            <input className={`${inputClass} flex-1 min-w-[8rem]`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder={swapChain === "solana" ? "From token / mint" : swapChain === "ton" ? "From token" : swapChain === "conflux-core" ? "From token" : "From token"} value={swapFrom} onChange={(e) => setSwapFrom(e.target.value)} />
+            <input className={`${inputClass} flex-1 min-w-[8rem]`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} placeholder={swapChain === "solana" ? "To token / mint" : swapChain === "ton" ? "To token" : swapChain === "conflux-core" ? "To token" : "To token"} value={swapTo} onChange={(e) => setSwapTo(e.target.value)} />
             <input className={`${inputClass} w-24`} style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }} value={swapAmount} onChange={(e) => setSwapAmount(e.target.value)} />
             <button onClick={handleSwap} disabled={swapLoading} className="px-3 py-1 rounded text-sm disabled:opacity-50" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>{swapLoading ? "Swapping..." : "Swap"}</button>
           </div>

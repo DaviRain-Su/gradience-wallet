@@ -71,7 +71,10 @@ pub async fn balance(ctx: &AppContext, wallet_id: String, chain: Option<String>)
         let is_match = a.chain_id.contains(&chain)
             || (chain == "base" && (a.chain_id == "eip155:8453" || (is_evm && a.chain_id == "eip155:1")))
             || (chain == "ethereum" && a.chain_id == "eip155:1")
-            || (chain == "solana" && a.chain_id.starts_with("solana:"));
+            || (chain == "conflux" && (a.chain_id == "eip155:1030" || a.chain_id == "eip155:71" || is_evm))
+            || (chain == "conflux-core" && a.chain_id.starts_with("cfx:"))
+            || (chain == "solana" && a.chain_id.starts_with("solana:"))
+            || (chain == "ton" && a.chain_id.starts_with("ton:"));
         if is_match {
             found = true;
             if chain == "solana" || a.chain_id.starts_with("solana:") {
@@ -81,6 +84,26 @@ pub async fn balance(ctx: &AppContext, wallet_id: String, chain: Option<String>)
                     Ok(lamports) => {
                         let sol = gradience_core::rpc::solana::lamports_to_sol(lamports);
                         println!("Wallet {} on {}: {} SOL ({} lamports) (address: {})", wallet_id, a.chain_id, sol, lamports, a.address);
+                    }
+                    Err(e) => println!("Failed to get balance for {}: {}", a.address, e),
+                }
+            } else if chain == "ton" || a.chain_id.starts_with("ton:") {
+                let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
+                let client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
+                match client.get_balance(&a.address).await {
+                    Ok(nanoton) => {
+                        let ton = nanoton as f64 / 1e9;
+                        println!("Wallet {} on {}: {} TON ({} nanoton) (address: {})", wallet_id, a.chain_id, ton, nanoton, a.address);
+                    }
+                    Err(e) => println!("Failed to get balance for {}: {}", a.address, e),
+                }
+            } else if chain == "conflux-core" || a.chain_id.starts_with("cfx:") {
+                let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
+                let client = gradience_core::rpc::conflux_core::ConfluxCoreRpcClient::new_with_url(rpc_url);
+                match client.get_balance(&a.address).await {
+                    Ok(drip) => {
+                        let cfx = drip as f64 / 1e18;
+                        println!("Wallet {} on {}: {} CFX ({} drip) (address: {})", wallet_id, a.chain_id, cfx, drip, a.address);
                     }
                     Err(e) => println!("Failed to get balance for {}: {}", a.address, e),
                 }
@@ -170,11 +193,89 @@ pub async fn fund(
     }
 
     // ------------------------------------------------------------------
+    // TON branch
+    // ------------------------------------------------------------------
+    if chain == "ton" || chain == "toncoin" {
+        let mut ton_addr = None;
+        for a in &addrs {
+            if a.chain_id.starts_with("ton:") {
+                ton_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = ton_addr.ok_or_else(|| anyhow::anyhow!("No TON address found for wallet {}", wallet_id))?;
+        let to_addr = to.unwrap_or_else(|| from_addr.clone());
+
+        let ton_amount: f64 = amount.parse()
+            .map_err(|_| anyhow::anyhow!("Invalid amount: expected TON decimal string"))?;
+        let nanoton = (ton_amount * 1_000_000_000.0) as u64;
+
+        let rpc_url = gradience_core::chain::resolve_rpc(&chain);
+        let client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
+        let seqno = client.get_seqno(&from_addr).await?;
+
+        let vault = ctx.ows.init_vault(&passphrase).await?;
+        let tx = gradience_core::ows::adapter::Transaction {
+            to: Some(to_addr.clone()),
+            value: nanoton.to_string(),
+            data: seqno.to_be_bytes().to_vec(),
+            raw_hex: "".into(),
+        };
+        let signed = ctx.ows.sign_transaction(&vault, &wallet_id, "ton:0", &tx, &passphrase
+        ).await.map_err(|e| anyhow::anyhow!("TON sign_transaction failed: {}", e))?;
+        let result = ctx.ows.broadcast("ton:0", &signed, rpc_url).await.map_err(|e| anyhow::anyhow!("TON broadcast failed: {}", e))?;
+
+        println!(
+            "Sent {} TON from {} to {} on TON testnet. Result: {}",
+            amount, from_addr, to_addr, result
+        );
+        return Ok(());
+    }
+
+    // ------------------------------------------------------------------
+    // Conflux Core Space branch
+    // ------------------------------------------------------------------
+    if chain == "conflux-core" || chain.starts_with("cfx:") {
+        let mut cfx_addr = None;
+        for a in &addrs {
+            if a.chain_id.starts_with("cfx:") {
+                cfx_addr = Some(a.address.clone());
+                break;
+            }
+        }
+        let from_addr = cfx_addr.ok_or_else(|| anyhow::anyhow!("No Conflux Core address found for wallet {}", wallet_id))?;
+        let to_addr = to.unwrap_or_else(|| from_addr.clone());
+
+        let amount_cfx: f64 = amount.parse()
+            .map_err(|_| anyhow::anyhow!("Invalid amount: expected CFX decimal string"))?;
+        let drip = (amount_cfx * 1_000_000_000_000_000_000.0) as u128;
+        let value_hex = format!("0x{:x}", drip);
+
+        let vault = ctx.ows.init_vault(&passphrase).await?;
+        let tx = gradience_core::ows::adapter::Transaction {
+            to: Some(to_addr.clone()),
+            value: value_hex,
+            data: vec![],
+            raw_hex: "".into(),
+        };
+        let signed = ctx.ows.sign_transaction(&vault, &wallet_id, "cfx:1", &tx, &passphrase
+        ).await.map_err(|e| anyhow::anyhow!("Conflux Core sign_transaction failed: {}", e))?;
+        let result = ctx.ows.broadcast("cfx:1", &signed, "").await
+            .map_err(|e| anyhow::anyhow!("Conflux Core broadcast failed: {}", e))?;
+
+        println!(
+            "Sent {} CFX from {} to {} on Conflux Core testnet. Result: {}",
+            amount, from_addr, to_addr, result
+        );
+        return Ok(());
+    }
+
+    // ------------------------------------------------------------------
     // EVM branch (original)
     // ------------------------------------------------------------------
     let mut addr = None;
     for a in &addrs {
-        if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
+        if gradience_core::chain::is_evm_chain(&a.chain_id) {
             addr = Some(a.address.clone());
             break;
         }
@@ -185,11 +286,7 @@ pub async fn fund(
     let wei = gradience_core::eth_to_wei(&amount)
         .map_err(|_| anyhow::anyhow!("Invalid amount"))?;
 
-    let rpc_url = if chain == "base" {
-        "https://mainnet.base.org"
-    } else {
-        "https://eth.llamarpc.com"
-    };
+    let rpc_url = gradience_core::chain::resolve_rpc(&chain);
 
     let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)?;
     let nonce = client.get_transaction_count(&from_addr).await?;
@@ -197,7 +294,7 @@ pub async fn fund(
     let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
         .map_err(|e| anyhow::anyhow!("Invalid gas price: {}", e))?;
 
-    let chain_num = if chain == "base" { 8453u64 } else { 1u64 };
+    let chain_num = gradience_core::chain::evm_chain_num(&chain);
 
     let to_bytes = hex::decode(to_addr.trim_start_matches("0x")).unwrap_or_default();
     let mut rlp = rlp::RlpStream::new_list(9);

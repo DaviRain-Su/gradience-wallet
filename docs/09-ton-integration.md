@@ -265,6 +265,19 @@ Same pattern: add `<option value="ton">TON</option>` to TG `WalletCard` fund sel
 
 ## 7. Testing & Validation Plan
 
+### Implementation Status (2026-04-08)
+
+- ✅ `ton-contracts` + `tlb-ton` dependencies added.
+- ✅ `rpc/ton.rs` (toncenter HTTP client) implemented with `get_balance`, `get_seqno`, `send_boc`.
+- ✅ `signing.rs` TON derivation (`ton_address_from_seed`) and transfer builder (`build_ton_transfer_tx`) implemented using WalletV4R2.
+- ✅ `local_adapter.rs` wired for TON: `derive_account`, `create_wallet` (auto-adds `ton:0` address), `sign_transaction`, `broadcast`.
+- ✅ `gradience-api` supports TON `balance`, `portfolio`, and `fund`.
+- ✅ CLI supports `agent balance --chain ton` and `agent fund --chain ton`.
+- ✅ MCP `get_balance` supports TON.
+- ✅ Web Dashboard and Telegram Mini App chain selectors include TON; balance formatting handles nanoton → TON.
+- ✅ `npx next build` passes; `cargo test` (e2e + tool_tests) passes.
+- ⚠️ **Live devnet transfer blocked**: TON testnet faucet requires Telegram bot `@testgiver_ton_bot` or a private testnet wallet with existing funds. Balance query confirmed working against testnet (0 TON).
+
 ### Unit / Integration (Rust)
 
 1. **Address Derivation Test**
@@ -275,14 +288,14 @@ Same pattern: add `<option value="ton">TON</option>` to TG `WalletCard` fund sel
    - Mock `toncenter` responses for `get_balance`, `get_seqno`, `send_boc`.
 4. **End-to-End (devnet)**
    - Create wallet via API/CLI.
-   - Query TON balance on testnet (default 0).
-   - Fund the wallet from an external testnet faucet.
+   - Query TON balance on testnet (default 0). ✅ Verified.
+   - Fund the wallet from an external testnet faucet. ⏳ Needs manual faucet or Telegram bot.
    - Use `gradience agent fund --chain ton --amount 0.005` to send TON back.
    - Assert balance changes and tx hash is returned.
 
 ### Frontend
 
-- `npx next build` must pass with new `<option value="ton">` and balance formatting.
+- `npx next build` must pass with new `<option value="ton">` and balance formatting. ✅
 - Manual UI smoke test: switch chain selector to TON, verify placeholder and amount update.
 
 ---

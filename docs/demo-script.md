@@ -176,9 +176,11 @@ solana transfer <address> 0.01 --allow-unfunded-recipient
 # 5. 确认余额
 gradience agent balance --chain solana --name demo-wallet
 gradience agent balance --chain ton --name demo-wallet
+gradience agent balance --chain conflux --name demo-wallet
 
 # 6. 转账/换币（CLI 备用）
 gradience agent fund --chain solana --to <address> --amount 0.005 --name demo-wallet
 gradience agent fund --chain ton --to <address> --amount 0.001 --name demo-wallet
+gradience agent fund --chain conflux --to <address> --amount 0.001 --name demo-wallet
 gradience dex swap --chain solana --from SOL --to USDC --amount 0.001 --name demo-wallet
 ```

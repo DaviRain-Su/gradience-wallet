@@ -104,6 +104,21 @@ impl OwsAdapter for LocalOwsAdapter {
             }
         }
 
+        // Append Conflux Core Space testnet address deterministically
+        let cfx_chain = "cfx:1";
+        let cfx_path = "m/44'/503'/0'/0/0";
+        let cfx_seed = derive_demo_seed(&info.id, cfx_chain, cfx_path);
+        if let Ok(cfx_addr) = crate::rpc::conflux_core::cfx_address_from_seed(&cfx_seed, 1) {
+            if !cfx_addr.is_empty() {
+                accounts.push(AccountDescriptor {
+                    account_id: format!("{}:{}", cfx_chain, cfx_addr),
+                    address: cfx_addr,
+                    chain_id: cfx_chain.into(),
+                    derivation_path: cfx_path.into(),
+                });
+            }
+        }
+
         Ok(WalletDescriptor {
             id: info.id,
             name: info.name,
@@ -152,6 +167,9 @@ impl OwsAdapter for LocalOwsAdapter {
 
         let address = if chain.starts_with("ton:") {
             crate::ows::signing::ton_address_from_seed(&secret)?
+        } else if chain.starts_with("cfx:") {
+            let network_id = crate::chain::conflux_core_network_id(chain);
+            crate::rpc::conflux_core::cfx_address_from_seed(&secret, network_id)?
         } else if chain.starts_with("eip155:") || chain.starts_with("base:") {
             crate::ows::signing::eth_address_from_secret_key(&secret)?
         } else if chain.starts_with("stellar:") {
@@ -228,6 +246,21 @@ impl OwsAdapter for LocalOwsAdapter {
             });
         }
 
+        if chain.starts_with("cfx:") {
+            let cfx_path = "m/44'/503'/0'/0/0";
+            let seed = derive_demo_seed(wallet_id, chain, cfx_path);
+            let private_key = format!("0x{}", hex::encode(&seed[..32]));
+            let to = tx.to.as_deref().unwrap_or("");
+            let rpc_url = crate::chain::resolve_rpc(chain);
+            let network_id = crate::chain::conflux_core_network_id(chain);
+            let client = crate::rpc::conflux_core::ConfluxCoreRpcClient::new_with_url(rpc_url);
+            let tx_hash = client.sign_and_send(&private_key, to, &tx.value, network_id)?;
+            return Ok(SignedTransaction {
+                raw_hex: tx_hash,
+                chain_id: chain.into(),
+            });
+        }
+
         let result = ows_lib::sign_transaction(
             wallet_id,
             chain,
@@ -270,6 +303,12 @@ impl OwsAdapter for LocalOwsAdapter {
             // toncenter does not return the message hash easily; return a fingerprint
             let fingerprint = hex::encode(&signed_bytes[..16.min(signed_bytes.len())]);
             return Ok(format!("ton:0x{}", fingerprint));
+        }
+
+        if chain.starts_with("cfx:") {
+            // Core Space transaction was already signed and broadcast in sign_transaction;
+            // raw_hex holds the transaction hash.
+            return Ok(signed_tx.raw_hex.clone());
         }
 
         use crate::rpc::evm::EvmRpcClient;

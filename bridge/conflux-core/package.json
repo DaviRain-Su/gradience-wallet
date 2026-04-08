@@ -1,0 +1,8 @@
+{
+  "name": "conflux-core-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "js-conflux-sdk": "^2.4.2"
+  }
+}

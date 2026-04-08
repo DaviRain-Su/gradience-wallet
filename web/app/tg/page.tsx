@@ -86,6 +86,7 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
   const [balances, setBalances] = useState<Balance[]>([]);
   const [fundTo, setFundTo] = useState("");
   const [fundAmount, setFundAmount] = useState("0.001");
+  const [fundChain, setFundChain] = useState("base");
   const [showFund, setShowFund] = useState(false);
   const [fundLoading, setFundLoading] = useState(false);
   const [msg, setMsg] = useState("");
@@ -96,13 +97,34 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       .catch(() => {});
   }, [wallet.id]);
 
+  function formatBalance(b: Balance) {
+    if (b.chain_id.startsWith("solana:")) {
+      const lamports = BigInt(b.balance || "0x0");
+      if (lamports === BigInt(0)) return "0 SOL";
+      return `${(Number(lamports) / 1e9).toFixed(6)} SOL`;
+    }
+    if (b.chain_id.startsWith("ton:")) {
+      const nanoton = BigInt(b.balance || "0x0");
+      if (nanoton === BigInt(0)) return "0 TON";
+      return `${(Number(nanoton) / 1e9).toFixed(6)} TON`;
+    }
+    if (b.chain_id.startsWith("cfx:")) {
+      const drip = BigInt(b.balance || "0x0");
+      if (drip === BigInt(0)) return "0 CFX";
+      return `${(Number(drip) / 1e18).toFixed(6)} CFX`;
+    }
+    const wei = BigInt(b.balance || "0x0");
+    if (wei === BigInt(0)) return "0 ETH";
+    return `${(Number(wei) / 1e18).toFixed(6)} ETH`;
+  }
+
   async function handleFund() {
     setFundLoading(true);
     try {
       const res = await apiPost(`/api/wallets/${wallet.id}/fund`, {
         to: fundTo,
         amount: fundAmount,
-        chain: "base",
+        chain: fundChain,
       });
       const data = await res.json();
       setMsg(`Sent! Tx: ${data.tx_hash?.slice(0, 12)}...`);
@@ -132,17 +154,37 @@ function WalletCard({ wallet }: { wallet: Wallet }) {
       <div className="mt-2">
         {balances.length === 0 && <p className="text-xs text-gray-400">No balances.</p>}
         {balances.map((b) => (
-          <p key={b.chain_id} className="text-sm">
-            {b.chain_id}: <span className="font-mono">{b.balance}</span>
-          </p>
+          <div key={b.chain_id} className="text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-700">{b.chain_id}</span>
+              <span className="font-mono">{formatBalance(b)}</span>
+            </div>
+            <p className="text-xs text-gray-500 font-mono break-all">{b.address}</p>
+          </div>
         ))}
       </div>
 
       {showFund && (
-        <div className="mt-3 flex gap-2">
+        <div className="mt-3 flex gap-2 flex-wrap items-center">
+          <select
+            className="border rounded px-2 py-1 text-sm bg-white"
+            value={fundChain}
+            onChange={(e) => {
+              const c = e.target.value;
+              setFundChain(c);
+              if (c === "solana" || c === "ton" || c === "conflux-core") setFundAmount("0.01");
+              else setFundAmount("0.001");
+            }}
+          >
+            <option value="base">Base</option>
+            <option value="conflux">Conflux eSpace</option>
+            <option value="conflux-core">Conflux Core</option>
+            <option value="solana">Solana</option>
+            <option value="ton">TON</option>
+          </select>
           <input
             className="border rounded px-2 py-1 flex-1 text-sm"
-            placeholder="To address"
+            placeholder={fundChain === "solana" ? "Solana address" : fundChain === "ton" ? "TON address" : fundChain === "conflux-core" ? "cfxtest:..." : "0x..."}
             value={fundTo}
             onChange={(e) => setFundTo(e.target.value)}
           />
