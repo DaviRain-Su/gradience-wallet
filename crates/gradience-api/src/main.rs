@@ -120,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ai/topup", post(handlers::ai_topup))
         .route("/api/ai/balance/:wallet_id", get(handlers::ai_balance))
         .route("/api/ai/generate", post(handlers::ai_generate))
+        .route("/api/ai/mpp-generate", post(handlers::mpp_generate))
         .route("/api/ai/models", get(handlers::ai_models))
         .route("/api/payments", get(handlers::list_payments))
         .route("/api/ws", get(handlers::ws_handler))

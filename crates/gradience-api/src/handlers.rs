@@ -2513,6 +2513,79 @@ pub async fn ai_models(
     Ok((StatusCode::OK, axum::Json(models)))
 }
 
+pub async fn mpp_generate(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<GenerateReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &body.wallet_id).await?;
+
+    use gradience_core::payment::mpp_client::{GradienceMppProvider, MppClient};
+    use gradience_core::payment::router::PaymentRouter;
+
+    let router = PaymentRouter::default();
+    let mut provider = GradienceMppProvider::new(&body.wallet_id, router);
+
+    // Demo seed derivation (matches MCP/farcaster-bot pattern).
+    // TODO: replace with vault-native derivation for production.
+    let evm_path = "m/44'/60'/0'/0/0";
+    let evm_seed = gradience_core::ows::local_adapter::derive_demo_seed(&body.wallet_id, "eip155:8453", evm_path);
+    provider = provider.with_evm_secret(evm_seed).with_evm_rpc("https://mainnet.base.org");
+
+    let solana_path = "m/44'/501'/0'/0";
+    let solana_seed = gradience_core::ows::local_adapter::derive_demo_seed(&body.wallet_id, "solana:mainnet", solana_path);
+    provider = provider.with_solana_secret(solana_seed).with_solana_rpc("https://api.mainnet-beta.solana.com");
+
+    let client = MppClient::new(provider);
+
+    let url = match body.provider.as_str() {
+        "anthropic" => "https://anthropic.mpp.tempo.xyz/v1/messages",
+        "openai" => "https://openai.mpp.tempo.xyz/v1/chat/completions",
+        "openrouter" => "https://openrouter.mpp.tempo.xyz/v1/chat/completions",
+        "gemini" => "https://gemini.mpp.tempo.xyz/v1/chat/completions",
+        "groq" => "https://groq.mpp.paywithlocus.com/v1/chat/completions",
+        "mistral" => "https://mistral.mpp.paywithlocus.com/v1/chat/completions",
+        "deepseek" => "https://deepseek.mpp.paywithlocus.com/v1/chat/completions",
+        _ => return Err(StatusCode::BAD_REQUEST),
+    };
+
+    let req_body = serde_json::json!({
+        "model": body.model,
+        "messages": [{"role": "user", "content": body.prompt}],
+        "max_tokens": 1024,
+    });
+
+    let resp = client
+        .send(reqwest::Client::new().post(url).json(&req_body))
+        .await
+        .map_err(|e| {
+            tracing::error!("mpp_generate failed: {}", e);
+            StatusCode::BAD_GATEWAY
+        })?;
+
+    let status = resp.status();
+    let resp_body = resp
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    let _ = gradience_core::audit::service::log_wallet_action(
+        &state.db,
+        &body.wallet_id,
+        None,
+        "mpp_generate",
+        &serde_json::json!({"provider": body.provider, "model": body.model, "status": status.as_u16()}).to_string(),
+        "allowed",
+    ).await;
+
+    Ok((StatusCode::OK, axum::Json(serde_json::json!({
+        "provider_status": status.as_u16(),
+        "data": resp_body,
+    }))))
+}
+
 pub async fn list_payments(
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
