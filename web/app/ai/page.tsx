@@ -57,51 +57,54 @@ export default function AiGateway() {
   }
 
   return (
-    <div className="min-h-screen p-8 max-w-2xl mx-auto">
+    <div className="min-h-screen p-8 max-w-2xl mx-auto" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       <h1 className="text-2xl font-bold mb-6">AI Gateway</h1>
 
       <div className="flex flex-col gap-4 mb-6">
         <input
           className="border rounded px-3 py-2"
+          style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
           placeholder="Wallet ID"
           value={walletId}
           onChange={(e) => setWalletId(e.target.value)}
         />
         <input
           className="border rounded px-3 py-2"
+          style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
           placeholder="Amount raw (1 USDC = 1_000_000)"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
         <div className="flex gap-2">
-          <button onClick={handleTopup} disabled={topupLoading} className="bg-black text-white px-4 py-2 rounded disabled:opacity-50">{topupLoading ? "Loading..." : "Topup"}</button>
-          <button onClick={handleBalance} disabled={balanceLoading} className="border px-4 py-2 rounded hover:bg-gray-100 disabled:opacity-50">{balanceLoading ? "Loading..." : "Balance"}</button>
+          <button onClick={handleTopup} disabled={topupLoading} className="px-4 py-2 rounded disabled:opacity-50" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>{topupLoading ? "Loading..." : "Topup"}</button>
+          <button onClick={handleBalance} disabled={balanceLoading} className="border px-4 py-2 rounded disabled:opacity-50" style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)" }}>{balanceLoading ? "Loading..." : "Balance"}</button>
         </div>
       </div>
 
       <div className="mb-6">
         <textarea
           className="border rounded px-3 py-2 w-full h-24"
+          style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
         />
-        <button onClick={handleGenerate} disabled={generateLoading} className="mt-2 bg-black text-white px-4 py-2 rounded disabled:opacity-50">{generateLoading ? "Generating..." : "Generate"}</button>
+        <button onClick={handleGenerate} disabled={generateLoading} className="mt-2 px-4 py-2 rounded disabled:opacity-50" style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}>{generateLoading ? "Generating..." : "Generate"}</button>
       </div>
 
-      {msg && <p className="text-red-500 text-sm mb-4">{msg}</p>}
+      {msg && <p className="text-sm mb-4" style={{ color: "#B45309" }}>{msg}</p>}
 
       {result?.type === "balance" && (
-        <div className="border rounded p-4">
+        <div className="border rounded p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}>
           <p className="font-medium">Balance (raw)</p>
           <p className="font-mono">{(result.data as { balance_raw?: string }).balance_raw}</p>
         </div>
       )}
 
       {result?.type === "generate" && (
-        <div className="border rounded p-4 space-y-2">
+        <div className="border rounded p-4 space-y-2" style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}>
           <p className="font-medium">Response</p>
           <p className="text-sm">{(result.data as { content?: string }).content}</p>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>
             Tokens: {(result.data as { input_tokens?: number }).input_tokens} in / {(result.data as { output_tokens?: number }).output_tokens} out | Cost: {(result.data as { cost_raw?: string }).cost_raw} | Status: {(result.data as { status?: string }).status}
           </p>
         </div>
