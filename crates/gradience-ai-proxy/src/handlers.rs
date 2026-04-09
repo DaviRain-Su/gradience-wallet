@@ -317,3 +317,45 @@ pub async fn ai_proxy_handler(
 
     Ok(response)
 }
+
+#[derive(Deserialize)]
+pub struct VerifyStateUpdateReq {
+    channel_id: String,
+    nonce: u64,
+    amount: String,
+    signature: String,
+    expected_payer: String,
+}
+
+#[derive(Serialize)]
+pub struct VerifyStateUpdateResp {
+    valid: bool,
+}
+
+pub async fn verify_state_update(
+    Json(body): Json<VerifyStateUpdateReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let channel_id = hex::decode(body.channel_id.trim_start_matches("0x"))
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let channel_id: [u8; 32] = channel_id.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let signature = hex::decode(body.signature.trim_start_matches("0x"))
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let signature: [u8; 65] = signature.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let amount = body
+        .amount
+        .parse::<u128>()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let valid = gradience_core::payment::state_channel::verify_state_update(
+        &channel_id,
+        body.nonce,
+        amount,
+        &signature,
+        &body.expected_payer,
+    )
+    .unwrap_or(false);
+
+    Ok((StatusCode::OK, Json(VerifyStateUpdateResp { valid })))
+}

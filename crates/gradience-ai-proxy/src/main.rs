@@ -43,6 +43,10 @@ async fn main() -> anyhow::Result<()> {
             delete(handlers::delete_ai_proxy_key),
         )
         .route("/v1/proxy/:provider/*path", any(handlers::ai_proxy_handler))
+        .route(
+            "/v1/state-channel/verify",
+            post(handlers::verify_state_update),
+        )
         .route("/health", get(|| async { "OK" }))
         .layer({
             let origin = std::env::var("ORIGIN")
