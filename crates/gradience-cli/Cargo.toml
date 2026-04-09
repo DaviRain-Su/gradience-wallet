@@ -24,6 +24,8 @@ gradience-mcp = { path = "../gradience-mcp" }
 hex.workspace = true
 rlp.workspace = true
 reqwest.workspace = true
+secp256k1.workspace = true
+mpp = { version = "0.9.1", features = ["tempo", "client"] }
 
 [dependencies.ows-lib]
 git = "https://github.com/open-wallet-standard/core"

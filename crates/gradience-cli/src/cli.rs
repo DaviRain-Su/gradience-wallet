@@ -55,6 +55,11 @@ pub enum Commands {
         #[command(subcommand)]
         cmd: McpCommands,
     },
+    /// Wallet operations (Agent-friendly interface)
+    Wallet {
+        #[command(subcommand)]
+        cmd: WalletCommands,
+    },
     /// Execute MPP payment
     Pay {
         wallet_id: String,
@@ -249,4 +254,82 @@ pub enum McpCommands {
     },
     /// Get balance via MCP tool
     Balance { wallet_id: String, chain_id: String },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WalletCommands {
+    /// Login to your vault (browser-based device auth)
+    Login,
+    /// Logout and clear local credentials
+    Logout,
+    /// Show current authentication status and linked wallets
+    Whoami {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Check wallet balance across chains
+    Balance {
+        wallet_id: String,
+        #[arg(long)]
+        chain: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Send funds from wallet
+    Fund {
+        wallet_id: String,
+        amount: String,
+        #[arg(long)]
+        chain: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Transfer tokens to another address
+    Transfer {
+        wallet_id: String,
+        amount: String,
+        token: String,
+        to: String,
+        #[arg(long)]
+        chain: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List API / proxy keys for a wallet
+    Keys {
+        wallet_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List MPP / AI provider services
+    Services {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Manage payment sessions
+    Sessions {
+        #[command(subcommand)]
+        cmd: WalletSessionCommands,
+    },
+    /// Sign an MPP payment challenge locally
+    MppSign {
+        wallet_id: String,
+        challenge_file: String,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Build a batch transfer payload (EVM Multicall3 or Solana tx)
+    Batch {
+        request_file: String,
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum WalletSessionCommands {
+    List { wallet_id: String },
+    Close { session_id: String },
 }

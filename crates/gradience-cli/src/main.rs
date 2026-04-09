@@ -5,7 +5,7 @@ mod context;
 use clap::Parser;
 use cli::{
     AgentCommands, AiCommands, ApiKeyCommands, AuditCommands, AuthCommands, Cli, Commands,
-    DexCommands, McpCommands, PolicyCommands, TeamCommands,
+    DexCommands, McpCommands, PolicyCommands, TeamCommands, WalletCommands, WalletSessionCommands,
 };
 use std::path::PathBuf;
 
@@ -153,6 +153,51 @@ async fn main() -> anyhow::Result<()> {
                 wallet_id,
                 chain_id,
             } => commands::mcp::balance(&ctx, wallet_id, chain_id).await,
+        },
+        Commands::Wallet { cmd } => match cmd {
+            WalletCommands::Login => commands::wallet::login(&ctx).await,
+            WalletCommands::Logout => commands::wallet::logout(&ctx).await,
+            WalletCommands::Whoami { json } => commands::wallet::whoami(&ctx, json).await,
+            WalletCommands::Balance {
+                wallet_id,
+                chain,
+                json,
+            } => commands::wallet::balance(&ctx, wallet_id, chain, json).await,
+            WalletCommands::Fund {
+                wallet_id,
+                amount,
+                chain,
+                to,
+                json,
+            } => commands::wallet::fund(&ctx, wallet_id, amount, chain, to, json).await,
+            WalletCommands::Transfer {
+                wallet_id,
+                amount,
+                token,
+                to,
+                chain,
+                json,
+            } => commands::wallet::transfer(&ctx, wallet_id, amount, token, to, chain, json).await,
+            WalletCommands::Keys { wallet_id, json } => {
+                commands::wallet::keys(&ctx, wallet_id, json).await
+            }
+            WalletCommands::Services { json } => commands::wallet::services(json).await,
+            WalletCommands::Sessions { cmd } => match cmd {
+                WalletSessionCommands::List { wallet_id } => {
+                    commands::wallet::sessions_list(&ctx, wallet_id).await
+                }
+                WalletSessionCommands::Close { session_id } => {
+                    commands::wallet::sessions_close(&ctx, session_id).await
+                }
+            },
+            WalletCommands::MppSign {
+                wallet_id,
+                challenge_file,
+                json,
+            } => commands::wallet::mpp_sign(&ctx, wallet_id, challenge_file, json).await,
+            WalletCommands::Batch { request_file, json } => {
+                commands::wallet::batch(&ctx, request_file, json).await
+            }
         },
         Commands::Pay {
             wallet_id,

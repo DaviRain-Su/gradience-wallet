@@ -9,3 +9,4 @@ pub mod pay;
 pub mod policy;
 pub mod start;
 pub mod team;
+pub mod wallet;
