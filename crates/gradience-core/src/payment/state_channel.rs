@@ -23,10 +23,15 @@ pub fn eth_personal_hash(digest: &[u8; 32]) -> [u8; 32] {
 /// Build the state-channel digest that the Solidity contract expects:
 /// `keccak256(abi.encodePacked(channelId, nonce, amount))`
 pub fn state_channel_digest(channel_id: &[u8; 32], nonce: u64, amount: u128) -> [u8; 32] {
-    let mut buf = Vec::with_capacity(32 + 8 + 16);
+    let mut buf = Vec::with_capacity(32 + 32 + 32);
     buf.extend_from_slice(channel_id);
-    buf.extend_from_slice(&nonce.to_be_bytes());
-    buf.extend_from_slice(&amount.to_be_bytes());
+    // Pad nonce and amount to 32 bytes to match Solidity uint256 abi.encodePacked
+    let mut nonce_bytes = [0u8; 32];
+    nonce_bytes[24..].copy_from_slice(&nonce.to_be_bytes());
+    buf.extend_from_slice(&nonce_bytes);
+    let mut amount_bytes = [0u8; 32];
+    amount_bytes[16..].copy_from_slice(&amount.to_be_bytes());
+    buf.extend_from_slice(&amount_bytes);
     keccak256(&buf)
 }
 
@@ -260,5 +265,23 @@ mod tests {
 
     fn eth_address_from_secret_key(secret: &[u8; 32]) -> Result<String> {
         crate::ows::signing::eth_address_from_secret_key(secret)
+    }
+
+    #[test]
+    fn debug_signature_for_xlayer() {
+        let secret =
+            hex::decode("bebff393a40d6aabe1e7fd66bd7299f094255ed574b4abc08f5329b9629ee4c9")
+                .unwrap()
+                .try_into()
+                .unwrap();
+        let channel_id_hex = "aeceee7c3af302924c0ad1096bce357048cecbce73bfddaa4b7dba7d7bb66db9";
+        let mut channel_id = [0u8; 32];
+        hex::decode_to_slice(channel_id_hex, &mut channel_id).unwrap();
+
+        let sig = sign_state_update(&secret, &channel_id, 1, 500000000000000).unwrap();
+        let addr = eth_address_from_secret_key(&secret).unwrap();
+        println!("payer_address: {}", addr);
+        println!("signature: 0x{}", hex::encode(sig));
+        assert!(verify_state_update(&channel_id, 1, 500000000000000, &sig, &addr).unwrap());
     }
 }

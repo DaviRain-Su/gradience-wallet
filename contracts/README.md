@@ -96,4 +96,4 @@ Supported chains: `bsc-testnet`, `conflux-espace-testnet`, `xlayer-testnet`, `ba
 
 | Chain | Chain ID | Contract Address | Tx Hash |
 |-------|----------|------------------|---------|
-| XLayer Testnet | 1952 | `0x00f1875be6be249615aad483d39004f6a49659cb` | `0xc873edfbd96fad3c17d489d1dd8f2639ced0db4046b08fa54a14c49ed5aaef43` |
+| XLayer Testnet | 1952 | `0xb02931aa17fdcfc26393556dbdd0cfaca0d44090` | `0xb1568941e27c2d8b6015b8f1376010760313f4ee001b3e741016b9ef9917601c` |

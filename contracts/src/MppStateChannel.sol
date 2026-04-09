@@ -193,15 +193,9 @@ contract MppStateChannel {
     {
         require(sig.length == 65, "Bad signature length");
 
-        bytes32 r;
-        bytes32 s_;
-        uint8 v;
-
-        assembly {
-            r := calldataload(add(sig.offset, 32))
-            s_ := calldataload(add(sig.offset, 64))
-            v := byte(0, calldataload(add(sig.offset, 96)))
-        }
+        bytes32 r = bytes32(sig[0:32]);
+        bytes32 s_ = bytes32(sig[32:64]);
+        uint8 v = uint8(sig[64]);
 
         if (v < 27) v += 27;
         return ecrecover(ethHash, v, r, s_);
