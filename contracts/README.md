@@ -86,8 +86,14 @@ bun run deploy-mpp-escrow.ts all
 
 Supported chains: `bsc-testnet`, `conflux-espace-testnet`, `xlayer-testnet`, `base-sepolia`, `arbitrum-sepolia`, `polygon-amoy`
 
-### Deployed Contracts
+### Deployed Contracts (MppEscrow)
 
 | Chain | Chain ID | Contract Address | Tx Hash |
 |-------|----------|------------------|---------|
 | XLayer Testnet | 1952 | `0x3ca2292b53cbc8f1bff10f3e052eddd7fba86532` | `0xcf651c82fcff709cd0dd71f84bd613745e82fba5abb5dcaf7a6aee5c8c3dd7e2` |
+
+### Deployed Contracts (MppStateChannel)
+
+| Chain | Chain ID | Contract Address | Tx Hash |
+|-------|----------|------------------|---------|
+| XLayer Testnet | 1952 | `0x00f1875be6be249615aad483d39004f6a49659cb` | `0xc873edfbd96fad3c17d489d1dd8f2639ced0db4046b08fa54a14c49ed5aaef43` |
