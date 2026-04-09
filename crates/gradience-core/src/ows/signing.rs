@@ -1,6 +1,6 @@
 use crate::error::{GradienceError, Result};
-use secp256k1::{SecretKey, PublicKey};
-use sha3::{Keccak256, Digest};
+use secp256k1::{PublicKey, SecretKey};
+use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
 pub fn keccak256(data: &[u8]) -> [u8; 32] {
@@ -79,7 +79,14 @@ pub fn sign_eth_transaction(
     // brute-force recovery id 0 or 1
     let mut recovery_id: u64 = 0;
     for i in 0..2u8 {
-        if let Ok(pk) = secp.recover_ecdsa(&msg, &secp256k1::ecdsa::RecoverableSignature::from_compact(&raw_sig, secp256k1::ecdsa::RecoveryId::from_i32(i as i32).unwrap()).unwrap()) {
+        if let Ok(pk) = secp.recover_ecdsa(
+            &msg,
+            &secp256k1::ecdsa::RecoverableSignature::from_compact(
+                &raw_sig,
+                secp256k1::ecdsa::RecoveryId::from_i32(i as i32).unwrap(),
+            )
+            .unwrap(),
+        ) {
             if pk == expected_pk {
                 recovery_id = i as u64;
                 break;
@@ -148,7 +155,9 @@ pub fn sign_solana_transaction(mut tx_bytes: Vec<u8>, secret: &[u8; 32]) -> Resu
 
     let (num_sigs, header_len) = decode_compact_u16(&tx_bytes)?;
     if num_sigs != 1 {
-        return Err(GradienceError::Validation("expected 1 signature placeholder".into()));
+        return Err(GradienceError::Validation(
+            "expected 1 signature placeholder".into(),
+        ));
     }
     let msg_start = header_len + 64;
     if tx_bytes.len() < msg_start {
@@ -178,21 +187,27 @@ pub fn build_solana_transfer_tx(
         .into_vec()
         .map_err(|e| GradienceError::Validation(format!("invalid from address: {}", e)))?;
     if from_pubkey.len() != 32 {
-        return Err(GradienceError::Validation("from address must be 32 bytes".into()));
+        return Err(GradienceError::Validation(
+            "from address must be 32 bytes".into(),
+        ));
     }
 
     let to_pubkey = bs58::decode(to)
         .into_vec()
         .map_err(|e| GradienceError::Validation(format!("invalid to address: {}", e)))?;
     if to_pubkey.len() != 32 {
-        return Err(GradienceError::Validation("to address must be 32 bytes".into()));
+        return Err(GradienceError::Validation(
+            "to address must be 32 bytes".into(),
+        ));
     }
 
     let blockhash = bs58::decode(recent_blockhash_b58)
         .into_vec()
         .map_err(|e| GradienceError::Validation(format!("invalid blockhash: {}", e)))?;
     if blockhash.len() != 32 {
-        return Err(GradienceError::Validation("blockhash must be 32 bytes".into()));
+        return Err(GradienceError::Validation(
+            "blockhash must be 32 bytes".into(),
+        ));
     }
 
     // System program ID (all zeros)
@@ -294,7 +309,9 @@ fn find_program_address(seeds: &[&[u8]], program_id: &[u8; 32]) -> Result<([u8; 
             return Ok((addr, bump));
         }
     }
-    Err(GradienceError::Validation("unable to find valid PDA".into()))
+    Err(GradienceError::Validation(
+        "unable to find valid PDA".into(),
+    ))
 }
 
 /// Derive the Associated Token Account (ATA) for a wallet + mint.
@@ -327,9 +344,9 @@ fn _build_solana_message(
         .filter(|(i, _)| {
             // Determine if any instruction references this key as writable
             let idx = *i as u8;
-            !instructions.iter().any(|(_, accts, _)| {
-                accts.iter().any(|(a, _, w)| *a == idx && *w)
-            })
+            !instructions
+                .iter()
+                .any(|(_, accts, _)| accts.iter().any(|(a, _, w)| *a == idx && *w))
         })
         .count() as u8;
 
@@ -398,7 +415,12 @@ pub fn build_spl_transfer_tx(
     // 6: system_program (readonly, optional)
     // 7: ata_program (readonly, optional)
     let mut keys: Vec<[u8; 32]> = vec![
-        from_wallet, from_ata, to_ata, to_wallet, mint, token_program,
+        from_wallet,
+        from_ata,
+        to_ata,
+        to_wallet,
+        mint,
+        token_program,
     ];
     if create_recipient_ata {
         keys.push(system_program);
@@ -443,9 +465,9 @@ pub fn build_spl_transfer_tx(
     let mut readonly_unsigned = 0u8;
     for (i, _) in keys.iter().enumerate().skip(1) {
         let idx = i as u8;
-        let is_writable = instructions.iter().any(|(_, accts, _)| {
-            accts.iter().any(|(a, _, w)| *a == idx && *w)
-        });
+        let is_writable = instructions
+            .iter()
+            .any(|(_, accts, _)| accts.iter().any(|(a, _, w)| *a == idx && *w));
         if !is_writable {
             readonly_unsigned += 1;
         }
@@ -540,8 +562,12 @@ pub fn build_delegate_stake_tx(
     message.extend_from_slice(&encode_compact_u16(instruction_accounts.len() as u16));
     for (idx, is_signer, is_writable) in instruction_accounts {
         let mut meta = 0u8;
-        if is_signer { meta |= 0x80; }
-        if is_writable { meta |= 0x40; }
+        if is_signer {
+            meta |= 0x80;
+        }
+        if is_writable {
+            meta |= 0x40;
+        }
         message.push(meta | idx);
     }
     message.extend_from_slice(&encode_compact_u16(1));
@@ -565,12 +591,7 @@ pub fn build_deactivate_stake_tx(
     let stake_program = decode_pubkey("Stake11111111111111111111111111111111111111")?;
     let blockhash = decode_pubkey(recent_blockhash_b58)?;
 
-    let account_keys = vec![
-        stake_account,
-        authorized_staker,
-        clock,
-        stake_program,
-    ];
+    let account_keys = vec![stake_account, authorized_staker, clock, stake_program];
 
     let num_required_signatures = 1u8;
     let num_readonly_signed_accounts = 1u8;
@@ -597,8 +618,12 @@ pub fn build_deactivate_stake_tx(
     message.extend_from_slice(&encode_compact_u16(instruction_accounts.len() as u16));
     for (idx, is_signer, is_writable) in instruction_accounts {
         let mut meta = 0u8;
-        if is_signer { meta |= 0x80; }
-        if is_writable { meta |= 0x40; }
+        if is_signer {
+            meta |= 0x80;
+        }
+        if is_writable {
+            meta |= 0x40;
+        }
         message.push(meta | idx);
     }
     message.extend_from_slice(&encode_compact_u16(1));
@@ -612,20 +637,17 @@ pub fn build_deactivate_stake_tx(
 
 // ==================== TON helpers ====================
 
+use num_bigint::BigUint;
 use std::sync::Arc;
-use ton_contracts::wallet::{KeyPair, Wallet, v4r2::V4R2};
 use tlb_ton::{
     action::SendMsgAction,
-    message::Message,
-    ser::{CellBuilder, CellSerialize, CellSerializeExt},
     bits::NBits,
     currency::Grams,
-    Ref, EitherInlineOrRef,
-    BoC,
-    BagOfCellsArgs,
-    MsgAddress,
+    message::Message,
+    ser::{CellBuilder, CellSerialize, CellSerializeExt},
+    BagOfCellsArgs, BoC, EitherInlineOrRef, MsgAddress, Ref,
 };
-use num_bigint::BigUint;
+use ton_contracts::wallet::{v4r2::V4R2, KeyPair, Wallet};
 
 /// Alias for tlb cell builder error.
 pub type TonCellError = tlb_ton::ser::CellBuilderError;
@@ -674,25 +696,36 @@ pub fn build_ton_transfer_tx(
     let wallet = Wallet::<V4R2>::derive_default(keypair)
         .map_err(|e| GradienceError::Validation(format!("ton wallet derive failed: {}", e)))?;
 
-    let dest_address = to.parse()
-        .map_err(|e: <tlb_ton::MsgAddress as std::str::FromStr>::Err| GradienceError::Validation(format!("invalid ton address: {}", e)))?;
+    let dest_address =
+        to.parse()
+            .map_err(|e: <tlb_ton::MsgAddress as std::str::FromStr>::Err| {
+                GradienceError::Validation(format!("invalid ton address: {}", e))
+            })?;
 
     let action = SendMsgAction {
         mode: 3, // pay fees separately + carry remaining value
         message: Message::<()>::transfer(dest_address, BigUint::from(amount_nanoton), false)
             .normalize()
-            .map_err(|e| GradienceError::Validation(format!("ton message normalize failed: {}", e)))?,
+            .map_err(|e| {
+                GradienceError::Validation(format!("ton message normalize failed: {}", e))
+            })?,
     };
 
     let expire_at = chrono::DateTime::UNIX_EPOCH;
-    let msg = wallet.create_external_message(expire_at, seqno, [action], true)
+    let msg = wallet
+        .create_external_message(expire_at, seqno, [action], true)
         .map_err(|e| GradienceError::Validation(format!("ton external message failed: {}", e)))?;
 
-    let cell = msg.to_cell(())
+    let cell = msg
+        .to_cell(())
         .map_err(|e| GradienceError::Validation(format!("ton cell build failed: {}", e)))?;
     let boc = BoC::from_root(cell);
 
-    let bytes = boc.serialize(BagOfCellsArgs { has_idx: false, has_crc32c: true })
+    let bytes = boc
+        .serialize(BagOfCellsArgs {
+            has_idx: false,
+            has_crc32c: true,
+        })
         .map_err(|e| GradienceError::Validation(format!("ton boc serialize failed: {}", e)))?;
     Ok(bytes)
 }
@@ -716,7 +749,11 @@ pub struct JettonTransferBody {
 impl CellSerialize for JettonTransferBody {
     type Args = ();
 
-    fn store(&self, builder: &mut CellBuilder, _: Self::Args) -> std::result::Result<(), tlb_ton::StringError> {
+    fn store(
+        &self,
+        builder: &mut CellBuilder,
+        _: Self::Args,
+    ) -> std::result::Result<(), tlb_ton::StringError> {
         use tlb_ton::bits::ser::BitWriterExt;
         builder
             .pack_as::<_, NBits<32>>(0x0f8a7ea5u32, ())?
@@ -755,16 +792,18 @@ pub fn build_jetton_transfer_tx(
     let wallet = Wallet::<V4R2>::derive_default(keypair)
         .map_err(|e| GradienceError::Validation(format!("ton wallet derive failed: {}", e)))?;
 
-    let jetton_wallet_addr: MsgAddress = jetton_wallet
-        .parse()
-        .map_err(|e: <MsgAddress as std::str::FromStr>::Err| {
-            GradienceError::Validation(format!("invalid jetton wallet address: {}", e))
-        })?;
-    let recipient_addr: MsgAddress = recipient
-        .parse()
-        .map_err(|e: <MsgAddress as std::str::FromStr>::Err| {
-            GradienceError::Validation(format!("invalid recipient ton address: {}", e))
-        })?;
+    let jetton_wallet_addr: MsgAddress =
+        jetton_wallet
+            .parse()
+            .map_err(|e: <MsgAddress as std::str::FromStr>::Err| {
+                GradienceError::Validation(format!("invalid jetton wallet address: {}", e))
+            })?;
+    let recipient_addr: MsgAddress =
+        recipient
+            .parse()
+            .map_err(|e: <MsgAddress as std::str::FromStr>::Err| {
+                GradienceError::Validation(format!("invalid recipient ton address: {}", e))
+            })?;
 
     let sender_addr: MsgAddress = ton_address_from_seed(seed)
         .map_err(|e| GradienceError::Validation(format!("ton address derive failed: {}", e)))?
@@ -799,9 +838,9 @@ pub fn build_jetton_transfer_tx(
 
     let action = SendMsgAction {
         mode: 3,
-        message: msg
-            .normalize()
-            .map_err(|e| GradienceError::Validation(format!("ton message normalize failed: {}", e)))?,
+        message: msg.normalize().map_err(|e| {
+            GradienceError::Validation(format!("ton message normalize failed: {}", e))
+        })?,
     };
 
     let expire_at = chrono::DateTime::UNIX_EPOCH;
@@ -834,7 +873,8 @@ mod tests {
         let ata = find_associated_token_address(
             "8uAPC2UxiBjKmUksVVwUA6q4RctiXkgSAsovBR39cd1i",
             "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-        ).unwrap();
+        )
+        .unwrap();
         // Length must be a valid base58-encoded 32-byte pubkey.
         let decoded = bs58::decode(&ata).into_vec().unwrap();
         assert_eq!(decoded.len(), 32);
@@ -853,7 +893,9 @@ mod tests {
 
     #[test]
     fn test_jetton_transfer_body_cell_encoding() {
-        let addr: MsgAddress = "EQBGXZ9ddZeWypx8EkJieHJX75ct0bpkmu0Y4YoYr3NM0Z9e".parse().unwrap();
+        let addr: MsgAddress = "EQBGXZ9ddZeWypx8EkJieHJX75ct0bpkmu0Y4YoYr3NM0Z9e"
+            .parse()
+            .unwrap();
         let body = JettonTransferBody {
             query_id: 123,
             amount: BigUint::from(1000000u64),
@@ -879,9 +921,8 @@ mod tests {
         let mut recipient_seed = [1u8; 32];
         recipient_seed[0] = 1;
         let recipient = ton_address_from_seed(&recipient_seed).unwrap();
-        let result = build_jetton_transfer_tx(
-            &seed, jetton_wallet, &recipient, 1000, 50_000_000, 1
-        );
+        let result =
+            build_jetton_transfer_tx(&seed, jetton_wallet, &recipient, 1000, 50_000_000, 1);
         match result {
             Ok(tx_boc) => {
                 assert!(!tx_boc.is_empty());

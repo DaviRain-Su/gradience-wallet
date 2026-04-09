@@ -1,5 +1,5 @@
-use axum::http::{header::AUTHORIZATION, StatusCode};
 use crate::state::{AppState, Session};
+use axum::http::{header::AUTHORIZATION, StatusCode};
 
 pub fn auth_token(headers: &axum::http::HeaderMap) -> Option<String> {
     headers
@@ -36,6 +36,9 @@ pub async fn require_workspace_member(
     let members = gradience_db::queries::list_workspace_members(&state.db, workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let m = members.into_iter().find(|m| m.user_id == user_id).ok_or(StatusCode::FORBIDDEN)?;
+    let m = members
+        .into_iter()
+        .find(|m| m.user_id == user_id)
+        .ok_or(StatusCode::FORBIDDEN)?;
     Ok(m.role)
 }

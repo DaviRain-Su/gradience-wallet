@@ -31,7 +31,7 @@ pub async fn fetch_market_fear_score() -> Result<MarketRiskSnapshot> {
         // Use 24h global market cap change as a proxy for market fear
         let change = fgi.as_f64().unwrap_or(0.0);
         // Map -10% .. +10% to 100 .. 0
-        
+
         ((-change).clamp(-10.0, 10.0) + 10.0) / 20.0 * 100.0
     } else {
         // Fallback: neutral

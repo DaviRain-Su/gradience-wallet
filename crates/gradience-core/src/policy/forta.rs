@@ -44,7 +44,9 @@ pub async fn fetch_forta_threat_score() -> Result<ThreatSnapshot> {
         }
     };
 
-    Ok(ThreatSnapshot { threat_score: score })
+    Ok(ThreatSnapshot {
+        threat_score: score,
+    })
 }
 
 #[cfg(test)]

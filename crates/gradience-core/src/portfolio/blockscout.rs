@@ -36,8 +36,9 @@ pub struct TokenMeta {
 }
 
 pub async fn fetch_token_balances(chain_id: &str, address: &str) -> Result<Vec<TokenBalance>> {
-    let base = blockscout_base_url(chain_id)
-        .ok_or_else(|| GradienceError::Http(format!("blockscout not available for {}", chain_id)))?;
+    let base = blockscout_base_url(chain_id).ok_or_else(|| {
+        GradienceError::Http(format!("blockscout not available for {}", chain_id))
+    })?;
     let url = format!("{}/api/v2/addresses/{}/token-balances", base, address);
 
     let client = reqwest::Client::builder()

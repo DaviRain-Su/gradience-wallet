@@ -70,7 +70,10 @@ impl LiFiClient {
             .map_err(|e| GradienceError::Http(e.to_string()))?;
 
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| GradienceError::Http(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| GradienceError::Http(e.to_string()))?;
         if !status.is_success() {
             return Err(GradienceError::Http(format!(
                 "LI.FI quote error ({}): {}",
@@ -86,12 +89,12 @@ impl LiFiClient {
 
 fn lifi_chain_id(chain_num: u64) -> u64 {
     match chain_num {
-        1 => 1,      // ETH
-        137 => 137,  // Polygon
-        42161 => 42161, // Arbitrum
-        10 => 10,    // Optimism
-        56 => 56,    // BSC
-        8453 => 8453, // Base
+        1 => 1,                  // ETH
+        137 => 137,              // Polygon
+        42161 => 42161,          // Arbitrum
+        10 => 10,                // Optimism
+        56 => 56,                // BSC
+        8453 => 8453,            // Base
         101 => 1151111081099710, // Solana (LI.FI internal id)
         _ => chain_num,
     }

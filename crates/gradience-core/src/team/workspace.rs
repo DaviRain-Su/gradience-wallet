@@ -16,7 +16,10 @@ impl WorkspaceRole {
             "admin" => Ok(WorkspaceRole::Admin),
             "member" => Ok(WorkspaceRole::Member),
             "viewer" => Ok(WorkspaceRole::Viewer),
-            _ => Err(GradienceError::InvalidCredential(format!("invalid role: {}", s))),
+            _ => Err(GradienceError::InvalidCredential(format!(
+                "invalid role: {}",
+                s
+            ))),
         }
     }
 
@@ -66,7 +69,9 @@ impl WorkspaceService {
         owner_id: &str,
     ) -> Result<String> {
         if name.trim().is_empty() {
-            return Err(GradienceError::InvalidCredential("workspace name cannot be empty".into()));
+            return Err(GradienceError::InvalidCredential(
+                "workspace name cannot be empty".into(),
+            ));
         }
         let id = uuid::Uuid::new_v4().to_string();
         gradience_db::queries::create_workspace(db, &id, name, owner_id, "free")
@@ -94,11 +99,7 @@ impl WorkspaceService {
         Ok(())
     }
 
-    pub fn check_role_permission(
-        &self,
-        role: &WorkspaceRole,
-        action: &str,
-    ) -> bool {
+    pub fn check_role_permission(&self, role: &WorkspaceRole, action: &str) -> bool {
         match action {
             "set_policy" | "delete_policy" => role.can_manage_policies(),
             "invite_member" | "remove_member" => role.can_invite_members(),

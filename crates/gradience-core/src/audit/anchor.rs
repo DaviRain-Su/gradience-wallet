@@ -56,8 +56,9 @@ impl AnchorService {
         };
         let contract_address = std::env::var("ANCHOR_CONTRACT_ADDRESS")
             .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000".into());
-        let private_key_hex = std::env::var("ANCHOR_PRIVATE_KEY")
-            .unwrap_or_else(|_| "0x0000000000000000000000000000000000000000000000000000000000000000".into());
+        let private_key_hex = std::env::var("ANCHOR_PRIVATE_KEY").unwrap_or_else(|_| {
+            "0x0000000000000000000000000000000000000000000000000000000000000000".into()
+        });
         let private_key = hex::decode(private_key_hex.trim_start_matches("0x"))?
             .try_into()
             .map_err(|_| anyhow::anyhow!("invalid private key length"))?;
@@ -79,7 +80,9 @@ impl AnchorService {
         wallet_id: &str,
         batch_size: i64,
     ) -> Result<Option<String>> {
-        let mut logs = gradience_db::queries::list_unanchored_audit_logs_for_wallet(db, wallet_id, batch_size).await?;
+        let mut logs =
+            gradience_db::queries::list_unanchored_audit_logs_for_wallet(db, wallet_id, batch_size)
+                .await?;
         if logs.is_empty() {
             return Ok(None);
         }

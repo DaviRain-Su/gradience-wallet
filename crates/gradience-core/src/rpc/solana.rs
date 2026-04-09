@@ -86,7 +86,10 @@ impl SolanaRpcClient {
             .map_err(|e| GradienceError::Http(e.to_string()))?;
 
         if let Some(err) = resp.get("error") {
-            return Err(GradienceError::Http(format!("getAccountInfo error: {}", err)));
+            return Err(GradienceError::Http(format!(
+                "getAccountInfo error: {}",
+                err
+            )));
         }
 
         let result = resp.get("result").and_then(|r| r.get("value"));
@@ -135,7 +138,10 @@ impl SolanaRpcClient {
             .map_err(|e| GradienceError::Http(e.to_string()))?;
 
         if let Some(err) = resp.get("error") {
-            return Err(GradienceError::Http(format!("getTokenAccountsByOwner error: {}", err)));
+            return Err(GradienceError::Http(format!(
+                "getTokenAccountsByOwner error: {}",
+                err
+            )));
         }
 
         let mut accounts = Vec::new();
@@ -177,13 +183,21 @@ impl SolanaRpcClient {
             .map_err(|e| GradienceError::Http(e.to_string()))?;
 
         if let Some(err) = resp.get("error") {
-            return Err(GradienceError::Http(format!("sendTransaction error: {}", err)));
+            return Err(GradienceError::Http(format!(
+                "sendTransaction error: {}",
+                err
+            )));
         }
 
         resp["result"]
             .as_str()
             .map(|s| s.to_string())
-            .ok_or_else(|| GradienceError::Http(format!("missing result in sendTransaction response: {}", resp)))
+            .ok_or_else(|| {
+                GradienceError::Http(format!(
+                    "missing result in sendTransaction response: {}",
+                    resp
+                ))
+            })
     }
 }
 

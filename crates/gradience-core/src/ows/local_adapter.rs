@@ -2,12 +2,12 @@ use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 
 use crate::error::{GradienceError, Result};
-use crate::wallet::manager::{WalletDescriptor, AccountDescriptor};
 use crate::ows::adapter::{
-    OwsAdapter, AdapterKind, Transaction, SignedTransaction, DerivationParams,
-    GradienceApiKey, PolicyAction,
+    AdapterKind, DerivationParams, GradienceApiKey, OwsAdapter, PolicyAction, SignedTransaction,
+    Transaction,
 };
 use crate::ows::vault::VaultHandle;
+use crate::wallet::manager::{AccountDescriptor, WalletDescriptor};
 
 /// Deterministic seed generation used by LocalOwsAdapter for demo chains
 /// that are not yet supported by ows-lib native derivation.
@@ -42,12 +42,11 @@ impl OwsAdapter for LocalOwsAdapter {
         AdapterKind::Local
     }
 
-    async fn init_vault(
-        &self,
-        passphrase: &str,
-    ) -> Result<VaultHandle> {
+    async fn init_vault(&self, passphrase: &str) -> Result<VaultHandle> {
         if passphrase.len() < 12 {
-            return Err(GradienceError::InvalidCredential("passphrase too short".into()));
+            return Err(GradienceError::InvalidCredential(
+                "passphrase too short".into(),
+            ));
         }
         Ok(VaultHandle {
             passphrase: passphrase.to_string(),
@@ -135,11 +134,9 @@ impl OwsAdapter for LocalOwsAdapter {
     ) -> Result<AccountDescriptor> {
         if chain.starts_with("solana:") {
             // Use ows-lib to derive the real Solana address from the wallet mnemonic.
-            let exported = ows_lib::export_wallet(
-                wallet_id,
-                Some(&vault.passphrase),
-                Some(&self.vault_dir),
-            ).map_err(map_ows_err)?;
+            let exported =
+                ows_lib::export_wallet(wallet_id, Some(&vault.passphrase), Some(&self.vault_dir))
+                    .map_err(map_ows_err)?;
 
             // Private-key wallets (JSON) cannot be re-derived via mnemonic path.
             if exported.trim_start().starts_with('{') {
@@ -152,8 +149,7 @@ impl OwsAdapter for LocalOwsAdapter {
                 .split('/')
                 .filter_map(|s| s.trim_end_matches('\'').parse::<u32>().ok())
                 .next_back();
-            let address = ows_lib::derive_address(&exported, chain, index)
-                .map_err(map_ows_err)?;
+            let address = ows_lib::derive_address(&exported, chain, index).map_err(map_ows_err)?;
 
             return Ok(AccountDescriptor {
                 account_id: format!("{}:{}", chain, address),
@@ -232,14 +228,19 @@ impl OwsAdapter for LocalOwsAdapter {
         if chain.starts_with("ton:") {
             let seed = derive_demo_seed(wallet_id, chain, "m/44'/607'/0'/0/0");
             let to = tx.to.as_deref().unwrap_or("");
-            let amount = tx.value.parse::<u64>()
+            let amount = tx
+                .value
+                .parse::<u64>()
                 .map_err(|_| GradienceError::Validation("invalid ton amount".into()))?;
             let seqno = if tx.data.len() >= 4 {
                 u32::from_be_bytes([tx.data[0], tx.data[1], tx.data[2], tx.data[3]])
             } else {
-                return Err(GradienceError::Validation("ton tx data must contain seqno (4 bytes)".into()));
+                return Err(GradienceError::Validation(
+                    "ton tx data must contain seqno (4 bytes)".into(),
+                ));
             };
-            let signed_bytes = crate::ows::signing::build_ton_transfer_tx(&seed, to, amount, seqno)?;
+            let signed_bytes =
+                crate::ows::signing::build_ton_transfer_tx(&seed, to, amount, seqno)?;
             return Ok(SignedTransaction {
                 raw_hex: format!("0x{}", hex::encode(&signed_bytes)),
                 chain_id: chain.into(),
@@ -286,7 +287,10 @@ impl OwsAdapter for LocalOwsAdapter {
         if chain.starts_with("solana:") {
             use crate::rpc::solana::SolanaRpcClient;
             let client = SolanaRpcClient::new(rpc_url);
-            let raw_hex = signed_tx.raw_hex.strip_prefix("0x").unwrap_or(&signed_tx.raw_hex);
+            let raw_hex = signed_tx
+                .raw_hex
+                .strip_prefix("0x")
+                .unwrap_or(&signed_tx.raw_hex);
             let signed_bytes = hex::decode(raw_hex)
                 .map_err(|e| GradienceError::Validation(format!("invalid hex signed tx: {}", e)))?;
             let sig = client.send_transaction(&signed_bytes).await?;
@@ -296,7 +300,10 @@ impl OwsAdapter for LocalOwsAdapter {
         if chain.starts_with("ton:") {
             use crate::rpc::ton::TonRpcClient;
             let client = TonRpcClient::new_with_url(rpc_url);
-            let raw_hex = signed_tx.raw_hex.strip_prefix("0x").unwrap_or(&signed_tx.raw_hex);
+            let raw_hex = signed_tx
+                .raw_hex
+                .strip_prefix("0x")
+                .unwrap_or(&signed_tx.raw_hex);
             let signed_bytes = hex::decode(raw_hex)
                 .map_err(|e| GradienceError::Validation(format!("invalid hex signed tx: {}", e)))?;
             client.send_boc(&signed_bytes).await?;
@@ -317,11 +324,7 @@ impl OwsAdapter for LocalOwsAdapter {
         Ok(tx_hash)
     }
 
-    async fn revoke_api_key(
-        &self,
-        _vault: &VaultHandle,
-        api_key_id: &str,
-    ) -> Result<()> {
+    async fn revoke_api_key(&self, _vault: &VaultHandle, api_key_id: &str) -> Result<()> {
         let _ = ows_lib::key_store::delete_api_key(api_key_id, Some(&self.vault_dir))
             .map_err(map_ows_err)?;
         Ok(())

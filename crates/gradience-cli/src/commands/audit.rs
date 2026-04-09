@@ -2,11 +2,13 @@ use crate::context::AppContext;
 use anyhow::Result;
 
 pub async fn list(ctx: &AppContext, wallet_id: String) -> Result<()> {
-    let logs = gradience_db::queries::list_audit_logs_by_wallet(&ctx.db, &wallet_id, 50)
-        .await?;
+    let logs = gradience_db::queries::list_audit_logs_by_wallet(&ctx.db, &wallet_id, 50).await?;
     println!("Audit logs for wallet {}:", wallet_id);
     for log in logs {
-        println!("  [{}] {} -> {} (hash: {})", log.created_at, log.action, log.decision, log.current_hash);
+        println!(
+            "  [{}] {} -> {} (hash: {})",
+            log.created_at, log.action, log.decision, log.current_hash
+        );
     }
     Ok(())
 }
@@ -17,9 +19,14 @@ pub async fn verify(ctx: &AppContext, wallet_id: String) -> Result<()> {
     Ok(())
 }
 
-pub async fn export(ctx: &AppContext, wallet_id: String, format: &str, output: String) -> Result<()> {
-    let logs = gradience_db::queries::list_audit_logs_by_wallet(&ctx.db, &wallet_id, i64::MAX)
-        .await?;
+pub async fn export(
+    ctx: &AppContext,
+    wallet_id: String,
+    format: &str,
+    output: String,
+) -> Result<()> {
+    let logs =
+        gradience_db::queries::list_audit_logs_by_wallet(&ctx.db, &wallet_id, i64::MAX).await?;
     let count = logs.len();
 
     if format == "csv" {
@@ -37,14 +44,19 @@ pub async fn export(ctx: &AppContext, wallet_id: String, format: &str, output: S
         }
         std::fs::write(&output, csv)?;
     } else {
-        let json: Vec<_> = logs.into_iter().map(|l| serde_json::json!({
-            "id": l.id,
-            "wallet_id": l.wallet_id,
-            "action": l.action,
-            "decision": l.decision,
-            "tx_hash": l.tx_hash,
-            "created_at": l.created_at.to_rfc3339(),
-        })).collect();
+        let json: Vec<_> = logs
+            .into_iter()
+            .map(|l| {
+                serde_json::json!({
+                    "id": l.id,
+                    "wallet_id": l.wallet_id,
+                    "action": l.action,
+                    "decision": l.decision,
+                    "tx_hash": l.tx_hash,
+                    "created_at": l.created_at.to_rfc3339(),
+                })
+            })
+            .collect();
         std::fs::write(&output, serde_json::to_string_pretty(&json)?)?;
     }
 

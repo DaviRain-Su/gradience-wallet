@@ -64,9 +64,15 @@ impl ConfluxCoreRpcClient {
             .send()
             .await
             .map_err(|e| GradienceError::Http(format!("conflux core rpc post failed: {}", e)))?;
-        let json: serde_json::Value = resp.json().await.map_err(|e: reqwest::Error| GradienceError::Http(e.to_string()))?;
+        let json: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e: reqwest::Error| GradienceError::Http(e.to_string()))?;
         if let Some(err) = json.get("error") {
-            return Err(GradienceError::Http(format!("conflux core rpc error: {}", err)));
+            return Err(GradienceError::Http(format!(
+                "conflux core rpc error: {}",
+                err
+            )));
         }
         let result = json["result"].as_str().unwrap_or("0x0");
         let drip = u128::from_str_radix(result.trim_start_matches("0x"), 16)
@@ -82,17 +88,27 @@ impl ConfluxCoreRpcClient {
             .arg(network_id.to_string())
             .output()
             .map_err(|e| {
-                GradienceError::Blockchain(format!("failed to run conflux-core derive bridge: {}", e))
+                GradienceError::Blockchain(format!(
+                    "failed to run conflux-core derive bridge: {}",
+                    e
+                ))
             })?;
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let parsed: DeriveOutput = serde_json::from_str(&stdout)
-            .map_err(|e| GradienceError::Blockchain(format!("conflux-core derive bridge invalid json: {} (stdout: {})", e, stdout)))?;
+        let parsed: DeriveOutput = serde_json::from_str(&stdout).map_err(|e| {
+            GradienceError::Blockchain(format!(
+                "conflux-core derive bridge invalid json: {} (stdout: {})",
+                e, stdout
+            ))
+        })?;
         if !parsed.success {
-            return Err(GradienceError::Blockchain(
-                format!("conflux-core derive bridge failed: {}", parsed.error.unwrap_or_default())
-            ));
+            return Err(GradienceError::Blockchain(format!(
+                "conflux-core derive bridge failed: {}",
+                parsed.error.unwrap_or_default()
+            )));
         }
-        parsed.address.ok_or_else(|| GradienceError::Blockchain("conflux-core derive bridge missing address".into()))
+        parsed.address.ok_or_else(|| {
+            GradienceError::Blockchain("conflux-core derive bridge missing address".into())
+        })
     }
 
     pub fn sign_and_send(
@@ -104,27 +120,37 @@ impl ConfluxCoreRpcClient {
     ) -> Result<String> {
         let output = Command::new("node")
             .arg(sign_script())
-            .arg("--rpc").arg(&self.rpc_url)
-            .arg("--privateKey").arg(private_key)
-            .arg("--to").arg(to)
-            .arg("--value").arg(value_hex)
-            .arg("--networkId").arg(network_id.to_string())
+            .arg("--rpc")
+            .arg(&self.rpc_url)
+            .arg("--privateKey")
+            .arg(private_key)
+            .arg("--to")
+            .arg(to)
+            .arg("--value")
+            .arg(value_hex)
+            .arg("--networkId")
+            .arg(network_id.to_string())
             .output()
             .map_err(|e| {
                 GradienceError::Blockchain(format!("failed to run conflux-core sign bridge: {}", e))
             })?;
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
-        let parsed: SignOutput = serde_json::from_str(&stdout)
-            .map_err(|e| GradienceError::Blockchain(format!(
-                "conflux-core sign bridge invalid json: {} (stdout: {} stderr: {})", e, stdout, stderr
-            )))?;
+        let parsed: SignOutput = serde_json::from_str(&stdout).map_err(|e| {
+            GradienceError::Blockchain(format!(
+                "conflux-core sign bridge invalid json: {} (stdout: {} stderr: {})",
+                e, stdout, stderr
+            ))
+        })?;
         if !parsed.success {
-            return Err(GradienceError::Blockchain(
-                format!("conflux-core sign bridge failed: {}", parsed.error.unwrap_or_default())
-            ));
+            return Err(GradienceError::Blockchain(format!(
+                "conflux-core sign bridge failed: {}",
+                parsed.error.unwrap_or_default()
+            )));
         }
-        parsed.tx_hash.ok_or_else(|| GradienceError::Blockchain("conflux-core sign bridge missing tx_hash".into()))
+        parsed.tx_hash.ok_or_else(|| {
+            GradienceError::Blockchain("conflux-core sign bridge missing tx_hash".into())
+        })
     }
 }
 

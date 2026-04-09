@@ -1,6 +1,8 @@
+use crate::payment::mpp::{
+    BatchTransferPayload, MppPaymentRequest, MppRecipient, MppService, MULTICALL3_ADDRESS,
+};
 use crate::payment::protocol::PaymentProtocol;
-use crate::payment::router::{PaymentRouter, PaymentRoutePreference, PaymentRequirement};
-use crate::payment::mpp::{MppService, MppPaymentRequest, MppRecipient, BatchTransferPayload, MULTICALL3_ADDRESS};
+use crate::payment::router::{PaymentRequirement, PaymentRoutePreference, PaymentRouter};
 
 #[test]
 fn test_payment_protocol_from_str() {
@@ -12,13 +14,11 @@ fn test_payment_protocol_from_str() {
 
 #[tokio::test]
 async fn test_payment_router_selects_first_route() {
-    let router = PaymentRouter::new(vec![
-        PaymentRoutePreference {
-            chain_id: "8453".into(),
-            token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
-            priority: 1,
-        },
-    ]);
+    let router = PaymentRouter::new(vec![PaymentRoutePreference {
+        chain_id: "8453".into(),
+        token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
+        priority: 1,
+    }]);
     let req = PaymentRequirement {
         amount: "1000000".into(),
         token_hint: Some("USDC".into()),

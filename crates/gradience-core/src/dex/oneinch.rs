@@ -33,10 +33,7 @@ impl OneInchClient {
         from_addr: &str,
         slippage: f64,
     ) -> Result<InchSwapTx> {
-        let url = format!(
-            "https://api.1inch.dev/swap/v5.2/{}/swap",
-            chain_id
-        );
+        let url = format!("https://api.1inch.dev/swap/v5.2/{}/swap", chain_id);
         let resp = self
             .http
             .get(&url)
@@ -84,19 +81,12 @@ impl OneInchClient {
         to_token: &str,
         amount: &str,
     ) -> Result<InchQuote> {
-        let url = format!(
-            "https://api.1inch.dev/swap/v5.2/{}/quote",
-            chain_id
-        );
+        let url = format!("https://api.1inch.dev/swap/v5.2/{}/quote", chain_id);
         let resp = self
             .http
             .get(&url)
             .header("Authorization", format!("Bearer {}", self.api_key))
-            .query(&[
-                ("src", from_token),
-                ("dst", to_token),
-                ("amount", amount),
-            ])
+            .query(&[("src", from_token), ("dst", to_token), ("amount", amount)])
             .send()
             .await
             .map_err(|e| GradienceError::Http(format!("1inch quote failed: {}", e)))?;
@@ -112,9 +102,15 @@ impl OneInchClient {
             .map_err(|e| GradienceError::Http(format!("1inch invalid json: {}", e)))?;
 
         let to_amount = json["toAmount"].as_str().unwrap_or("0").to_string();
-        let price_impact = json["estimatedGas"].as_u64().map(|g| format!("{} gas", g)).unwrap_or_else(|| "0.30%".into());
+        let price_impact = json["estimatedGas"]
+            .as_u64()
+            .map(|g| format!("{} gas", g))
+            .unwrap_or_else(|| "0.30%".into());
 
-        Ok(InchQuote { to_amount, price_impact })
+        Ok(InchQuote {
+            to_amount,
+            price_impact,
+        })
     }
 }
 

@@ -95,15 +95,17 @@ impl DexService {
             for fee in [500u32, 3000, 10000] {
                 match super::uniswap::encode_quote_exact_input_single(from, to, fee, amount_u, 0) {
                     Ok(data) => {
-                        match client.eth_call(&quoter, &format!("0x{}", hex::encode(&data))).await {
+                        match client
+                            .eth_call(&quoter, &format!("0x{}", hex::encode(&data)))
+                            .await
+                        {
                             Ok(resp) => {
                                 let hex = resp.trim_start_matches("0x");
                                 if hex.len() >= 64 {
                                     let out = u128::from_str_radix(&hex[0..64], 16).unwrap_or(0);
-                                    if out > 0
-                                        && best_out.map(|b| out > b).unwrap_or(true) {
-                                            best_out = Some(out);
-                                        }
+                                    if out > 0 && best_out.map(|b| out > b).unwrap_or(true) {
+                                        best_out = Some(out);
+                                    }
                                 } else if hex.is_empty() || hex.starts_with("08c379a0") {
                                     tracing::warn!("Uniswap quoter reverted for fee={}", fee);
                                 }
@@ -128,7 +130,9 @@ impl DexService {
                     provider: "uniswap-v3-quoter".into(),
                 });
             }
-            tracing::warn!("Uniswap quoter returned no valid quote for any fee tier, using estimate");
+            tracing::warn!(
+                "Uniswap quoter returned no valid quote for any fee tier, using estimate"
+            );
         }
 
         // 4) Heuristic estimate
@@ -164,7 +168,9 @@ impl DexService {
             let input_mint = super::jupiter::resolve_solana_mint(from_token);
             let output_mint = super::jupiter::resolve_solana_mint(to_token);
             let jup_amount = super::jupiter::normalize_solana_amount(from_token, amount);
-            let (_quote, quote_json) = jup.quote(&input_mint, &output_mint, &jup_amount, slippage_bps).await?;
+            let (_quote, quote_json) = jup
+                .quote(&input_mint, &output_mint, &jup_amount, slippage_bps)
+                .await?;
             let swap = jup.swap(&quote_json, from_addr).await?;
             use base64::Engine;
             let tx_bytes = base64::engine::general_purpose::STANDARD
@@ -182,9 +188,18 @@ impl DexService {
         let lifi_from = super::lifi::resolve_token_address(chain_num, from_token);
         let lifi_to = super::lifi::resolve_token_address(chain_num, to_token);
         let lifi_client = super::lifi::LiFiClient::new();
-        match lifi_client.quote(
-            chain_num, chain_num, &lifi_from, &lifi_to, amount, from_addr, slippage_pct
-        ).await {
+        match lifi_client
+            .quote(
+                chain_num,
+                chain_num,
+                &lifi_from,
+                &lifi_to,
+                amount,
+                from_addr,
+                slippage_pct,
+            )
+            .await
+        {
             Ok(lq) => {
                 if let Some(tx_req) = lq.transaction_request {
                     return Ok(Transaction {
@@ -200,7 +215,14 @@ impl DexService {
                 let min_out = to_amount.saturating_mul((10000u128 - slippage_bps as u128) / 10000);
                 let min_out_hex = format!("0x{:x}", min_out);
                 let uni = super::uniswap::encode_exact_input_single(
-                    from_token, to_token, 3000, from_addr, &amount_hex, &min_out_hex, "0x0", chain_num,
+                    from_token,
+                    to_token,
+                    3000,
+                    from_addr,
+                    &amount_hex,
+                    &min_out_hex,
+                    "0x0",
+                    chain_num,
                 )?;
                 return Ok(Transaction {
                     to: Some(uni.to),
@@ -217,7 +239,17 @@ impl DexService {
         // 3) 1inch if API key is present
         if let Ok(key) = std::env::var("ONEINCH_API_KEY") {
             let client = super::oneinch::OneInchClient::new(key);
-            if let Ok(inch_tx) = client.swap(chain_num, from_token, to_token, amount, from_addr, slippage_pct).await {
+            if let Ok(inch_tx) = client
+                .swap(
+                    chain_num,
+                    from_token,
+                    to_token,
+                    amount,
+                    from_addr,
+                    slippage_pct,
+                )
+                .await
+            {
                 return Ok(Transaction {
                     to: Some(inch_tx.to),
                     value: inch_tx.value,
@@ -229,12 +261,21 @@ impl DexService {
 
         // 4) Uniswap V3 exactInputSingle fallback
         let amount_hex = format!("0x{:x}", amount.parse::<u128>().unwrap_or(0));
-        let quote = self.get_quote("", from_token, to_token, amount, chain_num).await?;
+        let quote = self
+            .get_quote("", from_token, to_token, amount, chain_num)
+            .await?;
         let to_amount = quote.to_amount.parse::<u128>().unwrap_or(0);
         let min_out = to_amount.saturating_mul((10000u128 - slippage_bps as u128) / 10000);
         let min_out_hex = format!("0x{:x}", min_out);
         let uni = super::uniswap::encode_exact_input_single(
-            from_token, to_token, 3000, from_addr, &amount_hex, &min_out_hex, "0x0", chain_num,
+            from_token,
+            to_token,
+            3000,
+            from_addr,
+            &amount_hex,
+            &min_out_hex,
+            "0x0",
+            chain_num,
         )?;
 
         Ok(Transaction {

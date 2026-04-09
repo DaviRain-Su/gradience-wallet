@@ -5,19 +5,15 @@ use sqlx::{Pool, Row, Sqlite};
 
 // ========== Users ==========
 pub async fn create_user(pool: &Pool<Sqlite>, id: &str, email: &str) -> Result<()> {
-    sqlx::query!(
-        "INSERT INTO users (id, email) VALUES (?, ?)",
-        id,
-        email
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query!("INSERT INTO users (id, email) VALUES (?, ?)", id, email)
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
 pub async fn get_user_by_email(pool: &Pool<Sqlite>, email: &str) -> Result<Option<User>> {
     let user = sqlx::query_as::<_, User>(
-        "SELECT id, email, created_at, updated_at, status FROM users WHERE email = ?"
+        "SELECT id, email, created_at, updated_at, status FROM users WHERE email = ?",
     )
     .bind(email)
     .fetch_optional(pool)
@@ -45,7 +41,10 @@ pub async fn create_workspace(
     Ok(())
 }
 
-pub async fn list_workspaces_by_owner(pool: &Pool<Sqlite>, owner_id: &str) -> Result<Vec<Workspace>> {
+pub async fn list_workspaces_by_owner(
+    pool: &Pool<Sqlite>,
+    owner_id: &str,
+) -> Result<Vec<Workspace>> {
     let rows = sqlx::query_as::<_, Workspace>(
         "SELECT id, name, owner_id, plan, created_at FROM workspaces WHERE owner_id = ? ORDER BY created_at DESC"
     )
@@ -126,9 +125,13 @@ pub async fn get_wallet_by_id(pool: &Pool<Sqlite>, id: &str) -> Result<Option<Wa
 }
 
 pub async fn update_wallet_status(pool: &Pool<Sqlite>, id: &str, status: &str) -> Result<()> {
-    sqlx::query!("UPDATE wallets SET status = ?, updated_at = datetime('now') WHERE id = ?", status, id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "UPDATE wallets SET status = ?, updated_at = datetime('now') WHERE id = ?",
+        status,
+        id
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -154,7 +157,10 @@ pub async fn create_wallet_address(
     Ok(())
 }
 
-pub async fn list_wallet_addresses(pool: &Pool<Sqlite>, wallet_id: &str) -> Result<Vec<WalletAddress>> {
+pub async fn list_wallet_addresses(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+) -> Result<Vec<WalletAddress>> {
     let addresses = sqlx::query_as::<_, WalletAddress>(
         "SELECT id, wallet_id, chain_id, address, derivation_path FROM wallet_addresses WHERE wallet_id = ?"
     )
@@ -267,7 +273,10 @@ pub async fn create_policy(
     Ok(())
 }
 
-pub async fn list_active_policies_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str) -> Result<Vec<Policy>> {
+pub async fn list_active_policies_by_wallet(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+) -> Result<Vec<Policy>> {
     let policies = sqlx::query_as::<_, Policy>(
         "SELECT id, name, wallet_id, workspace_id, rules_json, priority, status, version, created_at, updated_at FROM policies WHERE wallet_id = ? AND status = 'active' ORDER BY priority DESC"
     )
@@ -277,7 +286,10 @@ pub async fn list_active_policies_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str
     Ok(policies)
 }
 
-pub async fn list_active_policies_by_workspace(pool: &Pool<Sqlite>, workspace_id: &str) -> Result<Vec<Policy>> {
+pub async fn list_active_policies_by_workspace(
+    pool: &Pool<Sqlite>,
+    workspace_id: &str,
+) -> Result<Vec<Policy>> {
     let policies = sqlx::query_as::<_, Policy>(
         "SELECT id, name, wallet_id, workspace_id, rules_json, priority, status, version, created_at, updated_at FROM policies WHERE workspace_id = ? AND status = 'active' ORDER BY priority DESC"
     )
@@ -313,7 +325,11 @@ pub async fn insert_audit_log(
     Ok(row.id)
 }
 
-pub async fn list_audit_logs_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str, limit: i64) -> Result<Vec<AuditLog>> {
+pub async fn list_audit_logs_by_wallet(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+    limit: i64,
+) -> Result<Vec<AuditLog>> {
     let logs = sqlx::query_as::<_, AuditLog>(
         "SELECT id, wallet_id, api_key_id, action, context_json, intent_json, decision, decision_reason, dynamic_factors, tx_hash, anchor_tx_hash, anchor_root, anchor_leaf_index, prev_hash, current_hash, created_at FROM audit_logs WHERE wallet_id = ? ORDER BY created_at DESC LIMIT ?"
     )
@@ -438,7 +454,11 @@ pub async fn get_shared_budget_spending(
 }
 
 // ========== AI Balances ==========
-pub async fn get_ai_balance(pool: &Pool<Sqlite>, wallet_id: &str, token: &str) -> Result<Option<AiBalance>> {
+pub async fn get_ai_balance(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+    token: &str,
+) -> Result<Option<AiBalance>> {
     let bal = sqlx::query_as::<_, AiBalance>(
         "SELECT wallet_id, token, balance_raw, updated_at FROM ai_balances WHERE wallet_id = ? AND token = ?"
     )
@@ -449,7 +469,12 @@ pub async fn get_ai_balance(pool: &Pool<Sqlite>, wallet_id: &str, token: &str) -
     Ok(bal)
 }
 
-pub async fn upsert_ai_balance(pool: &Pool<Sqlite>, wallet_id: &str, token: &str, balance_raw: &str) -> Result<()> {
+pub async fn upsert_ai_balance(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+    token: &str,
+    balance_raw: &str,
+) -> Result<()> {
     sqlx::query(
         "INSERT INTO ai_balances (wallet_id, token, balance_raw, updated_at) VALUES (?, ?, ?, datetime('now')) ON CONFLICT(wallet_id, token) DO UPDATE SET balance_raw = excluded.balance_raw, updated_at = excluded.updated_at"
     )
@@ -494,7 +519,11 @@ pub async fn insert_llm_call_log(
 }
 
 // ========== Model Pricing ==========
-pub async fn get_model_pricing(pool: &Pool<Sqlite>, provider: &str, model: &str) -> Result<Option<ModelPricing>> {
+pub async fn get_model_pricing(
+    pool: &Pool<Sqlite>,
+    provider: &str,
+    model: &str,
+) -> Result<Option<ModelPricing>> {
     let pricing = sqlx::query_as::<_, ModelPricing>(
         "SELECT id, provider, model, input_per_m, output_per_m, cache_per_m, currency, effective_from, effective_to FROM model_pricing WHERE provider = ? AND model = ? AND (effective_to IS NULL OR effective_to > datetime('now')) ORDER BY effective_from DESC LIMIT 1"
     )
@@ -561,7 +590,10 @@ pub async fn get_policy_approval(pool: &Pool<Sqlite>, id: &str) -> Result<Option
     Ok(row)
 }
 
-pub async fn list_pending_policy_approvals(pool: &Pool<Sqlite>, wallet_id: &str) -> Result<Vec<PolicyApproval>> {
+pub async fn list_pending_policy_approvals(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+) -> Result<Vec<PolicyApproval>> {
     let rows = sqlx::query_as::<_, PolicyApproval>(
         "SELECT id, policy_id, wallet_id, request_json, status, approved_by, approved_at, expires_at, created_at FROM policy_approvals WHERE wallet_id = ? AND status = 'pending' ORDER BY created_at DESC"
     )
@@ -608,7 +640,11 @@ pub async fn list_unanchored_logs(pool: &Pool<Sqlite>, limit: i64) -> Result<Vec
     Ok(logs)
 }
 
-pub async fn list_unanchored_audit_logs_for_wallet(pool: &Pool<Sqlite>, wallet_id: &str, limit: i64) -> Result<Vec<AuditLog>> {
+pub async fn list_unanchored_audit_logs_for_wallet(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+    limit: i64,
+) -> Result<Vec<AuditLog>> {
     let logs = sqlx::query_as::<_, AuditLog>(
         "SELECT id, wallet_id, api_key_id, action, context_json, intent_json, decision, decision_reason, dynamic_factors, tx_hash, anchor_tx_hash, anchor_root, anchor_leaf_index, prev_hash, current_hash, created_at FROM audit_logs WHERE wallet_id = ? AND anchor_tx_hash IS NULL ORDER BY id LIMIT ?"
     )
@@ -798,9 +834,12 @@ pub async fn list_payment_routes_by_wallet(
 }
 
 pub async fn clear_payment_routes_by_wallet(pool: &Pool<Sqlite>, wallet_id: &str) -> Result<()> {
-    sqlx::query!("DELETE FROM wallet_payment_routes WHERE wallet_id = ?", wallet_id)
-        .execute(pool)
-        .await?;
+    sqlx::query!(
+        "DELETE FROM wallet_payment_routes WHERE wallet_id = ?",
+        wallet_id
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -839,12 +878,11 @@ pub async fn get_email_verification(
     pool: &Pool<Sqlite>,
     email: &str,
 ) -> Result<Option<(String, DateTime<Utc>, i64)>> {
-    let row = sqlx::query(
-        "SELECT code, expires_at, attempts FROM email_verifications WHERE email = ?"
-    )
-    .bind(email)
-    .fetch_optional(pool)
-    .await?;
+    let row =
+        sqlx::query("SELECT code, expires_at, attempts FROM email_verifications WHERE email = ?")
+            .bind(email)
+            .fetch_optional(pool)
+            .await?;
 
     Ok(row.map(|r| {
         (
@@ -855,13 +893,13 @@ pub async fn get_email_verification(
     }))
 }
 
-pub async fn increment_email_verification_attempts(
-    pool: &Pool<Sqlite>,
-    email: &str,
-) -> Result<()> {
-    sqlx::query!("UPDATE email_verifications SET attempts = attempts + 1 WHERE email = ?", email)
-        .execute(pool)
-        .await?;
+pub async fn increment_email_verification_attempts(pool: &Pool<Sqlite>, email: &str) -> Result<()> {
+    sqlx::query!(
+        "UPDATE email_verifications SET attempts = attempts + 1 WHERE email = ?",
+        email
+    )
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -955,12 +993,10 @@ pub async fn get_email_send_limit(
     pool: &Pool<Sqlite>,
     email: &str,
 ) -> Result<Option<(DateTime<Utc>, i64)>> {
-    let row = sqlx::query(
-        "SELECT last_sent, count_1h FROM email_send_limits WHERE email = ?"
-    )
-    .bind(email)
-    .fetch_optional(pool)
-    .await?;
+    let row = sqlx::query("SELECT last_sent, count_1h FROM email_send_limits WHERE email = ?")
+        .bind(email)
+        .fetch_optional(pool)
+        .await?;
 
     Ok(row.map(|r| {
         (
@@ -1005,14 +1041,17 @@ pub async fn list_sessions_by_user(
     .bind(user_id)
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| {
-        (
-            r.get::<String, _>("token"),
-            r.get::<String, _>("username"),
-            r.get::<DateTime<Utc>, _>("created_at"),
-            r.get::<DateTime<Utc>, _>("expires_at"),
-        )
-    }).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            (
+                r.get::<String, _>("token"),
+                r.get::<String, _>("username"),
+                r.get::<DateTime<Utc>, _>("created_at"),
+                r.get::<DateTime<Utc>, _>("expires_at"),
+            )
+        })
+        .collect())
 }
 
 pub async fn delete_session_by_token(pool: &Pool<Sqlite>, token: &str) -> Result<u64> {

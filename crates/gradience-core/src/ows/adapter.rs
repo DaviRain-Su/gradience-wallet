@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use std::path::Path;
 
-use crate::error::GradienceError;
-use crate::wallet::manager::{WalletDescriptor, AccountDescriptor};
 use super::vault::VaultHandle;
+use crate::error::GradienceError;
+use crate::wallet::manager::{AccountDescriptor, WalletDescriptor};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PolicyAction {
@@ -32,12 +32,10 @@ pub struct SignedTransaction {
     pub chain_id: String,
 }
 
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct DerivationParams {
     pub account_index: u32,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct GradienceApiKey {
@@ -54,10 +52,7 @@ pub struct GradienceApiKey {
 pub trait OwsAdapter: Send + Sync {
     fn adapter_kind(&self) -> AdapterKind;
 
-    async fn init_vault(
-        &self,
-        passphrase: &str,
-    ) -> Result<VaultHandle, GradienceError>;
+    async fn init_vault(&self, passphrase: &str) -> Result<VaultHandle, GradienceError>;
 
     async fn register_policy_executable(
         &self,
@@ -91,7 +86,9 @@ pub trait OwsAdapter: Send + Sync {
         _chain: &str,
         _derivation_path: &str,
     ) -> Result<AccountDescriptor, GradienceError> {
-        Err(GradienceError::InvalidConfig("derive_account not supported by this adapter".into()))
+        Err(GradienceError::InvalidConfig(
+            "derive_account not supported by this adapter".into(),
+        ))
     }
 
     async fn sign_transaction(
@@ -109,7 +106,7 @@ pub trait OwsAdapter: Send + Sync {
         signed_tx: &SignedTransaction,
         rpc_url: &str,
     ) -> Result<String, GradienceError>;
-    
+
     async fn revoke_api_key(
         &self,
         vault: &VaultHandle,

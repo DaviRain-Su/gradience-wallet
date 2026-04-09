@@ -6,7 +6,13 @@ pub async fn serve() -> Result<()> {
     Ok(())
 }
 
-pub async fn sign_tx(_ctx: &AppContext, wallet_id: String, chain_id: String, to: String, amount: String) -> Result<()> {
+pub async fn sign_tx(
+    _ctx: &AppContext,
+    wallet_id: String,
+    chain_id: String,
+    to: String,
+    amount: String,
+) -> Result<()> {
     let args = gradience_mcp::args::SignTxArgs {
         wallet_id,
         chain_id,

@@ -1,4 +1,7 @@
-use axum::{routing::{any, delete, get, post}, Router};
+use axum::{
+    routing::{any, delete, get, post},
+    Router,
+};
 use std::sync::Arc;
 use tracing::info;
 
@@ -6,8 +9,8 @@ mod handlers;
 mod middleware;
 mod state;
 
-use state::{AppState, SessionStore};
 use gradience_core::ows::local_adapter::LocalOwsAdapter;
+use state::{AppState, SessionStore};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,12 +34,19 @@ async fn main() -> anyhow::Result<()> {
     });
 
     let app = Router::new()
-        .route("/api/ai/proxy-keys", post(handlers::create_ai_proxy_key).get(handlers::list_ai_proxy_keys))
-        .route("/api/ai/proxy-keys/:key_id", delete(handlers::delete_ai_proxy_key))
+        .route(
+            "/api/ai/proxy-keys",
+            post(handlers::create_ai_proxy_key).get(handlers::list_ai_proxy_keys),
+        )
+        .route(
+            "/api/ai/proxy-keys/:key_id",
+            delete(handlers::delete_ai_proxy_key),
+        )
         .route("/v1/proxy/:provider/*path", any(handlers::ai_proxy_handler))
         .route("/health", get(|| async { "OK" }))
         .layer({
-            let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "https://wallets.gradiences.xyz".to_string());
+            let origin = std::env::var("ORIGIN")
+                .unwrap_or_else(|_| "https://wallets.gradiences.xyz".to_string());
             let allowed_headers = vec![
                 axum::http::header::CONTENT_TYPE,
                 axum::http::header::AUTHORIZATION,
@@ -49,7 +59,9 @@ async fn main() -> anyhow::Result<()> {
                     .allow_headers(allowed_headers)
             } else {
                 let origins: Vec<axum::http::HeaderValue> = vec![
-                    origin.parse().unwrap_or_else(|_| "https://wallets.gradiences.xyz".parse().unwrap()),
+                    origin
+                        .parse()
+                        .unwrap_or_else(|_| "https://wallets.gradiences.xyz".parse().unwrap()),
                     "http://localhost:3000".parse().unwrap(),
                 ];
                 tower_http::cors::CorsLayer::new()

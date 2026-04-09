@@ -12,7 +12,9 @@ fn token_path(ctx: &AppContext) -> std::path::PathBuf {
 }
 
 fn read_token(ctx: &AppContext) -> Option<String> {
-    std::fs::read_to_string(token_path(ctx)).ok().map(|s| s.trim().to_string())
+    std::fs::read_to_string(token_path(ctx))
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 fn write_token(ctx: &AppContext, token: &str) -> Result<()> {
@@ -59,7 +61,9 @@ pub async fn login(ctx: &AppContext) -> Result<()> {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = std::process::Command::new("cmd").args(["/C", "start", url]).spawn();
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "start", url])
+            .spawn();
     }
 
     println!("\nWaiting for authorization (user code: {})...", user_code);

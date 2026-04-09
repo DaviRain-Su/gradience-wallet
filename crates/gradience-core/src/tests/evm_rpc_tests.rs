@@ -1,5 +1,5 @@
-use crate::rpc::evm::EvmRpcClient;
 use crate::error::GradienceError;
+use crate::rpc::evm::EvmRpcClient;
 
 #[tokio::test]
 async fn test_evm_get_balance_success() {

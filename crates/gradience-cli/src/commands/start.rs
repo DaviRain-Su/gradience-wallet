@@ -86,7 +86,10 @@ pub async fn run() -> anyhow::Result<()> {
 }
 
 async fn check_ready() -> bool {
-    let web_ok = reqwest::get("http://localhost:3000").await.map(|r| r.status().is_success()).unwrap_or(false);
+    let web_ok = reqwest::get("http://localhost:3000")
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
     let api_ok = reqwest::get("http://localhost:8080/health")
         .await
         .map(|r| r.status().is_success())

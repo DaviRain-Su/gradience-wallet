@@ -13,7 +13,11 @@ pub struct AppContext {
 
 impl AppContext {
     pub async fn new(db_path: &str, data_dir: PathBuf, vault_dir: PathBuf) -> anyhow::Result<Self> {
-        let db_file = db_path.trim_start_matches("sqlite:").split('?').next().unwrap_or(db_path);
+        let db_file = db_path
+            .trim_start_matches("sqlite:")
+            .split('?')
+            .next()
+            .unwrap_or(db_path);
         if let Some(parent) = PathBuf::from(db_file).parent() {
             fs::create_dir_all(parent)?;
         }
@@ -26,7 +30,12 @@ impl AppContext {
         let migrator = sqlx::migrate::Migrator::new(migrations_path).await?;
         migrator.run(&db).await?;
         let ows = Arc::new(LocalOwsAdapter::new(vault_dir.clone()));
-        Ok(Self { db, ows, vault_dir, data_dir })
+        Ok(Self {
+            db,
+            ows,
+            vault_dir,
+            data_dir,
+        })
     }
 
     pub fn session_path(&self) -> PathBuf {

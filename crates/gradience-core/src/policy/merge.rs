@@ -22,85 +22,125 @@ pub struct TimeWindowRule {
     pub timezone: String,
 }
 
-pub fn merge_policies_strictest(
-    workspace: Option<&Policy>,
-    agents: Vec<&Policy>,
-) -> MergedPolicy {
+pub fn merge_policies_strictest(workspace: Option<&Policy>, agents: Vec<&Policy>) -> MergedPolicy {
     let mut merged = MergedPolicy::default();
     let all: Vec<&Policy> = workspace.into_iter().chain(agents).collect();
 
     // spend_limit: min
-    let limits: Vec<String> = all.iter()
+    let limits: Vec<String> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::SpendLimit { max, .. } => Some(max.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::SpendLimit { max, .. } => Some(max.clone()),
+            _ => None,
+        })
         .collect();
     merged.spend_limit = min_str(limits);
 
     // daily_limit: min
-    let daily: Vec<String> = all.iter()
+    let daily: Vec<String> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::DailyLimit { max, .. } => Some(max.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::DailyLimit { max, .. } => Some(max.clone()),
+            _ => None,
+        })
         .collect();
     merged.daily_limit = min_str(daily);
 
     // chain_whitelist: intersection
-    let chain_lists: Vec<Vec<String>> = all.iter()
+    let chain_lists: Vec<Vec<String>> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::ChainWhitelist { chain_ids } => Some(chain_ids.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::ChainWhitelist { chain_ids } => Some(chain_ids.clone()),
+            _ => None,
+        })
         .collect();
     merged.chain_whitelist = intersect_vec(chain_lists);
 
     // model_whitelist: intersection
-    let model_lists: Vec<Vec<String>> = all.iter()
+    let model_lists: Vec<Vec<String>> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::ModelWhitelist { models } => Some(models.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::ModelWhitelist { models } => Some(models.clone()),
+            _ => None,
+        })
         .collect();
     merged.model_whitelist = intersect_vec(model_lists);
 
     // monthly_limit: min
-    let monthly: Vec<String> = all.iter()
+    let monthly: Vec<String> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::MonthlyLimit { max, .. } => Some(max.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::MonthlyLimit { max, .. } => Some(max.clone()),
+            _ => None,
+        })
         .collect();
     merged.monthly_limit = min_str(monthly);
 
     // shared_budget: min
-    let shared: Vec<String> = all.iter()
+    let shared: Vec<String> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::SharedBudget { max, .. } => Some(max.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::SharedBudget { max, .. } => Some(max.clone()),
+            _ => None,
+        })
         .collect();
     merged.shared_budget = min_str(shared);
 
     // contract_whitelist: intersection
-    let contract_lists: Vec<Vec<String>> = all.iter()
+    let contract_lists: Vec<Vec<String>> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::ContractWhitelist { contracts } => Some(contracts.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::ContractWhitelist { contracts } => Some(contracts.clone()),
+            _ => None,
+        })
         .collect();
     merged.contract_whitelist = intersect_vec(contract_lists);
 
     // operation_type: intersection
-    let op_lists: Vec<Vec<String>> = all.iter()
+    let op_lists: Vec<Vec<String>> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::OperationType { allowed } => Some(allowed.clone()), _ => None })
+        .filter_map(|r| match r {
+            Rule::OperationType { allowed } => Some(allowed.clone()),
+            _ => None,
+        })
         .collect();
     merged.operation_type = intersect_vec(op_lists);
 
     // time_window: narrowest
-    let windows: Vec<TimeWindowRule> = all.iter()
+    let windows: Vec<TimeWindowRule> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
         .filter_map(|r| match r {
-            Rule::TimeWindow { start_hour, end_hour, timezone } => {
-                Some(TimeWindowRule { start_hour: *start_hour, end_hour: *end_hour, timezone: timezone.clone() })
-            }
-            _ => None
+            Rule::TimeWindow {
+                start_hour,
+                end_hour,
+                timezone,
+            } => Some(TimeWindowRule {
+                start_hour: *start_hour,
+                end_hour: *end_hour,
+                timezone: timezone.clone(),
+            }),
+            _ => None,
         })
         .collect();
     merged.time_window = narrowest_window(windows);
 
     // max_tokens: min
-    let tokens: Vec<u64> = all.iter()
+    let tokens: Vec<u64> = all
+        .iter()
         .flat_map(|p| p.rules.iter())
-        .filter_map(|r| match r { Rule::MaxTokensPerCall { limit } => Some(*limit), _ => None })
+        .filter_map(|r| match r {
+            Rule::MaxTokensPerCall { limit } => Some(*limit),
+            _ => None,
+        })
         .collect();
     merged.max_tokens = tokens.into_iter().min();
 

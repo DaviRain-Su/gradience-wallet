@@ -1,17 +1,17 @@
 pub mod ai;
+pub mod audit;
 pub mod chain;
 pub mod config;
+pub mod dex;
 pub mod error;
 pub mod identity;
-pub mod wallet;
-pub mod policy;
-pub mod dex;
-pub mod payment;
-pub mod audit;
 pub mod ows;
+pub mod payment;
+pub mod policy;
+pub mod portfolio;
 pub mod rpc;
 pub mod team;
-pub mod portfolio;
+pub mod wallet;
 
 pub use error::{GradienceError, Result};
 
@@ -32,14 +32,17 @@ pub fn eth_to_wei(amount: &str) -> Result<u128> {
         return Err(GradienceError::Validation("too many decimals".into()));
     }
 
-    let int = int_part.parse::<u128>()
+    let int = int_part
+        .parse::<u128>()
         .map_err(|_| GradienceError::Validation("invalid integer part".into()))?;
 
     let frac_padded = format!("{:0<18}", frac_part);
-    let frac = frac_padded.parse::<u128>()
+    let frac = frac_padded
+        .parse::<u128>()
         .map_err(|_| GradienceError::Validation("invalid fractional part".into()))?;
 
-    let wei = int.saturating_mul(1_000_000_000_000_000_000u128)
+    let wei = int
+        .saturating_mul(1_000_000_000_000_000_000u128)
         .saturating_add(frac);
 
     Ok(wei)
@@ -48,16 +51,16 @@ pub fn eth_to_wei(amount: &str) -> Result<u128> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    pub mod wallet_manager_tests;
-    pub mod ows_adapter_tests;
-    pub mod policy_engine_tests;
-    pub mod evm_rpc_tests;
     pub mod audit_logger_tests;
-    pub mod merkle_tests;
-    pub mod team_tests;
-    pub mod payment_tests;
-    pub mod mpp_integration_tests;
     pub mod dex_service_tests;
+    pub mod evm_rpc_tests;
+    pub mod merkle_tests;
+    pub mod mpp_integration_tests;
+    pub mod ows_adapter_tests;
+    pub mod payment_tests;
+    pub mod policy_engine_tests;
+    pub mod team_tests;
+    pub mod wallet_manager_tests;
 
     #[test]
     fn test_eth_to_wei_basic() {
@@ -108,4 +111,3 @@ mod tests {
         assert!(!q.to_amount.is_empty());
     }
 }
-

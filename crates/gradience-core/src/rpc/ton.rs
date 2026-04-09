@@ -66,7 +66,11 @@ impl TonRpcClient {
             GradienceError::Blockchain(format!("ton rpc get_balance read text failed: {}", e))
         })?;
         let body: TonResponse<AddressInfo> = serde_json::from_str(&text).map_err(|e| {
-            GradienceError::Blockchain(format!("ton rpc get_balance decode failed: {} | raw: {}", e, text.chars().take(200).collect::<String>()))
+            GradienceError::Blockchain(format!(
+                "ton rpc get_balance decode failed: {} | raw: {}",
+                e,
+                text.chars().take(200).collect::<String>()
+            ))
         })?;
         if !body.ok {
             return Err(GradienceError::Blockchain(format!(
@@ -74,12 +78,13 @@ impl TonRpcClient {
                 body.error
             )));
         }
-        let info = body.result.ok_or_else(|| {
-            GradienceError::Blockchain("ton rpc get_balance empty result".into())
-        })?;
-        let balance = info.balance.parse::<u128>().map_err(|e| {
-            GradienceError::Blockchain(format!("ton rpc invalid balance: {}", e))
-        })?;
+        let info = body
+            .result
+            .ok_or_else(|| GradienceError::Blockchain("ton rpc get_balance empty result".into()))?;
+        let balance = info
+            .balance
+            .parse::<u128>()
+            .map_err(|e| GradienceError::Blockchain(format!("ton rpc invalid balance: {}", e)))?;
         Ok(balance)
     }
 
@@ -87,14 +92,19 @@ impl TonRpcClient {
         let mut url = reqwest::Url::parse(&format!("{}/getWalletInformation", self.base_url))
             .map_err(|e| GradienceError::Blockchain(format!("ton rpc invalid url: {}", e)))?;
         url.query_pairs_mut().append_pair("address", address);
-        let resp = self.client.get(url).send().await.map_err(|e| {
-            GradienceError::Blockchain(format!("ton rpc get_seqno failed: {}", e))
-        })?;
+        let resp =
+            self.client.get(url).send().await.map_err(|e| {
+                GradienceError::Blockchain(format!("ton rpc get_seqno failed: {}", e))
+            })?;
         let text = resp.text().await.map_err(|e| {
             GradienceError::Blockchain(format!("ton rpc get_seqno read text failed: {}", e))
         })?;
         let body: TonResponse<WalletInfo> = serde_json::from_str(&text).map_err(|e| {
-            GradienceError::Blockchain(format!("ton rpc get_seqno decode failed: {} | raw: {}", e, text.chars().take(200).collect::<String>()))
+            GradienceError::Blockchain(format!(
+                "ton rpc get_seqno decode failed: {} | raw: {}",
+                e,
+                text.chars().take(200).collect::<String>()
+            ))
         })?;
         if !body.ok {
             return Err(GradienceError::Blockchain(format!(
@@ -102,9 +112,9 @@ impl TonRpcClient {
                 body.error
             )));
         }
-        let info = body.result.ok_or_else(|| {
-            GradienceError::Blockchain("ton rpc get_seqno empty result".into())
-        })?;
+        let info = body
+            .result
+            .ok_or_else(|| GradienceError::Blockchain("ton rpc get_seqno empty result".into()))?;
         Ok(info.seqno)
     }
 
@@ -118,9 +128,12 @@ impl TonRpcClient {
             .send()
             .await
             .map_err(|e| GradienceError::Blockchain(format!("ton rpc send_boc failed: {}", e)))?;
-        let body = resp.json::<TonResponse<serde_json::Value>>().await.map_err(|e| {
-            GradienceError::Blockchain(format!("ton rpc send_boc decode failed: {}", e))
-        })?;
+        let body = resp
+            .json::<TonResponse<serde_json::Value>>()
+            .await
+            .map_err(|e| {
+                GradienceError::Blockchain(format!("ton rpc send_boc decode failed: {}", e))
+            })?;
         if !body.ok {
             return Err(GradienceError::Blockchain(format!(
                 "ton rpc send_boc error: {:?}",
@@ -149,7 +162,9 @@ impl TonRpcClient {
             }))
             .send()
             .await
-            .map_err(|e| GradienceError::Blockchain(format!("ton rpc runGetMethod failed: {}", e)))?;
+            .map_err(|e| {
+                GradienceError::Blockchain(format!("ton rpc runGetMethod failed: {}", e))
+            })?;
         let text = resp.text().await.map_err(|e| {
             GradienceError::Blockchain(format!("ton rpc runGetMethod read text failed: {}", e))
         })?;
@@ -185,11 +200,11 @@ impl TonRpcClient {
         owner_address: &str,
     ) -> Result<String> {
         // Encode owner address as tvm.Slice (base64 BoC)
-        let owner: tlb_ton::MsgAddress = owner_address
-            .parse()
-            .map_err(|e: <tlb_ton::MsgAddress as std::str::FromStr>::Err| {
+        let owner: tlb_ton::MsgAddress = owner_address.parse().map_err(
+            |e: <tlb_ton::MsgAddress as std::str::FromStr>::Err| {
                 GradienceError::Blockchain(format!("invalid owner ton address: {}", e))
-            })?;
+            },
+        )?;
         let mut builder = tlb_ton::Cell::builder();
         use tlb_ton::bits::ser::BitWriterExt;
         builder
@@ -203,19 +218,14 @@ impl TonRpcClient {
                 has_crc32c: true,
             })
             .map_err(|e| GradienceError::Blockchain(format!("ton boc serialize failed: {}", e)))?;
-        let owner_boc_b64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            &boc_bytes,
-        );
+        let owner_boc_b64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &boc_bytes);
 
         let result = self
             .run_get_method(
                 jetton_master,
                 "get_wallet_address",
-                vec![serde_json::json!([
-                    "tvm.Slice",
-                    owner_boc_b64
-                ])],
+                vec![serde_json::json!(["tvm.Slice", owner_boc_b64])],
             )
             .await?;
 
@@ -228,16 +238,15 @@ impl TonRpcClient {
                 GradienceError::Blockchain("runGetMethod stack missing slice value".into())
             })?;
 
-        let boc_bytes = base64::Engine::decode(
-            &base64::engine::general_purpose::STANDARD,
-            slice_b64,
-        )
-        .map_err(|e| GradienceError::Blockchain(format!("invalid base64 slice: {}", e)))?;
-        let boc = tlb_ton::BoC::deserialize(&boc_bytes)
-            .map_err(|e| GradienceError::Blockchain(format!("ton boc deserialize failed: {}", e)))?;
-        let cell = boc.into_single_root().ok_or_else(|| {
-            GradienceError::Blockchain("ton boc missing root cell".into())
+        let boc_bytes =
+            base64::Engine::decode(&base64::engine::general_purpose::STANDARD, slice_b64)
+                .map_err(|e| GradienceError::Blockchain(format!("invalid base64 slice: {}", e)))?;
+        let boc = tlb_ton::BoC::deserialize(&boc_bytes).map_err(|e| {
+            GradienceError::Blockchain(format!("ton boc deserialize failed: {}", e))
         })?;
+        let cell = boc
+            .into_single_root()
+            .ok_or_else(|| GradienceError::Blockchain("ton boc missing root cell".into()))?;
         let addr: tlb_ton::MsgAddress = tlb_ton::bits::de::unpack(&cell.data, ())
             .map_err(|e| GradienceError::Blockchain(format!("ton address unpack failed: {}", e)))?;
         Ok(addr.to_base64_url())

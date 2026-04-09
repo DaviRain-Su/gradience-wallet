@@ -22,7 +22,9 @@ pub async fn create_ai_proxy_key(
     Json(body): Json<CreateAiProxyKeyReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &body.wallet_id).await?;
 
     let name = body.name.trim();
@@ -53,15 +55,19 @@ pub async fn create_ai_proxy_key(
         "create_ai_proxy_key",
         &serde_json::json!({"key_id": key_id, "name": name}).to_string(),
         "allowed",
-    ).await;
+    )
+    .await;
 
-    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({
-        "id": key_id,
-        "name": name,
-        "raw_token": raw_token,
-        "permissions": "ai_proxy",
-        "expires_at": (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
-    }))))
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(serde_json::json!({
+            "id": key_id,
+            "name": name,
+            "raw_token": raw_token,
+            "permissions": "ai_proxy",
+            "expires_at": (chrono::Utc::now() + chrono::Duration::hours(24)).to_rfc3339(),
+        })),
+    ))
 }
 
 pub async fn list_ai_proxy_keys(
@@ -70,13 +76,17 @@ pub async fn list_ai_proxy_keys(
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let wallet_id = params.get("wallet_id").cloned().unwrap_or_default();
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
-    let rows = gradience_db::queries::list_api_keys_by_wallet_and_permission(&state.db, &wallet_id, "ai_proxy")
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let rows = gradience_db::queries::list_api_keys_by_wallet_and_permission(
+        &state.db, &wallet_id, "ai_proxy",
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     #[derive(Serialize)]
     struct KeyRow {
@@ -87,13 +97,16 @@ pub async fn list_ai_proxy_keys(
         created_at: String,
     }
 
-    let keys: Vec<_> = rows.into_iter().map(|k| KeyRow {
-        id: k.id,
-        name: k.name,
-        permissions: k.permissions,
-        expires_at: k.expires_at.map(|t| t.to_rfc3339()),
-        created_at: k.created_at.to_rfc3339(),
-    }).collect();
+    let keys: Vec<_> = rows
+        .into_iter()
+        .map(|k| KeyRow {
+            id: k.id,
+            name: k.name,
+            permissions: k.permissions,
+            expires_at: k.expires_at.map(|t| t.to_rfc3339()),
+            created_at: k.created_at.to_rfc3339(),
+        })
+        .collect();
 
     Ok((StatusCode::OK, axum::Json(keys)))
 }
@@ -104,7 +117,9 @@ pub async fn delete_ai_proxy_key(
     Path(key_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let key_row = gradience_db::queries::get_api_key_by_id(&state.db, &key_id)
         .await
@@ -124,7 +139,8 @@ pub async fn delete_ai_proxy_key(
         "delete_ai_proxy_key",
         &serde_json::json!({"key_id": key_id}).to_string(),
         "allowed",
-    ).await;
+    )
+    .await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -199,35 +215,68 @@ pub async fn ai_proxy_handler(
     use gradience_core::payment::mpp_client::EvmChargeConfig;
 
     let evm_path = "m/44'/60'/0'/0/0";
-    let evm_seed = gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "eip155:8453", evm_path);
+    let evm_seed =
+        gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "eip155:8453", evm_path);
     // Register multiple EVM chains for MPP charge
     mpp_provider = mpp_provider
-        .with_evm_chain(EvmChargeConfig::new(8453, "https://mainnet.base.org", evm_seed))
-        .with_evm_chain(EvmChargeConfig::new(56, "https://bsc-dataseed.binance.org", evm_seed))
-        .with_evm_chain(EvmChargeConfig::new(1030, "https://evm.confluxrpc.com", evm_seed))
-        .with_evm_chain(EvmChargeConfig::new(196, "https://rpc.xlayer.tech", evm_seed))
-        .with_evm_chain(EvmChargeConfig::new(42161, "https://arb1.arbitrum.io/rpc", evm_seed))
-        .with_evm_chain(EvmChargeConfig::new(137, "https://polygon-rpc.com", evm_seed))
-        .with_evm_chain(EvmChargeConfig::new(10, "https://mainnet.optimism.io", evm_seed));
+        .with_evm_chain(EvmChargeConfig::new(
+            8453,
+            "https://mainnet.base.org",
+            evm_seed,
+        ))
+        .with_evm_chain(EvmChargeConfig::new(
+            56,
+            "https://bsc-dataseed.binance.org",
+            evm_seed,
+        ))
+        .with_evm_chain(EvmChargeConfig::new(
+            1030,
+            "https://evm.confluxrpc.com",
+            evm_seed,
+        ))
+        .with_evm_chain(EvmChargeConfig::new(
+            196,
+            "https://rpc.xlayer.tech",
+            evm_seed,
+        ))
+        .with_evm_chain(EvmChargeConfig::new(
+            42161,
+            "https://arb1.arbitrum.io/rpc",
+            evm_seed,
+        ))
+        .with_evm_chain(EvmChargeConfig::new(
+            137,
+            "https://polygon-rpc.com",
+            evm_seed,
+        ))
+        .with_evm_chain(EvmChargeConfig::new(
+            10,
+            "https://mainnet.optimism.io",
+            evm_seed,
+        ));
 
     let solana_path = "m/44'/501'/0'/0";
-    let solana_seed = gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "solana:mainnet", solana_path);
-    mpp_provider = mpp_provider.with_solana_secret(solana_seed).with_solana_rpc("https://api.mainnet-beta.solana.com");
+    let solana_seed = gradience_core::ows::local_adapter::derive_demo_seed(
+        &wallet_id,
+        "solana:mainnet",
+        solana_path,
+    );
+    mpp_provider = mpp_provider
+        .with_solana_secret(solana_seed)
+        .with_solana_rpc("https://api.mainnet-beta.solana.com");
 
     // Register TON mainnet
     let ton_path = "m/44'/607'/0'/0";
-    let ton_seed = gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "ton:mainnet", ton_path);
+    let ton_seed =
+        gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "ton:mainnet", ton_path);
     mpp_provider = mpp_provider.with_ton_seed(ton_seed).with_ton_mainnet(true);
 
     let client = MppClient::new(mpp_provider);
 
-    let resp = client
-        .send(req_builder)
-        .await
-        .map_err(|e| {
-            tracing::error!("ai_proxy_handler failed: {}", e);
-            StatusCode::BAD_GATEWAY
-        })?;
+    let resp = client.send(req_builder).await.map_err(|e| {
+        tracing::error!("ai_proxy_handler failed: {}", e);
+        StatusCode::BAD_GATEWAY
+    })?;
 
     // 6. Convert reqwest response to axum response (supports streaming)
     let axum_status = axum::http::StatusCode::from_u16(resp.status().as_u16())
@@ -235,7 +284,11 @@ pub async fn ai_proxy_handler(
     let headers_to_copy: Vec<(String, String)> = resp
         .headers()
         .iter()
-        .filter_map(|(k, v)| v.to_str().ok().map(|v2| (k.as_str().to_string(), v2.to_string())))
+        .filter_map(|(k, v)| {
+            v.to_str()
+                .ok()
+                .map(|v2| (k.as_str().to_string(), v2.to_string()))
+        })
         .collect();
     let mut response = axum::response::Response::builder()
         .status(axum_status)

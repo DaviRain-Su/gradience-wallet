@@ -9,7 +9,9 @@ pub fn resolve_rpc(chain_id: &str) -> &str {
         "eip155:56" | "bsc" | "bnb" | "56" => "https://bsc-dataseed.binance.org",
         "eip155:97" | "bsc-testnet" | "97" => "https://data-seed-prebsc-1-s1.bnbchain.org:8545",
         "eip155:1030" | "conflux:mainnet" | "1030" => "https://evm.confluxrpc.com",
-        "eip155:71" | "conflux" | "cfx" | "conflux:testnet" | "71" => "https://evmtest.confluxrpc.com",
+        "eip155:71" | "conflux" | "cfx" | "conflux:testnet" | "71" => {
+            "https://evmtest.confluxrpc.com"
+        }
         "eip155:42161" | "arbitrum" | "arb" | "42161" => "https://arb1.arbitrum.io/rpc",
         "eip155:421614" | "arbitrum-sepolia" | "421614" => "https://sepolia-rollup.arbitrum.io/rpc",
         "eip155:137" | "polygon" | "matic" | "137" => "https://polygon-rpc.com",
@@ -19,7 +21,9 @@ pub fn resolve_rpc(chain_id: &str) -> &str {
         "solana:101" | "solana" | "sol" => "https://api.mainnet-beta.solana.com",
         "solana:103" => "https://api.devnet.solana.com",
         "cfx:1029" | "conflux-core:mainnet" => "https://main.confluxrpc.com",
-        "cfx:1" | "conflux-core" | "cfx-core" | "conflux-core:testnet" => "https://test.confluxrpc.com",
+        "cfx:1" | "conflux-core" | "cfx-core" | "conflux-core:testnet" => {
+            "https://test.confluxrpc.com"
+        }
         "ton" | "toncoin" | "ton:0" | "ton:-1" => "https://testnet.toncenter.com/api/v2",
         "ton:testnet" => "https://testnet.toncenter.com/api/v2",
         "ton:mainnet" => "https://toncenter.com/api/v2",
@@ -57,15 +61,44 @@ pub fn chain_id_from_name(chain: &str) -> String {
 
 /// Returns true for EVM-compatible chains.
 pub fn is_evm_chain(chain_id: &str) -> bool {
-    chain_id.starts_with("eip155:") || matches!(chain_id,
-        "base" | "base-sepolia" | "eth" | "ethereum" | "xlayer" | "okx" |
-        "bsc" | "bnb" | "bsc-testnet" | "conflux" | "cfx" |
-        "arbitrum" | "arb" | "arbitrum-sepolia" |
-        "polygon" | "matic" | "polygon-amoy" |
-        "optimism" | "op" | "optimism-sepolia" |
-        "1" | "56" | "97" | "71" | "8453" | "84532" | "1030" | "196" |
-        "42161" | "421614" | "137" | "80002" | "10" | "11155420"
-    )
+    chain_id.starts_with("eip155:")
+        || matches!(
+            chain_id,
+            "base"
+                | "base-sepolia"
+                | "eth"
+                | "ethereum"
+                | "xlayer"
+                | "okx"
+                | "bsc"
+                | "bnb"
+                | "bsc-testnet"
+                | "conflux"
+                | "cfx"
+                | "arbitrum"
+                | "arb"
+                | "arbitrum-sepolia"
+                | "polygon"
+                | "matic"
+                | "polygon-amoy"
+                | "optimism"
+                | "op"
+                | "optimism-sepolia"
+                | "1"
+                | "56"
+                | "97"
+                | "71"
+                | "8453"
+                | "84532"
+                | "1030"
+                | "196"
+                | "42161"
+                | "421614"
+                | "137"
+                | "80002"
+                | "10"
+                | "11155420"
+        )
 }
 
 /// Returns true for Solana.

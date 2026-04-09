@@ -1,6 +1,6 @@
 use crate::error::Result;
-use crate::policy::engine::Intent;
 use crate::ows::adapter::Transaction;
+use crate::policy::engine::Intent;
 
 pub struct IntentParser;
 
@@ -92,6 +92,8 @@ impl IntentParser {
 
     /// Quick parse: returns intent type string only.
     pub fn quick_type(&self, tx: &Transaction, chain_id: &str) -> String {
-        self.parse(tx, chain_id).map(|i| i.intent_type).unwrap_or_else(|_| "unknown".into())
+        self.parse(tx, chain_id)
+            .map(|i| i.intent_type)
+            .unwrap_or_else(|_| "unknown".into())
     }
 }

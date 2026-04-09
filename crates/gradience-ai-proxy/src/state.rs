@@ -39,7 +39,10 @@ impl SessionStore {
             username: row.1,
             passphrase: row.2,
         };
-        self.cache.lock().await.insert(token.to_string(), session.clone());
+        self.cache
+            .lock()
+            .await
+            .insert(token.to_string(), session.clone());
         Some(session)
     }
 }

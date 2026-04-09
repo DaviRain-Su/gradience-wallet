@@ -1,16 +1,19 @@
-use axum::{routing::{delete, get, post}, Router};
+use axum::{
+    routing::{delete, get, post},
+    Router,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 use webauthn_rs::prelude::*;
 
-mod state;
-mod middleware;
 mod handlers;
+mod middleware;
+mod state;
 
-use state::{AppState, Session, SessionStore};
 use gradience_core::ows::local_adapter::LocalOwsAdapter;
+use state::{AppState, Session, SessionStore};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -83,55 +86,128 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api/auth/email/send-code", post(handlers::email_send_code))
         .route("/api/auth/email/verify", post(handlers::email_verify_code))
-        .route("/api/auth/passkey/register/start", post(handlers::register_start))
-        .route("/api/auth/passkey/register/finish", post(handlers::register_finish))
+        .route(
+            "/api/auth/passkey/register/start",
+            post(handlers::register_start),
+        )
+        .route(
+            "/api/auth/passkey/register/finish",
+            post(handlers::register_finish),
+        )
         .route("/api/auth/passkey/login/start", post(handlers::login_start))
-        .route("/api/auth/passkey/login/finish", post(handlers::login_finish))
+        .route(
+            "/api/auth/passkey/login/finish",
+            post(handlers::login_finish),
+        )
         .route("/api/auth/unlock", post(handlers::unlock))
         .route("/api/auth/me", get(handlers::auth_me))
         .route("/api/auth/me/sessions", get(handlers::list_sessions))
         .route("/api/auth/sessions", delete(handlers::revoke_session))
         .route("/api/auth/logout", post(handlers::logout))
-        .route("/api/auth/recover/initiate", post(handlers::recover_initiate))
+        .route(
+            "/api/auth/recover/initiate",
+            post(handlers::recover_initiate),
+        )
         .route("/api/auth/recover/verify", post(handlers::recover_verify))
-        .route("/api/auth/recover/register", post(handlers::recover_register))
+        .route(
+            "/api/auth/recover/register",
+            post(handlers::recover_register),
+        )
         .route("/api/auth/device/initiate", post(handlers::device_initiate))
         .route("/api/auth/device/poll", post(handlers::device_poll))
-        .route("/api/auth/device/authorize", post(handlers::device_authorize))
-        .route("/api/auth/oauth/:provider/start", get(handlers::oauth_start))
-        .route("/api/auth/oauth/:provider/callback", get(handlers::oauth_callback))
-        .route("/api/wallets", get(handlers::list_wallets).post(handlers::create_wallet))
+        .route(
+            "/api/auth/device/authorize",
+            post(handlers::device_authorize),
+        )
+        .route(
+            "/api/auth/oauth/:provider/start",
+            get(handlers::oauth_start),
+        )
+        .route(
+            "/api/auth/oauth/:provider/callback",
+            get(handlers::oauth_callback),
+        )
+        .route(
+            "/api/wallets",
+            get(handlers::list_wallets).post(handlers::create_wallet),
+        )
         .route("/api/wallets/:id/balance", get(handlers::wallet_balance))
-        .route("/api/wallets/:id/addresses", get(handlers::wallet_addresses))
-        .route("/api/wallets/:id/portfolio", get(handlers::wallet_portfolio))
+        .route(
+            "/api/wallets/:id/addresses",
+            get(handlers::wallet_addresses),
+        )
+        .route(
+            "/api/wallets/:id/portfolio",
+            get(handlers::wallet_portfolio),
+        )
         .route("/api/wallets/:id/fund", post(handlers::wallet_fund))
         .route("/api/wallets/:id/sign", post(handlers::wallet_sign))
         .route("/api/wallets/:id/swap", post(handlers::wallet_swap))
-        .route("/api/wallets/:id/transactions", get(handlers::wallet_transactions))
+        .route(
+            "/api/wallets/:id/transactions",
+            get(handlers::wallet_transactions),
+        )
         .route("/api/wallets/:id/audit/export", get(handlers::audit_export))
-        .route("/api/wallets/:id/audit/proof", get(handlers::wallet_audit_proof))
+        .route(
+            "/api/wallets/:id/audit/proof",
+            get(handlers::wallet_audit_proof),
+        )
         .route("/api/audit/verify", post(handlers::verify_audit_proof))
         .route("/api/wallets/:id/anchor", post(handlers::wallet_anchor))
-        .route("/api/wallets/:id/api-keys", get(handlers::list_api_keys).post(handlers::create_api_key))
-        .route("/api/wallets/:id/api-keys/:key_id", delete(handlers::revoke_api_key))
-        .route("/api/wallets/:id/policies", get(handlers::list_wallet_policies).post(handlers::create_policy))
-        .route("/api/wallets/:id/payment-routes", get(handlers::list_payment_routes).post(handlers::set_payment_routes))
+        .route(
+            "/api/wallets/:id/api-keys",
+            get(handlers::list_api_keys).post(handlers::create_api_key),
+        )
+        .route(
+            "/api/wallets/:id/api-keys/:key_id",
+            delete(handlers::revoke_api_key),
+        )
+        .route(
+            "/api/wallets/:id/policies",
+            get(handlers::list_wallet_policies).post(handlers::create_policy),
+        )
+        .route(
+            "/api/wallets/:id/payment-routes",
+            get(handlers::list_payment_routes).post(handlers::set_payment_routes),
+        )
         .route("/api/swap/quote", post(handlers::swap_quote))
         .route("/api/payments", get(handlers::list_payments))
         .route("/api/ws", get(handlers::ws_handler))
         .route("/api/mpp/demo", post(handlers::mpp_demo))
-        .route("/api/mcp/sign_transaction", post(handlers::mcp_sign_transaction))
+        .route(
+            "/api/mcp/sign_transaction",
+            post(handlers::mcp_sign_transaction),
+        )
         .route("/api/mcp/get_balance", post(handlers::mcp_get_balance))
-        .route("/api/workspaces", get(handlers::list_workspaces).post(handlers::create_workspace))
-        .route("/api/workspaces/:id/policies", get(handlers::list_workspace_policies).post(handlers::create_workspace_policy))
-        .route("/api/workspaces/:id/members", get(handlers::list_workspace_members).post(handlers::invite_workspace_member))
-        .route("/api/policy-approvals", get(handlers::list_policy_approvals))
-        .route("/api/policy-approvals/:id/approve", post(handlers::approve_policy_approval))
-        .route("/api/policy-approvals/:id/reject", post(handlers::reject_policy_approval))
+        .route(
+            "/api/workspaces",
+            get(handlers::list_workspaces).post(handlers::create_workspace),
+        )
+        .route(
+            "/api/workspaces/:id/policies",
+            get(handlers::list_workspace_policies).post(handlers::create_workspace_policy),
+        )
+        .route(
+            "/api/workspaces/:id/members",
+            get(handlers::list_workspace_members).post(handlers::invite_workspace_member),
+        )
+        .route(
+            "/api/policy-approvals",
+            get(handlers::list_policy_approvals),
+        )
+        .route(
+            "/api/policy-approvals/:id/approve",
+            post(handlers::approve_policy_approval),
+        )
+        .route(
+            "/api/policy-approvals/:id/reject",
+            post(handlers::reject_policy_approval),
+        )
         .route("/api/tg/webhook", post(handlers::tg_webhook))
         .route("/health", get(handlers::health_check))
         .layer({
-            let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "https://wallets.gradiences.xyz".to_string());
+            let origin = std::env::var("ORIGIN")
+                .unwrap_or_else(|_| "https://wallets.gradiences.xyz".to_string());
             let allowed_headers = vec![
                 axum::http::header::CONTENT_TYPE,
                 axum::http::header::AUTHORIZATION,
@@ -144,7 +220,9 @@ async fn main() -> anyhow::Result<()> {
                     .allow_headers(allowed_headers)
             } else {
                 let origins: Vec<axum::http::HeaderValue> = vec![
-                    origin.parse().unwrap_or_else(|_| "https://wallets.gradiences.xyz".parse().unwrap()),
+                    origin
+                        .parse()
+                        .unwrap_or_else(|_| "https://wallets.gradiences.xyz".parse().unwrap()),
                     "http://localhost:3000".parse().unwrap(),
                 ];
                 tower_http::cors::CorsLayer::new()
@@ -167,17 +245,28 @@ async fn main() -> anyhow::Result<()> {
             interval.tick().await;
             match gradience_core::audit::anchor::AnchorService::from_env() {
                 Ok(Some(svc)) => {
-                    match gradience_db::queries::list_unanchored_logs(&anchor_state.db, 1000).await {
+                    match gradience_db::queries::list_unanchored_logs(&anchor_state.db, 1000).await
+                    {
                         Ok(logs) if !logs.is_empty() => {
                             let mut seen = std::collections::HashSet::new();
                             for log in logs {
                                 if seen.insert(log.wallet_id.clone()) {
-                                    match svc.anchor_unanchored_logs(
-                                        &anchor_state.db, &log.wallet_id, 100
-                                    ).await {
-                                        Ok(Some(tx_hash)) => info!("Auto-anchored wallet {} tx {}", log.wallet_id, tx_hash),
-                                        Ok(None) => {},
-                                        Err(e) => warn!("Auto-anchor failed for {}: {}", log.wallet_id, e),
+                                    match svc
+                                        .anchor_unanchored_logs(
+                                            &anchor_state.db,
+                                            &log.wallet_id,
+                                            100,
+                                        )
+                                        .await
+                                    {
+                                        Ok(Some(tx_hash)) => info!(
+                                            "Auto-anchored wallet {} tx {}",
+                                            log.wallet_id, tx_hash
+                                        ),
+                                        Ok(None) => {}
+                                        Err(e) => {
+                                            warn!("Auto-anchor failed for {}: {}", log.wallet_id, e)
+                                        }
                                     }
                                 }
                             }
@@ -201,11 +290,14 @@ async fn main() -> anyhow::Result<()> {
     info!("DATABASE_URL        : {}", db_path);
     info!("GRADIENCE_DATA_DIR  : {}", data_dir.display());
     info!("ORIGIN / RP_ID      : {} / {}", origin, rp_id);
-    info!("ANCHOR_INTERVAL_SEC : {}s", std::env::var("ANCHOR_INTERVAL_SEC").unwrap_or_else(|_| "300".into()));
+    info!(
+        "ANCHOR_INTERVAL_SEC : {}s",
+        std::env::var("ANCHOR_INTERVAL_SEC").unwrap_or_else(|_| "300".into())
+    );
     match gradience_core::audit::anchor::AnchorService::from_env() {
         Ok(Some(_)) => info!("Anchor Service      : enabled (contract ready)"),
-        Ok(None)    => warn!("Anchor Service      : disabled (missing ANCHOR_RPC_URL)"),
-        Err(e)      => warn!("Anchor Service      : config error ({})", e),
+        Ok(None) => warn!("Anchor Service      : disabled (missing ANCHOR_RPC_URL)"),
+        Err(e) => warn!("Anchor Service      : config error ({})", e),
     }
     info!("CORS                : allow_any=true");
     info!("============================================================");
@@ -217,15 +309,18 @@ async fn main() -> anyhow::Result<()> {
         let demo_pass = std::env::var("GRADIENCE_DEMO_PASSPHRASE")
             .unwrap_or_else(|_| "demo-passphrase-123".into());
         let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
-        state.sessions.insert(
-            demo_token,
-            Session {
-                user_id: "user-1".into(),
-                username: "demo@gradience.io".into(),
-                passphrase: Some(demo_pass),
-            },
-            expires_at,
-        ).await;
+        state
+            .sessions
+            .insert(
+                demo_token,
+                Session {
+                    user_id: "user-1".into(),
+                    username: "demo@gradience.io".into(),
+                    passphrase: Some(demo_pass),
+                },
+                expires_at,
+            )
+            .await;
         info!("Demo session        : injected for user-1");
     }
 

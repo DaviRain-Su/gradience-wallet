@@ -1,6 +1,6 @@
-use sha3::Digest;
 use crate::error::GradienceError;
-use crate::ows::adapter::{OwsAdapter, Transaction, PolicyAction, DerivationParams};
+use crate::ows::adapter::{DerivationParams, OwsAdapter, PolicyAction, Transaction};
+use sha3::Digest;
 
 // TODO: create a mock/test implementation of OwsAdapter for unit tests
 struct TestOwsAdapter;
@@ -14,11 +14,15 @@ impl OwsAdapter for TestOwsAdapter {
     async fn init_vault(
         &self,
         passphrase: &str,
-    ) -> Result< crate::ows::vault::VaultHandle, GradienceError> {
+    ) -> Result<crate::ows::vault::VaultHandle, GradienceError> {
         if passphrase.len() < 12 {
-            return Err(GradienceError::InvalidCredential("passphrase too short".into()));
+            return Err(GradienceError::InvalidCredential(
+                "passphrase too short".into(),
+            ));
         }
-        Ok(crate::ows::vault::VaultHandle { passphrase: passphrase.to_string() })
+        Ok(crate::ows::vault::VaultHandle {
+            passphrase: passphrase.to_string(),
+        })
     }
 
     async fn register_policy_executable(
@@ -37,7 +41,7 @@ impl OwsAdapter for TestOwsAdapter {
         _wallet_id: &str,
         api_key_name: &str,
         _policy_ids: Vec<String>,
-    ) -> Result< crate::ows::adapter::GradienceApiKey, GradienceError> {
+    ) -> Result<crate::ows::adapter::GradienceApiKey, GradienceError> {
         let token = format!("ows_key_{:064x}", 123456789u64);
         Ok(crate::ows::adapter::GradienceApiKey {
             id: "key-1".into(),
@@ -55,18 +59,16 @@ impl OwsAdapter for TestOwsAdapter {
         _vault: &crate::ows::vault::VaultHandle,
         name: &str,
         _derivation_params: DerivationParams,
-    ) -> Result< crate::wallet::manager::WalletDescriptor, GradienceError> {
+    ) -> Result<crate::wallet::manager::WalletDescriptor, GradienceError> {
         Ok(crate::wallet::manager::WalletDescriptor {
             id: "wallet-1".into(),
             name: name.into(),
-            accounts: vec![
-                crate::wallet::manager::AccountDescriptor {
-                    account_id: "eip155:8453:0xabc".into(),
-                    address: "0xabc".into(),
-                    chain_id: "eip155:8453".into(),
-                    derivation_path: "m/44'/60'/0'/0/0".into(),
-                },
-            ],
+            accounts: vec![crate::wallet::manager::AccountDescriptor {
+                account_id: "eip155:8453:0xabc".into(),
+                address: "0xabc".into(),
+                chain_id: "eip155:8453".into(),
+                derivation_path: "m/44'/60'/0'/0/0".into(),
+            }],
         })
     }
 
@@ -77,7 +79,7 @@ impl OwsAdapter for TestOwsAdapter {
         chain: &str,
         tx: &Transaction,
         credential: &str,
-    ) -> Result< crate::ows::adapter::SignedTransaction, GradienceError> {
+    ) -> Result<crate::ows::adapter::SignedTransaction, GradienceError> {
         if chain == "eip155:999999" {
             return Err(GradienceError::InvalidChain(chain.into()));
         }
@@ -126,9 +128,15 @@ async fn test_init_vault_short_passphrase() {
 async fn test_create_wallet_success() {
     let adapter = TestOwsAdapter;
     let vault = adapter.init_vault("secure-pass-123").await.unwrap();
-    let wallet = adapter.create_wallet(&vault, "demo-wallet", Default::default()).await.unwrap();
+    let wallet = adapter
+        .create_wallet(&vault, "demo-wallet", Default::default())
+        .await
+        .unwrap();
     assert_eq!(wallet.name, "demo-wallet");
-    let evm = wallet.accounts.iter().find(|a| a.chain_id.starts_with("eip155:"));
+    let evm = wallet
+        .accounts
+        .iter()
+        .find(|a| a.chain_id.starts_with("eip155:"));
     assert!(evm.is_some());
 }
 
@@ -136,9 +144,16 @@ async fn test_create_wallet_success() {
 async fn test_sign_tx_owner_mode_success() {
     let adapter = TestOwsAdapter;
     let vault = adapter.init_vault("secure-pass-123").await.unwrap();
-    let tx = Transaction { to: None, value: "0".into(), data: vec![], raw_hex: "0x01".into() };
-    let signed = adapter.sign_transaction(&vault, "wallet-1", "eip155:8453", &tx, "secure-pass-123"
-    ).await.unwrap();
+    let tx = Transaction {
+        to: None,
+        value: "0".into(),
+        data: vec![],
+        raw_hex: "0x01".into(),
+    };
+    let signed = adapter
+        .sign_transaction(&vault, "wallet-1", "eip155:8453", &tx, "secure-pass-123")
+        .await
+        .unwrap();
     assert!(!signed.raw_hex.is_empty());
 }
 
@@ -146,10 +161,16 @@ async fn test_sign_tx_owner_mode_success() {
 async fn test_sign_tx_invalid_chain_error() {
     let adapter = TestOwsAdapter;
     let vault = adapter.init_vault("secure-pass-123").await.unwrap();
-    let tx = Transaction { to: None, value: "0".into(), data: vec![], raw_hex: "0x01".into() };
-    let err = adapter.sign_transaction(
-        &vault, "wallet-1", "eip155:999999", &tx, "secure-pass-123"
-    ).await.unwrap_err();
+    let tx = Transaction {
+        to: None,
+        value: "0".into(),
+        data: vec![],
+        raw_hex: "0x01".into(),
+    };
+    let err = adapter
+        .sign_transaction(&vault, "wallet-1", "eip155:999999", &tx, "secure-pass-123")
+        .await
+        .unwrap_err();
     assert!(matches!(err, GradienceError::InvalidChain(_)));
 }
 
@@ -157,10 +178,22 @@ async fn test_sign_tx_invalid_chain_error() {
 async fn test_sign_tx_revoked_key_attack() {
     let adapter = TestOwsAdapter;
     let vault = adapter.init_vault("secure-pass-123").await.unwrap();
-    let tx = Transaction { to: None, value: "0".into(), data: vec![], raw_hex: "0x01".into() };
-    let err = adapter.sign_transaction(
-        &vault, "wallet-1", "eip155:8453", &tx, "ows_key_REVOKED_123"
-    ).await.unwrap_err();
+    let tx = Transaction {
+        to: None,
+        value: "0".into(),
+        data: vec![],
+        raw_hex: "0x01".into(),
+    };
+    let err = adapter
+        .sign_transaction(
+            &vault,
+            "wallet-1",
+            "eip155:8453",
+            &tx,
+            "ows_key_REVOKED_123",
+        )
+        .await
+        .unwrap_err();
     assert!(matches!(err, GradienceError::InvalidCredential(_)));
 }
 
@@ -172,7 +205,13 @@ async fn test_local_adapter_64_hex_passphrase() {
     let hex64 = "a1b2c3d4e5f6789012345678901234567890abcdef1234567890abcdef123456";
     assert_eq!(hex64.len(), 64);
     let vault = adapter.init_vault(hex64).await.unwrap();
-    let wallet = adapter.create_wallet(&vault, "hex-test-wallet", Default::default()).await;
+    let wallet = adapter
+        .create_wallet(&vault, "hex-test-wallet", Default::default())
+        .await;
     std::fs::remove_dir_all(&tmp).ok();
-    assert!(wallet.is_ok(), "ows_lib should accept 64-char hex passphrase: {:?}", wallet.err());
+    assert!(
+        wallet.is_ok(),
+        "ows_lib should accept 64-char hex passphrase: {:?}",
+        wallet.err()
+    );
 }

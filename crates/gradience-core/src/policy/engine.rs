@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use crate::error::{GradienceError, Result};
 use chrono::Timelike;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Policy {
@@ -19,18 +19,50 @@ pub struct Policy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Rule {
-    SpendLimit { max: String, token: String },
-    DailyLimit { max: String, token: String },
-    MonthlyLimit { max: String, token: String },
-    ChainWhitelist { chain_ids: Vec<String> },
-    ContractWhitelist { contracts: Vec<String> },
-    OperationType { allowed: Vec<String> },
-    TimeWindow { start_hour: u8, end_hour: u8, timezone: String },
-    MaxTokensPerCall { limit: u64 },
-    ModelWhitelist { models: Vec<String> },
-    IntentRisk { max_risk: f64 },
-    DynamicRisk { max_forta: f64, max_chainalysis: f64 },
-    SharedBudget { max: String, token: String, period: String },
+    SpendLimit {
+        max: String,
+        token: String,
+    },
+    DailyLimit {
+        max: String,
+        token: String,
+    },
+    MonthlyLimit {
+        max: String,
+        token: String,
+    },
+    ChainWhitelist {
+        chain_ids: Vec<String>,
+    },
+    ContractWhitelist {
+        contracts: Vec<String>,
+    },
+    OperationType {
+        allowed: Vec<String>,
+    },
+    TimeWindow {
+        start_hour: u8,
+        end_hour: u8,
+        timezone: String,
+    },
+    MaxTokensPerCall {
+        limit: u64,
+    },
+    ModelWhitelist {
+        models: Vec<String>,
+    },
+    IntentRisk {
+        max_risk: f64,
+    },
+    DynamicRisk {
+        max_forta: f64,
+        max_chainalysis: f64,
+    },
+    SharedBudget {
+        max: String,
+        token: String,
+        period: String,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -88,8 +120,9 @@ impl Policy {
     pub fn try_from_db(db_policy: &gradience_db::models::Policy) -> Result<Self> {
         let value: serde_json::Value = serde_json::from_str(&db_policy.rules_json)
             .map_err(|e| GradienceError::Validation(format!("invalid policy json: {}", e)))?;
-        let rules: Vec<Rule> = serde_json::from_value(value.get("rules").cloned().unwrap_or(serde_json::json!([])))
-            .map_err(|e| GradienceError::Validation(format!("invalid rules: {}", e)))?;
+        let rules: Vec<Rule> =
+            serde_json::from_value(value.get("rules").cloned().unwrap_or(serde_json::json!([])))
+                .map_err(|e| GradienceError::Validation(format!("invalid rules: {}", e)))?;
         Ok(Self {
             id: db_policy.id.clone(),
             name: db_policy.name.clone(),
@@ -130,11 +163,7 @@ fn resolve_timezone_now(timezone: &str) -> chrono::DateTime<chrono::FixedOffset>
 }
 
 impl PolicyEngine {
-    pub fn evaluate(
-        &self,
-        ctx: EvalContext,
-        policies: Vec<&Policy>,
-    ) -> Result<EvalResult> {
+    pub fn evaluate(&self, ctx: EvalContext, policies: Vec<&Policy>) -> Result<EvalResult> {
         let mut deny_reasons = Vec::new();
         let mut warn_reasons = Vec::new();
         let mut adjustments = Vec::new();
@@ -167,7 +196,11 @@ impl PolicyEngine {
                             deny_reasons.push(format!("operation type '{}' not allowed", op));
                         }
                     }
-                    Rule::TimeWindow { start_hour, end_hour, timezone } => {
+                    Rule::TimeWindow {
+                        start_hour,
+                        end_hour,
+                        timezone,
+                    } => {
                         let now = resolve_timezone_now(timezone);
                         let hour = now.hour() as u8;
                         if start_hour <= end_hour {
@@ -205,15 +238,15 @@ impl PolicyEngine {
                     Rule::ModelWhitelist { models } => {
                         if let Some(ref model) = ctx.model {
                             if !models.iter().any(|m| m.eq_ignore_ascii_case(model)) {
-                                deny_reasons.push(format!(
-                                    "model '{}' not in whitelist",
-                                    model
-                                ));
+                                deny_reasons.push(format!("model '{}' not in whitelist", model));
                             }
                         }
                     }
                     Rule::SpendLimit { max, .. } => {
-                        let val = ctx.transaction.value.parse::<u128>()
+                        let val = ctx
+                            .transaction
+                            .value
+                            .parse::<u128>()
                             .or_else(|_| crate::eth_to_wei(&ctx.transaction.value))
                             .unwrap_or(0);
                         let limit = max.parse::<u128>().unwrap_or(u128::MAX);
@@ -240,7 +273,10 @@ impl PolicyEngine {
                             }
                         }
                     }
-                    Rule::DynamicRisk { max_forta, max_chainalysis } => {
+                    Rule::DynamicRisk {
+                        max_forta,
+                        max_chainalysis,
+                    } => {
                         if let Some(ref signals) = ctx.dynamic_signals {
                             if let Some(score) = signals.forta_score {
                                 if score > *max_forta {
@@ -273,7 +309,9 @@ impl PolicyEngine {
                                 adjustments.push(DynamicAdjustment {
                                     source: "dynamic_risk".into(),
                                     multiplier: 0.8,
-                                    reason: "elevated risk signals detected, tightening limits by 20%".into(),
+                                    reason:
+                                        "elevated risk signals detected, tightening limits by 20%"
+                                            .into(),
                                 });
                             }
                         }
@@ -286,9 +324,7 @@ impl PolicyEngine {
         // Deduplicate reasons while preserving order
         fn dedup_strings(vec: Vec<String>) -> Vec<String> {
             let mut seen = std::collections::HashSet::new();
-            vec.into_iter()
-                .filter(|s| seen.insert(s.clone()))
-                .collect()
+            vec.into_iter().filter(|s| seen.insert(s.clone())).collect()
         }
         fn dedup_adjustments(vec: Vec<DynamicAdjustment>) -> Vec<DynamicAdjustment> {
             let mut seen = std::collections::HashSet::new();

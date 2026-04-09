@@ -1,8 +1,8 @@
 use crate::error::GradienceError;
 use crate::identity::api_key::ApiKeyService;
-use crate::wallet::service::WalletManagerService;
-use crate::ows::adapter::{OwsAdapter, Transaction, PolicyAction, DerivationParams};
+use crate::ows::adapter::{DerivationParams, OwsAdapter, PolicyAction, Transaction};
 use crate::ows::vault::VaultHandle;
+use crate::wallet::service::WalletManagerService;
 use std::path::Path;
 
 struct TestOwsAdapter;
@@ -13,20 +13,28 @@ impl OwsAdapter for TestOwsAdapter {
         crate::ows::adapter::AdapterKind::Local
     }
 
-    async fn init_vault(
-        &self, _passphrase: &str,
-    ) -> Result<VaultHandle, GradienceError> {
-        Ok(VaultHandle { passphrase: _passphrase.to_string() })
+    async fn init_vault(&self, _passphrase: &str) -> Result<VaultHandle, GradienceError> {
+        Ok(VaultHandle {
+            passphrase: _passphrase.to_string(),
+        })
     }
 
     async fn register_policy_executable(
-        &self, _vault: &VaultHandle, _name: &str, _path: &Path, _action: PolicyAction,
+        &self,
+        _vault: &VaultHandle,
+        _name: &str,
+        _path: &Path,
+        _action: PolicyAction,
     ) -> Result<String, GradienceError> {
         Ok("policy-123".into())
     }
 
     async fn attach_api_key_and_policies(
-        &self, _vault: &VaultHandle, _wallet_id: &str, api_key_name: &str, _policy_ids: Vec<String>,
+        &self,
+        _vault: &VaultHandle,
+        _wallet_id: &str,
+        api_key_name: &str,
+        _policy_ids: Vec<String>,
     ) -> Result<crate::ows::adapter::GradienceApiKey, GradienceError> {
         let token = format!("ows_key_{:064x}", 123456789u64);
         use sha3::Digest;
@@ -42,7 +50,10 @@ impl OwsAdapter for TestOwsAdapter {
     }
 
     async fn create_wallet(
-        &self, _vault: &VaultHandle, name: &str, _params: DerivationParams,
+        &self,
+        _vault: &VaultHandle,
+        name: &str,
+        _params: DerivationParams,
     ) -> Result<crate::wallet::manager::WalletDescriptor, GradienceError> {
         Ok(crate::wallet::manager::WalletDescriptor {
             id: "wallet-1".into(),
@@ -72,7 +83,12 @@ impl OwsAdapter for TestOwsAdapter {
     }
 
     async fn sign_transaction(
-        &self, _vault: &VaultHandle, _wallet_id: &str, chain: &str, tx: &Transaction, _credential: &str,
+        &self,
+        _vault: &VaultHandle,
+        _wallet_id: &str,
+        chain: &str,
+        tx: &Transaction,
+        _credential: &str,
     ) -> Result<crate::ows::adapter::SignedTransaction, GradienceError> {
         Ok(crate::ows::adapter::SignedTransaction {
             raw_hex: format!("signed_{}", tx.raw_hex),
@@ -81,13 +97,18 @@ impl OwsAdapter for TestOwsAdapter {
     }
 
     async fn broadcast(
-        &self, _chain: &str, signed_tx: &crate::ows::adapter::SignedTransaction, _rpc_url: &str,
+        &self,
+        _chain: &str,
+        signed_tx: &crate::ows::adapter::SignedTransaction,
+        _rpc_url: &str,
     ) -> Result<String, GradienceError> {
         Ok(format!("tx_hash_for_{}", signed_tx.raw_hex))
     }
 
     async fn revoke_api_key(
-        &self, _vault: &VaultHandle, _api_key_id: &str,
+        &self,
+        _vault: &VaultHandle,
+        _api_key_id: &str,
     ) -> Result<(), GradienceError> {
         Ok(())
     }
@@ -98,7 +119,10 @@ async fn test_wallet_manager_create_success() {
     let svc = WalletManagerService::new();
     let adapter = TestOwsAdapter;
     let vault = adapter.init_vault("test-pass-123").await.unwrap();
-    let wallet = svc.create_wallet(&adapter, &vault, "my-wallet").await.unwrap();
+    let wallet = svc
+        .create_wallet(&adapter, &vault, "my-wallet")
+        .await
+        .unwrap();
     assert_eq!(wallet.name, "my-wallet");
     assert_eq!(wallet.id, "wallet-1");
 }

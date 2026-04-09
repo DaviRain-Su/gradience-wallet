@@ -31,7 +31,10 @@ pub async fn log_wallet_action(
         Ok(mut logs) if !logs.is_empty() => logs.remove(0).current_hash,
         _ => {
             use sha3::Digest;
-            format!("{:x}", sha3::Sha3_256::new().chain_update(b"GENESIS").finalize())
+            format!(
+                "{:x}",
+                sha3::Sha3_256::new().chain_update(b"GENESIS").finalize()
+            )
         }
     };
 
@@ -68,7 +71,10 @@ pub async fn verify_wallet_audit_chain(db: &Pool<Sqlite>, wallet_id: &str) -> Re
 
     let mut expected_prev = {
         use sha3::Digest;
-        format!("{:x}", sha3::Sha3_256::new().chain_update(b"GENESIS").finalize())
+        format!(
+            "{:x}",
+            sha3::Sha3_256::new().chain_update(b"GENESIS").finalize()
+        )
     };
     for log in &logs {
         if log.prev_hash != expected_prev {
@@ -76,7 +82,11 @@ pub async fn verify_wallet_audit_chain(db: &Pool<Sqlite>, wallet_id: &str) -> Re
         }
         let entry_data = format!(
             "{}:{}:{}:{}:{}",
-            log.wallet_id, log.action, log.decision, log.context_json, log.created_at.to_rfc3339()
+            log.wallet_id,
+            log.action,
+            log.decision,
+            log.context_json,
+            log.created_at.to_rfc3339()
         );
         let recomputed = compute_audit_hash(&secret_key, &log.prev_hash, &entry_data);
         if recomputed != log.current_hash {
@@ -110,8 +120,9 @@ pub async fn generate_merkle_proof_for_log(
         .iter()
         .map(|l| {
             let mut buf = [0u8; 32];
-            let bytes = hex::decode(l.current_hash.trim_start_matches("0x"))
-                .unwrap_or_else(|_| crate::audit::merkle::keccak256(l.current_hash.as_bytes()).to_vec());
+            let bytes = hex::decode(l.current_hash.trim_start_matches("0x")).unwrap_or_else(|_| {
+                crate::audit::merkle::keccak256(l.current_hash.as_bytes()).to_vec()
+            });
             let n = buf.len().min(bytes.len());
             buf[..n].copy_from_slice(&bytes[..n]);
             buf
@@ -123,7 +134,10 @@ pub async fn generate_merkle_proof_for_log(
         .generate_proof(index)
         .ok_or_else(|| GradienceError::Signature("merkle proof generation failed".into()))?;
 
-    let proof_hex: Vec<String> = proof.iter().map(|p| format!("0x{}", hex::encode(p))).collect();
+    let proof_hex: Vec<String> = proof
+        .iter()
+        .map(|p| format!("0x{}", hex::encode(p)))
+        .collect();
     let leaf_hex = format!("0x{}", hex::encode(leaf));
     let root_hex = format!("0x{}", hex::encode(tree.root));
 

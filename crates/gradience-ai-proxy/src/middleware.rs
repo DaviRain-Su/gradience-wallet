@@ -1,5 +1,5 @@
-use axum::http::{header::AUTHORIZATION, StatusCode};
 use crate::state::{AppState, Session};
+use axum::http::{header::AUTHORIZATION, StatusCode};
 
 pub fn auth_token(headers: &axum::http::HeaderMap) -> Option<String> {
     headers

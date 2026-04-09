@@ -18,17 +18,25 @@ pub async fn set(ctx: &AppContext, wallet_id: String, file: String) -> Result<()
         None,
         &content,
         Some(&ctx.vault_dir),
-    ).await?;
+    )
+    .await?;
 
-    println!("Policy set for wallet {} (policy id: {})", wallet_id, policy_id);
+    println!(
+        "Policy set for wallet {} (policy id: {})",
+        wallet_id, policy_id
+    );
     Ok(())
 }
 
 pub async fn approve(ctx: &AppContext, approval_id: String) -> Result<()> {
     let username = ctx.read_passphrase().unwrap_or_else(|| "user-1".into());
     gradience_db::queries::update_policy_approval_status(
-        &ctx.db, &approval_id, "approved", Some(&username)
-    ).await?;
+        &ctx.db,
+        &approval_id,
+        "approved",
+        Some(&username),
+    )
+    .await?;
     println!("Approved policy approval {}", approval_id);
     Ok(())
 }
@@ -36,8 +44,12 @@ pub async fn approve(ctx: &AppContext, approval_id: String) -> Result<()> {
 pub async fn reject(ctx: &AppContext, approval_id: String) -> Result<()> {
     let username = ctx.read_passphrase().unwrap_or_else(|| "user-1".into());
     gradience_db::queries::update_policy_approval_status(
-        &ctx.db, &approval_id, "rejected", Some(&username)
-    ).await?;
+        &ctx.db,
+        &approval_id,
+        "rejected",
+        Some(&username),
+    )
+    .await?;
     println!("Rejected policy approval {}", approval_id);
     Ok(())
 }
@@ -52,7 +64,10 @@ pub async fn list_approvals(ctx: &AppContext, wallet_id: Option<String>) -> Resu
     } else {
         println!("Pending policy approvals:");
         for a in rows {
-            println!("  {} | wallet: {} | status: {} | {}", a.id, a.wallet_id, a.status, a.request_json);
+            println!(
+                "  {} | wallet: {} | status: {} | {}",
+                a.id, a.wallet_id, a.status, a.request_json
+            );
         }
     }
     Ok(())

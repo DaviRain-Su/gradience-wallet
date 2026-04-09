@@ -1,11 +1,11 @@
-pub mod auth;
 pub mod agent;
-pub mod policy;
-pub mod api_key;
-pub mod dex;
-pub mod audit;
-pub mod team;
 pub mod ai;
+pub mod api_key;
+pub mod audit;
+pub mod auth;
+pub mod dex;
 pub mod mcp;
 pub mod pay;
+pub mod policy;
 pub mod start;
+pub mod team;

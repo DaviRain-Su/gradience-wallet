@@ -23,7 +23,11 @@ impl StellarHorizonClient {
             .await
             .map_err(|e| GradienceError::Http(e.to_string()))?;
 
-        let balances = resp.get("balances").and_then(|b| b.as_array()).cloned().unwrap_or_default();
+        let balances = resp
+            .get("balances")
+            .and_then(|b| b.as_array())
+            .cloned()
+            .unwrap_or_default();
         let native = balances.iter().find_map(|b| {
             if b.get("asset_type")?.as_str()? == "native" {
                 b.get("balance")?.as_str()?.parse::<f64>().ok()
@@ -33,7 +37,9 @@ impl StellarHorizonClient {
         });
 
         // Convert to stroops (1 XLM = 10^7 stroops)
-        let stroops = native.map(|x| (x * 10f64.powi(STELLAR_DECIMALS as i32)) as u64).unwrap_or(0);
+        let stroops = native
+            .map(|x| (x * 10f64.powi(STELLAR_DECIMALS as i32)) as u64)
+            .unwrap_or(0);
         Ok(stroops)
     }
 }

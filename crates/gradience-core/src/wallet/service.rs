@@ -1,7 +1,7 @@
-use crate::wallet::manager::{WalletDescriptor, AccountDescriptor};
-use crate::ows::adapter::{OwsAdapter, DerivationParams};
-use crate::ows::vault::VaultHandle;
 use crate::error::{GradienceError, Result};
+use crate::ows::adapter::{DerivationParams, OwsAdapter};
+use crate::ows::vault::VaultHandle;
+use crate::wallet::manager::{AccountDescriptor, WalletDescriptor};
 use sqlx::{Pool, Sqlite};
 
 pub struct WalletManagerService;
@@ -24,9 +24,13 @@ impl WalletManagerService {
         name: &str,
     ) -> Result<WalletDescriptor> {
         if name.trim().is_empty() {
-            return Err(GradienceError::InvalidCredential("wallet name cannot be empty".into()));
+            return Err(GradienceError::InvalidCredential(
+                "wallet name cannot be empty".into(),
+            ));
         }
-        adapter.create_wallet(vault, name, DerivationParams::default()).await
+        adapter
+            .create_wallet(vault, name, DerivationParams::default())
+            .await
     }
 
     pub async fn activate_wallet(&self, db: &Pool<Sqlite>, wallet_id: &str) -> Result<()> {
@@ -57,7 +61,9 @@ impl WalletManagerService {
         derivation_path: &str,
     ) -> Result<AccountDescriptor> {
         self.require_status_active(db, wallet_id).await?;
-        let account = adapter.derive_account(vault, wallet_id, chain, derivation_path).await?;
+        let account = adapter
+            .derive_account(vault, wallet_id, chain, derivation_path)
+            .await?;
         let addr_id = uuid::Uuid::new_v4().to_string();
         gradience_db::queries::create_wallet_address(
             db,
@@ -72,11 +78,7 @@ impl WalletManagerService {
         Ok(account)
     }
 
-    pub async fn require_status_active(
-        &self,
-        db: &Pool<Sqlite>,
-        wallet_id: &str,
-    ) -> Result<()> {
+    pub async fn require_status_active(&self, db: &Pool<Sqlite>, wallet_id: &str) -> Result<()> {
         let wallet = gradience_db::queries::get_wallet_by_id(db, wallet_id)
             .await
             .map_err(|e| GradienceError::Database(e.to_string()))?;

@@ -10,8 +10,8 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use webauthn_rs::prelude::*;
 
-use crate::state::*;
 use crate::middleware::*;
+use crate::state::*;
 
 #[derive(Deserialize)]
 pub struct RegisterStartReq {
@@ -114,7 +114,9 @@ pub async fn email_send_code(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    if let Ok(Some((last_sent, count))) = gradience_db::queries::get_email_send_limit(&state.db, &email).await {
+    if let Ok(Some((last_sent, count))) =
+        gradience_db::queries::get_email_send_limit(&state.db, &email).await
+    {
         let since_last = chrono::Utc::now() - last_sent;
         if since_last < chrono::Duration::seconds(60) {
             return Err(StatusCode::TOO_MANY_REQUESTS);
@@ -137,10 +139,9 @@ pub async fn email_send_code(
         return Err(StatusCode::INTERNAL_SERVER_ERROR);
     }
     let expires_at = chrono::Utc::now() + chrono::Duration::minutes(10);
-    gradience_db::queries::upsert_email_verification(&state.db, &email, &code, expires_at
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    gradience_db::queries::upsert_email_verification(&state.db, &email, &code, expires_at)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     info!("Verification code sent to {}", email);
     Ok(StatusCode::OK)
 }
@@ -155,11 +156,11 @@ pub async fn email_verify_code(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let (stored_code, expires_at, attempts) = gradience_db::queries::get_email_verification(&state.db, &email
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-    .ok_or(StatusCode::BAD_REQUEST)?;
+    let (stored_code, expires_at, attempts) =
+        gradience_db::queries::get_email_verification(&state.db, &email)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            .ok_or(StatusCode::BAD_REQUEST)?;
 
     if chrono::Utc::now() > expires_at {
         let _ = gradience_db::queries::delete_email_verification(&state.db, &email).await;
@@ -172,42 +173,45 @@ pub async fn email_verify_code(
     }
 
     if stored_code != code {
-        gradience_db::queries::increment_email_verification_attempts(&state.db, &email
-        )
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        gradience_db::queries::increment_email_verification_attempts(&state.db, &email)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    gradience_db::queries::delete_email_verification(&state.db, &email
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    gradience_db::queries::delete_email_verification(&state.db, &email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let user = gradience_db::queries::get_user_by_email(&state.db, &email
-    )
-    .await
-    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let user = gradience_db::queries::get_user_by_email(&state.db, &email)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let user_id = if let Some(u) = user {
         u.id
     } else {
         let new_id = uuid::Uuid::new_v4().to_string();
-        gradience_db::queries::create_user(&state.db, &new_id, &email
-        )
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        gradience_db::queries::create_user(&state.db, &new_id, &email)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         new_id
     };
 
     let username = email.split('@').next().unwrap_or(&email).to_string();
     let token = uuid::Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
-    state.sessions.insert(token.clone(), Session {
-        user_id,
-        username,
-        passphrase: None,
-    }, expires_at).await;
+    state
+        .sessions
+        .insert(
+            token.clone(),
+            Session {
+                user_id,
+                username,
+                passphrase: None,
+            },
+            expires_at,
+        )
+        .await;
     info!("Email login success for {}", email);
     Ok(Json(TokenResp { token }))
 }
@@ -256,7 +260,11 @@ pub async fn register_start(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    state.reg_challenges.lock().await.insert(username.clone(), reg_state);
+    state
+        .reg_challenges
+        .lock()
+        .await
+        .insert(username.clone(), reg_state);
     info!("Passkey register started for {}", username);
     Ok(Json(RegisterStartResp { challenge: ccr }))
 }
@@ -279,7 +287,11 @@ pub async fn register_finish(
         // Also verify custom email conflict if provided
         let custom_email = body.email.as_deref().and_then(|e| {
             let trimmed = e.trim();
-            if trimmed.is_empty() { None } else { Some(trimmed.to_lowercase()) }
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_lowercase())
+            }
         });
         let conflict = if let Some(ref custom) = custom_email {
             gradience_db::queries::get_user_by_email(&state.db, custom)
@@ -290,7 +302,10 @@ pub async fn register_finish(
             true // default_email already exists
         };
         if conflict {
-            warn!("register conflict for username={} existing_email={}", username, existing.email);
+            warn!(
+                "register conflict for username={} existing_email={}",
+                username, existing.email
+            );
             return Err(StatusCode::CONFLICT);
         }
     }
@@ -365,11 +380,18 @@ pub async fn register_finish(
 
     let token = uuid::Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
-    state.sessions.insert(token.clone(), Session {
-        user_id: user_id.clone(),
-        username,
-        passphrase: Some(body.passphrase),
-    }, expires_at).await;
+    state
+        .sessions
+        .insert(
+            token.clone(),
+            Session {
+                user_id: user_id.clone(),
+                username,
+                passphrase: Some(body.passphrase),
+            },
+            expires_at,
+        )
+        .await;
 
     Ok(Json(TokenResp { token }))
 }
@@ -410,8 +432,8 @@ pub async fn login_start(
         })?;
 
         if let Some((cred_pk,)) = row {
-            let pk: webauthn_rs::prelude::Passkey = serde_json::from_slice(&cred_pk)
-                .map_err(|e| {
+            let pk: webauthn_rs::prelude::Passkey =
+                serde_json::from_slice(&cred_pk).map_err(|e| {
                     warn!("passkey deserialize error: {}", e);
                     StatusCode::INTERNAL_SERVER_ERROR
                 })?;
@@ -435,7 +457,11 @@ pub async fn login_start(
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
-    state.auth_challenges.lock().await.insert(username, auth_state);
+    state
+        .auth_challenges
+        .lock()
+        .await
+        .insert(username, auth_state);
     Ok(Json(LoginStartResp { challenge: rcr }))
 }
 
@@ -468,11 +494,18 @@ pub async fn login_finish(
 
     let token = uuid::Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
-    state.sessions.insert(token.clone(), Session {
-        user_id: user.id,
-        username,
-        passphrase: None,
-    }, expires_at).await;
+    state
+        .sessions
+        .insert(
+            token.clone(),
+            Session {
+                user_id: user.id,
+                username,
+                passphrase: None,
+            },
+            expires_at,
+        )
+        .await;
     Ok(Json(TokenResp { token }))
 }
 
@@ -485,9 +518,17 @@ pub async fn unlock(
     if body.passphrase.len() < 12 {
         return Err(StatusCode::BAD_REQUEST);
     }
-    let vault = state.ows.init_vault(&body.passphrase).await.map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let vault = state
+        .ows
+        .init_vault(&body.passphrase)
+        .await
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
     drop(vault);
-    if !state.sessions.update_passphrase(&token, body.passphrase).await {
+    if !state
+        .sessions
+        .update_passphrase(&token, body.passphrase)
+        .await
+    {
         return Err(StatusCode::UNAUTHORIZED);
     }
     Ok(StatusCode::OK)
@@ -505,7 +546,9 @@ pub async fn auth_me(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<AuthMeResp>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     Ok(Json(AuthMeResp {
         user_id: session.user_id,
         username: session.username,
@@ -543,14 +586,23 @@ pub async fn recover_initiate(
     let user = user.ok_or(StatusCode::NOT_FOUND)?;
     let code = format!("{:06}", rand::random::<u32>() % 1_000_000);
     let id = uuid::Uuid::new_v4().to_string();
-    gradience_db::queries::create_recovery_code(&state.db, &id, &user.id, &code, "passkey_recovery")
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    gradience_db::queries::create_recovery_code(
+        &state.db,
+        &id,
+        &user.id,
+        &code,
+        "passkey_recovery",
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     // Local-only recovery code delivery (production would use an email/SMS provider)
     info!("[RECOVERY] To: {} | Recovery code: {}", email, code);
 
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({"sent": true, "local": true}))))
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({"sent": true, "local": true})),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -571,9 +623,14 @@ pub async fn recover_verify(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let user = user.ok_or(StatusCode::NOT_FOUND)?;
-    let row = gradience_db::queries::get_valid_recovery_code(&state.db, &user.id, &body.code, "passkey_recovery")
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let row = gradience_db::queries::get_valid_recovery_code(
+        &state.db,
+        &user.id,
+        &body.code,
+        "passkey_recovery",
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if let Some(rc) = row {
         gradience_db::queries::mark_recovery_code_used(&state.db, &rc.id)
@@ -581,11 +638,17 @@ pub async fn recover_verify(
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let token = uuid::Uuid::new_v4().to_string();
-        state.recovery_sessions.lock().await.insert(token.clone(), RecoverySession {
-            user_id: user.id,
-            username,
-        });
-        return Ok((StatusCode::OK, axum::Json(serde_json::json!({"recovery_token": token, "recovered": true}))));
+        state.recovery_sessions.lock().await.insert(
+            token.clone(),
+            RecoverySession {
+                user_id: user.id,
+                username,
+            },
+        );
+        return Ok((
+            StatusCode::OK,
+            axum::Json(serde_json::json!({"recovery_token": token, "recovered": true})),
+        ));
     }
 
     Err(StatusCode::BAD_REQUEST)
@@ -601,11 +664,15 @@ pub async fn recover_register(
     State(state): State<Arc<AppState>>,
     Json(body): Json<RecoverRegisterReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let rec = state.recovery_sessions.lock().await.remove(&body.recovery_token);
+    let rec = state
+        .recovery_sessions
+        .lock()
+        .await
+        .remove(&body.recovery_token);
     let rec = rec.ok_or(StatusCode::UNAUTHORIZED)?;
 
-    let pk: Passkey = serde_json::from_value(body.credential)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let pk: Passkey =
+        serde_json::from_value(body.credential).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let cred_id = pk.cred_id().as_ref().to_vec();
     let cred_json = serde_json::to_vec(&pk).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -631,15 +698,24 @@ pub async fn recover_register(
 
     let token = uuid::Uuid::new_v4().to_string();
     let expires_at = chrono::Utc::now() + chrono::Duration::days(7);
-    state.sessions.insert(token.clone(), Session {
-        user_id: rec.user_id,
-        username: rec.username,
-        passphrase: None,
-    }, expires_at).await;
+    state
+        .sessions
+        .insert(
+            token.clone(),
+            Session {
+                user_id: rec.user_id,
+                username: rec.username,
+                passphrase: None,
+            },
+            expires_at,
+        )
+        .await;
 
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({"token": token, "registered": true}))))
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({"token": token, "registered": true})),
+    ))
 }
-
 
 #[derive(Deserialize)]
 #[allow(dead_code)]
@@ -656,7 +732,11 @@ pub struct DeviceInitiateResp {
 
 pub async fn device_initiate() -> Result<Json<DeviceInitiateResp>, StatusCode> {
     let device_code = uuid::Uuid::new_v4().to_string();
-    let user_code = format!("{:04}-{:04}", rand::random::<u32>() % 10000, rand::random::<u32>() % 10000);
+    let user_code = format!(
+        "{:04}-{:04}",
+        rand::random::<u32>() % 10000,
+        rand::random::<u32>() % 10000
+    );
     let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "http://localhost:3000".into());
     Ok(Json(DeviceInitiateResp {
         device_code: device_code.clone(),
@@ -677,9 +757,15 @@ pub async fn device_poll(
     let auths = state.device_auths.lock().await;
     if let Some(auth) = auths.get(&body.device_code) {
         if let Some(token) = &auth.token {
-            return Ok((StatusCode::OK, axum::Json(serde_json::json!({"token": token, "authorized": true}))));
+            return Ok((
+                StatusCode::OK,
+                axum::Json(serde_json::json!({"token": token, "authorized": true})),
+            ));
         }
-        return Ok((StatusCode::OK, axum::Json(serde_json::json!({"authorized": false}))));
+        return Ok((
+            StatusCode::OK,
+            axum::Json(serde_json::json!({"authorized": false})),
+        ));
     }
     Err(StatusCode::NOT_FOUND)
 }
@@ -695,20 +781,24 @@ pub async fn device_authorize(
     Json(body): Json<DeviceAuthorizeReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let mut auths = state.device_auths.lock().await;
     for (device_code, auth) in auths.iter_mut() {
         if auth.user_code == body.user_code {
             auth.token = Some(token);
-            return Ok((StatusCode::OK, axum::Json(serde_json::json!({"device_code": device_code, "authorized": true}))));
+            return Ok((
+                StatusCode::OK,
+                axum::Json(serde_json::json!({"device_code": device_code, "authorized": true})),
+            ));
         }
     }
     Err(StatusCode::NOT_FOUND)
 }
 
 // ==================== OAuth (Skeleton) ====================
-
 
 pub async fn oauth_start(
     axum::extract::Path(provider): axum::extract::Path<String>,
@@ -718,7 +808,10 @@ pub async fn oauth_start(
         "github" => "https://github.com/login/oauth/authorize?client_id=YOUR_CLIENT_ID&redirect_uri=http://localhost:3000/api/auth/oauth/github/callback&scope=user:email",
         _ => return Err(StatusCode::NOT_FOUND),
     };
-    Ok((StatusCode::TEMPORARY_REDIRECT, [(axum::http::header::LOCATION, auth_url)]))
+    Ok((
+        StatusCode::TEMPORARY_REDIRECT,
+        [(axum::http::header::LOCATION, auth_url)],
+    ))
 }
 
 pub async fn oauth_callback(
@@ -728,11 +821,14 @@ pub async fn oauth_callback(
     let _code = params.get("code").cloned().unwrap_or_default();
     info!("OAuth callback from {} with code {}", provider, _code);
     // In production, exchange code for token, fetch user info, link/create user.
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({
-        "provider": provider,
-        "status": "skeleton",
-        "note": "Configure client_id/secret in production"
-    }))))
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "provider": provider,
+            "status": "skeleton",
+            "note": "Configure client_id/secret in production"
+        })),
+    ))
 }
 
 // ==================== Wallet DTOs ====================
@@ -760,21 +856,26 @@ pub async fn list_wallets(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<WalletResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let rows = gradience_db::queries::list_wallets_by_owner(&state.db, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let wallets = rows.into_iter().map(|w| WalletResp {
-        id: w.id,
-        name: w.name,
-        owner_id: w.owner_id,
-        workspace_id: w.workspace_id,
-        status: w.status,
-        created_at: w.created_at.to_rfc3339(),
-        updated_at: w.updated_at.to_rfc3339(),
-    }).collect();
+    let wallets = rows
+        .into_iter()
+        .map(|w| WalletResp {
+            id: w.id,
+            name: w.name,
+            owner_id: w.owner_id,
+            workspace_id: w.workspace_id,
+            status: w.status,
+            created_at: w.created_at.to_rfc3339(),
+            updated_at: w.updated_at.to_rfc3339(),
+        })
+        .collect();
 
     Ok(Json(wallets))
 }
@@ -785,7 +886,9 @@ pub async fn create_wallet(
     Json(body): Json<CreateWalletReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
 
     let name = body.name.trim();
@@ -793,13 +896,26 @@ pub async fn create_wallet(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let vault = state.ows.init_vault(&passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let wallet = state.ows.create_wallet(&vault, name, DerivationParams::default()).await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-
-    gradience_db::queries::create_wallet(&state.db, &wallet.id, &wallet.name, &session.user_id, None)
+    let vault = state
+        .ows
+        .init_vault(&passphrase)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let wallet = state
+        .ows
+        .create_wallet(&vault, name, DerivationParams::default())
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    gradience_db::queries::create_wallet(
+        &state.db,
+        &wallet.id,
+        &wallet.name,
+        &session.user_id,
+        None,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     for acc in &wallet.accounts {
         gradience_db::queries::create_wallet_address(
@@ -830,7 +946,9 @@ pub async fn wallet_balance(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<BalanceResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
@@ -850,7 +968,8 @@ pub async fn wallet_balance(
                 balance: bal,
             });
         } else if a.chain_id.starts_with("solana:") {
-            let sol_client = gradience_core::rpc::solana::SolanaRpcClient::new("https://api.devnet.solana.com");
+            let sol_client =
+                gradience_core::rpc::solana::SolanaRpcClient::new("https://api.devnet.solana.com");
             let lamports = sol_client.get_balance(&a.address).await.unwrap_or(0);
             let hex_bal = format!("0x{:x}", lamports);
             balances.push(BalanceResp {
@@ -870,7 +989,8 @@ pub async fn wallet_balance(
             });
         } else if a.chain_id.starts_with("cfx:") {
             let rpc_url = gradience_core::chain::resolve_rpc(&a.chain_id);
-            let cfx_client = gradience_core::rpc::conflux_core::ConfluxCoreRpcClient::new_with_url(rpc_url);
+            let cfx_client =
+                gradience_core::rpc::conflux_core::ConfluxCoreRpcClient::new_with_url(rpc_url);
             let drip = cfx_client.get_balance(&a.address).await.unwrap_or(0);
             let hex_bal = format!("0x{:x}", drip);
             balances.push(BalanceResp {
@@ -902,17 +1022,22 @@ pub async fn wallet_addresses(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<AddressResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let result: Vec<_> = addrs.into_iter().map(|a| AddressResp {
-        chain_id: a.chain_id,
-        address: a.address,
-    }).collect();
+    let result: Vec<_> = addrs
+        .into_iter()
+        .map(|a| AddressResp {
+            chain_id: a.chain_id,
+            address: a.address,
+        })
+        .collect();
 
     Ok(Json(result))
 }
@@ -931,7 +1056,9 @@ pub async fn wallet_portfolio(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<PortfolioResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
@@ -948,7 +1075,10 @@ pub async fn wallet_portfolio(
             let client = gradience_core::rpc::evm::EvmRpcClient::new(&a.chain_id, rpc_url)
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             let native = client.get_balance(&a.address).await.unwrap_or_default();
-            let assets = svc.discover(&a.chain_id, &a.address).await.unwrap_or_default();
+            let assets = svc
+                .discover(&a.chain_id, &a.address)
+                .await
+                .unwrap_or_default();
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
@@ -1014,7 +1144,9 @@ pub async fn wallet_portfolio(
                 assets: vec![],
             });
         } else if a.chain_id.starts_with("sui:") {
-            let native_balance = sui_balance(&http, &a.address).await.unwrap_or_else(|_| "0x0".into());
+            let native_balance = sui_balance(&http, &a.address)
+                .await
+                .unwrap_or_else(|_| "0x0".into());
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
@@ -1022,7 +1154,9 @@ pub async fn wallet_portfolio(
                 assets: vec![],
             });
         } else if a.chain_id.starts_with("tron:") || a.chain_id.starts_with("trc20:") {
-            let native_balance = tron_balance(&http, &a.address).await.unwrap_or_else(|_| "0x0".into());
+            let native_balance = tron_balance(&http, &a.address)
+                .await
+                .unwrap_or_else(|_| "0x0".into());
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
@@ -1030,7 +1164,9 @@ pub async fn wallet_portfolio(
                 assets: vec![],
             });
         } else if a.chain_id.starts_with("filecoin:") {
-            let native_balance = filecoin_balance(&http, &a.address).await.unwrap_or_else(|_| "0x0".into());
+            let native_balance = filecoin_balance(&http, &a.address)
+                .await
+                .unwrap_or_else(|_| "0x0".into());
             result.push(PortfolioResp {
                 chain_id: a.chain_id,
                 address: a.address,
@@ -1111,14 +1247,21 @@ pub async fn evaluate_wallet_policy(
     wallet_id: &str,
     chain_id: &str,
     transaction: gradience_core::ows::adapter::Transaction,
-) -> Result<(gradience_core::policy::engine::EvalResult, Vec<gradience_core::policy::engine::Policy>), StatusCode> {
-    use gradience_core::policy::engine::{PolicyEngine, EvalContext};
+) -> Result<
+    (
+        gradience_core::policy::engine::EvalResult,
+        Vec<gradience_core::policy::engine::Policy>,
+    ),
+    StatusCode,
+> {
+    use gradience_core::policy::engine::{EvalContext, PolicyEngine};
 
     let db_policies = gradience_db::queries::list_active_policies_by_wallet(&state.db, wallet_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let core_policies: Vec<_> = db_policies.iter()
+    let core_policies: Vec<_> = db_policies
+        .iter()
         .filter_map(|p| gradience_core::policy::engine::Policy::try_from_db(p).ok())
         .collect();
 
@@ -1145,17 +1288,26 @@ pub async fn evaluate_wallet_policy(
     };
 
     let policy_refs: Vec<_> = core_policies.iter().collect();
-    let mut result = engine.evaluate(ctx, policy_refs)
+    let mut result = engine
+        .evaluate(ctx, policy_refs)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     if result.decision == gradience_core::policy::engine::Decision::Allow {
         let amount_wei = gradience_core::eth_to_wei(&transaction.value).unwrap_or(0);
-        let wallet = gradience_db::queries::get_wallet_by_id(&state.db, wallet_id
-        ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let wallet = gradience_db::queries::get_wallet_by_id(&state.db, wallet_id)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         let workspace_id = wallet.and_then(|w| w.workspace_id);
         let spend_eval = gradience_core::policy::spending::evaluate_spending_limits(
-            &state.db, wallet_id, workspace_id.as_deref(), chain_id, amount_wei, &core_policies
-        ).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            &state.db,
+            wallet_id,
+            workspace_id.as_deref(),
+            chain_id,
+            amount_wei,
+            &core_policies,
+        )
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         if spend_eval.decision == gradience_core::policy::engine::Decision::Deny {
             result = spend_eval;
         }
@@ -1171,7 +1323,9 @@ pub async fn wallet_fund(
     Json(body): Json<FundReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
@@ -1195,21 +1349,26 @@ pub async fn wallet_fund(
             }
         }
         let from_addr = sol_addr.ok_or(StatusCode::BAD_REQUEST)?;
-        let to_addr = if body.to.trim().is_empty() { from_addr.clone() } else { body.to.clone() };
+        let to_addr = if body.to.trim().is_empty() {
+            from_addr.clone()
+        } else {
+            body.to.clone()
+        };
 
         let sol_amount: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
         let lamports = (sol_amount * 1_000_000_000.0) as u64;
 
         let rpc_url = "https://api.devnet.solana.com";
         let sol_client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
-        let blockhash = sol_client.get_latest_blockhash().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let blockhash = sol_client
+            .get_latest_blockhash()
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let tx_bytes = gradience_core::ows::signing::build_solana_transfer_tx(
-            &from_addr,
-            &to_addr,
-            lamports,
-            &blockhash,
-        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            &from_addr, &to_addr, lamports, &blockhash,
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
         let tx_hex = format!("0x{}", hex::encode(&tx_bytes));
 
         let tx = gradience_core::ows::adapter::Transaction {
@@ -1218,29 +1377,47 @@ pub async fn wallet_fund(
             data: vec![],
             raw_hex: tx_hex.clone(),
         };
-        let (eval, core_policies) = evaluate_wallet_policy(
-            &state, &wallet_id, "solana:103", tx.clone()).await?;
+        let (eval, core_policies) =
+            evaluate_wallet_policy(&state, &wallet_id, "solana:103", tx.clone()).await?;
 
         let mut approval_id = None;
         if eval.decision == gradience_core::policy::engine::Decision::Deny {
             let _ = gradience_core::audit::service::log_wallet_action(
-                &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(), "denied",
-            ).await;
-            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+                &state.db,
+                &wallet_id,
+                None,
+                "fund",
+                &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(),
+                "denied",
+            )
+            .await;
+            return Ok((
+                StatusCode::FORBIDDEN,
+                axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+            ));
         }
         if eval.decision == gradience_core::policy::engine::Decision::Warn {
             let aid = uuid::Uuid::new_v4().to_string();
-            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let policy_id = core_policies
+                .first()
+                .map(|p| p.id.clone())
+                .unwrap_or_default();
             let request_json = serde_json::json!({
                 "action": "fund",
                 "wallet_id": wallet_id,
                 "to": to_addr,
                 "amount": body.amount,
                 "chain": chain,
-            }).to_string();
+            })
+            .to_string();
             let _ = gradience_db::queries::create_policy_approval(
-                &state.db, &aid, &policy_id, &wallet_id, &request_json
-            ).await;
+                &state.db,
+                &aid,
+                &policy_id,
+                &wallet_id,
+                &request_json,
+            )
+            .await;
             approval_id = Some(aid);
         }
 
@@ -1252,11 +1429,19 @@ pub async fn wallet_fund(
             None,
             Some(rpc_url),
             Some(&state.vault_dir),
-        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let _ = gradience_core::audit::service::log_wallet_action(
-            &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allowed",
-        ).await;
+            &state.db,
+            &wallet_id,
+            None,
+            "fund",
+            &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result.tx_hash})
+                .to_string(),
+            "allowed",
+        )
+        .await;
 
         let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
         if let Some(aid) = approval_id {
@@ -1277,14 +1462,21 @@ pub async fn wallet_fund(
             }
         }
         let from_addr = ton_addr.ok_or(StatusCode::BAD_REQUEST)?;
-        let to_addr = if body.to.trim().is_empty() { from_addr.clone() } else { body.to.clone() };
+        let to_addr = if body.to.trim().is_empty() {
+            from_addr.clone()
+        } else {
+            body.to.clone()
+        };
 
         let ton_amount: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
         let nanoton = (ton_amount * 1_000_000_000.0) as u64;
 
         let rpc_url = gradience_core::chain::resolve_rpc(&chain);
         let ton_client = gradience_core::rpc::ton::TonRpcClient::new_with_url(rpc_url);
-        let seqno = ton_client.get_seqno(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let seqno = ton_client
+            .get_seqno(&from_addr)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let tx = gradience_core::ows::adapter::Transaction {
             to: Some(to_addr.clone()),
@@ -1292,39 +1484,76 @@ pub async fn wallet_fund(
             data: seqno.to_be_bytes().to_vec(),
             raw_hex: "".into(),
         };
-        let (eval, core_policies) = evaluate_wallet_policy(
-            &state, &wallet_id, "ton:0", tx.clone()).await?;
+        let (eval, core_policies) =
+            evaluate_wallet_policy(&state, &wallet_id, "ton:0", tx.clone()).await?;
 
         let mut approval_id = None;
         if eval.decision == gradience_core::policy::engine::Decision::Deny {
             let _ = gradience_core::audit::service::log_wallet_action(
-                &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(), "denied",
-            ).await;
-            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+                &state.db,
+                &wallet_id,
+                None,
+                "fund",
+                &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(),
+                "denied",
+            )
+            .await;
+            return Ok((
+                StatusCode::FORBIDDEN,
+                axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+            ));
         }
         if eval.decision == gradience_core::policy::engine::Decision::Warn {
             let aid = uuid::Uuid::new_v4().to_string();
-            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let policy_id = core_policies
+                .first()
+                .map(|p| p.id.clone())
+                .unwrap_or_default();
             let request_json = serde_json::json!({
                 "action": "fund",
                 "wallet_id": wallet_id,
                 "to": to_addr,
                 "amount": body.amount,
                 "chain": chain,
-            }).to_string();
+            })
+            .to_string();
             let _ = gradience_db::queries::create_policy_approval(
-                &state.db, &aid, &policy_id, &wallet_id, &request_json
-            ).await;
+                &state.db,
+                &aid,
+                &policy_id,
+                &wallet_id,
+                &request_json,
+            )
+            .await;
             approval_id = Some(aid);
         }
 
-        let vault = state.ows.init_vault(&passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let signed = state.ows.sign_transaction(&vault, &wallet_id, "ton:0", &tx, &passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let result = state.ows.broadcast("ton:0", &signed, rpc_url).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let vault = state
+            .ows
+            .init_vault(&passphrase)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let signed = state
+            .ows
+            .sign_transaction(&vault, &wallet_id, "ton:0", &tx, &passphrase)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let result = state
+            .ows
+            .broadcast("ton:0", &signed, rpc_url)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let _ = gradience_core::audit::service::log_wallet_action(
-            &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result}).to_string(), "allowed",
-        ).await;
+            &state.db,
+            &wallet_id,
+            None,
+            "fund",
+            &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result})
+                .to_string(),
+            "allowed",
+        )
+        .await;
 
         let mut resp = serde_json::json!({ "tx_hash": result });
         if let Some(aid) = approval_id {
@@ -1345,7 +1574,11 @@ pub async fn wallet_fund(
             }
         }
         let from_addr = cfx_addr.ok_or(StatusCode::BAD_REQUEST)?;
-        let to_addr = if body.to.trim().is_empty() { from_addr.clone() } else { body.to.clone() };
+        let to_addr = if body.to.trim().is_empty() {
+            from_addr.clone()
+        } else {
+            body.to.clone()
+        };
 
         let amount_cfx: f64 = body.amount.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
         let drip = (amount_cfx * 1_000_000_000_000_000_000.0) as u128;
@@ -1357,39 +1590,76 @@ pub async fn wallet_fund(
             data: vec![],
             raw_hex: "".into(),
         };
-        let (eval, core_policies) = evaluate_wallet_policy(
-            &state, &wallet_id, "cfx:1", tx.clone()).await?;
+        let (eval, core_policies) =
+            evaluate_wallet_policy(&state, &wallet_id, "cfx:1", tx.clone()).await?;
 
         let mut approval_id = None;
         if eval.decision == gradience_core::policy::engine::Decision::Deny {
             let _ = gradience_core::audit::service::log_wallet_action(
-                &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(), "denied",
-            ).await;
-            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+                &state.db,
+                &wallet_id,
+                None,
+                "fund",
+                &serde_json::json!({"to": to_addr, "amount": body.amount}).to_string(),
+                "denied",
+            )
+            .await;
+            return Ok((
+                StatusCode::FORBIDDEN,
+                axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+            ));
         }
         if eval.decision == gradience_core::policy::engine::Decision::Warn {
             let aid = uuid::Uuid::new_v4().to_string();
-            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let policy_id = core_policies
+                .first()
+                .map(|p| p.id.clone())
+                .unwrap_or_default();
             let request_json = serde_json::json!({
                 "action": "fund",
                 "wallet_id": wallet_id,
                 "to": to_addr,
                 "amount": body.amount,
                 "chain": chain,
-            }).to_string();
+            })
+            .to_string();
             let _ = gradience_db::queries::create_policy_approval(
-                &state.db, &aid, &policy_id, &wallet_id, &request_json
-            ).await;
+                &state.db,
+                &aid,
+                &policy_id,
+                &wallet_id,
+                &request_json,
+            )
+            .await;
             approval_id = Some(aid);
         }
 
-        let vault = state.ows.init_vault(&passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let signed = state.ows.sign_transaction(&vault, &wallet_id, "cfx:1", &tx, &passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        let result = state.ows.broadcast("cfx:1", &signed, "").await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let vault = state
+            .ows
+            .init_vault(&passphrase)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let signed = state
+            .ows
+            .sign_transaction(&vault, &wallet_id, "cfx:1", &tx, &passphrase)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let result = state
+            .ows
+            .broadcast("cfx:1", &signed, "")
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let _ = gradience_core::audit::service::log_wallet_action(
-            &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result}).to_string(), "allowed",
-        ).await;
+            &state.db,
+            &wallet_id,
+            None,
+            "fund",
+            &serde_json::json!({"to": to_addr, "amount": body.amount, "tx_hash": result})
+                .to_string(),
+            "allowed",
+        )
+        .await;
 
         let mut resp = serde_json::json!({ "tx_hash": result });
         if let Some(aid) = approval_id {
@@ -1410,8 +1680,7 @@ pub async fn wallet_fund(
     }
     let from_addr = from_addr.ok_or(StatusCode::BAD_REQUEST)?;
 
-    let wei = gradience_core::eth_to_wei(&body.amount)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let wei = gradience_core::eth_to_wei(&body.amount).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let chain_num = gradience_core::chain::evm_chain_num(&chain);
     let tx = gradience_core::ows::adapter::Transaction {
@@ -1421,28 +1690,51 @@ pub async fn wallet_fund(
         raw_hex: format!("0x{}", hex::encode(body.to.trim_start_matches("0x"))),
     };
     let (eval, core_policies) = evaluate_wallet_policy(
-        &state, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+        &state,
+        &wallet_id,
+        &format!("eip155:{}", chain_num),
+        tx.clone(),
+    )
+    .await?;
 
     let mut approval_id = None;
     if eval.decision == gradience_core::policy::engine::Decision::Deny {
         let _ = gradience_core::audit::service::log_wallet_action(
-            &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": body.to, "amount": body.amount}).to_string(), "denied",
-        ).await;
-        return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+            &state.db,
+            &wallet_id,
+            None,
+            "fund",
+            &serde_json::json!({"to": body.to, "amount": body.amount}).to_string(),
+            "denied",
+        )
+        .await;
+        return Ok((
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+        ));
     }
     if eval.decision == gradience_core::policy::engine::Decision::Warn {
         let aid = uuid::Uuid::new_v4().to_string();
-        let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+        let policy_id = core_policies
+            .first()
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
         let request_json = serde_json::json!({
             "action": "fund",
             "wallet_id": wallet_id,
             "to": body.to,
             "amount": body.amount,
             "chain": chain,
-        }).to_string();
+        })
+        .to_string();
         let _ = gradience_db::queries::create_policy_approval(
-            &state.db, &aid, &policy_id, &wallet_id, &request_json
-        ).await;
+            &state.db,
+            &aid,
+            &policy_id,
+            &wallet_id,
+            &request_json,
+        )
+        .await;
         approval_id = Some(aid);
     }
 
@@ -1450,8 +1742,14 @@ pub async fn wallet_fund(
 
     let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let nonce = client.get_transaction_count(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let gas_price_hex = client.get_gas_price().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = client
+        .get_transaction_count(&from_addr)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price_hex = client
+        .get_gas_price()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
@@ -1476,16 +1774,33 @@ pub async fn wallet_fund(
         None,
         Some(rpc_url),
         Some(&state.vault_dir),
-    ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let wallet_ws = gradience_db::queries::get_wallet_by_id(&state.db, &wallet_id)
-        .await.ok().flatten().and_then(|w| w.workspace_id);
+        .await
+        .ok()
+        .flatten()
+        .and_then(|w| w.workspace_id);
     let _ = gradience_core::policy::spending::record_spending(
-        &state.db, &wallet_id, wallet_ws.as_deref(), &format!("eip155:{}", chain_num), wei, &core_policies,
-    ).await;
+        &state.db,
+        &wallet_id,
+        wallet_ws.as_deref(),
+        &format!("eip155:{}", chain_num),
+        wei,
+        &core_policies,
+    )
+    .await;
     let _ = gradience_core::audit::service::log_wallet_action(
-        &state.db, &wallet_id, None, "fund", &serde_json::json!({"to": body.to, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allowed",
-    ).await;
+        &state.db,
+        &wallet_id,
+        None,
+        "fund",
+        &serde_json::json!({"to": body.to, "amount": body.amount, "tx_hash": result.tx_hash})
+            .to_string(),
+        "allowed",
+    )
+    .await;
 
     let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
     if let Some(aid) = approval_id {
@@ -1511,7 +1826,9 @@ pub async fn wallet_sign(
     Json(body): Json<SignReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
@@ -1533,27 +1850,36 @@ pub async fn wallet_sign(
     let from_addr = match addr {
         Some(a) => a,
         None => {
-            return Ok((StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({
-                "error": "Solana/Stellar transaction signing is on the roadmap — please use an EVM chain (Base, Ethereum, BNB) for live transactions."
-            }))));
+            return Ok((
+                StatusCode::BAD_REQUEST,
+                axum::Json(serde_json::json!({
+                    "error": "Solana/Stellar transaction signing is on the roadmap — please use an EVM chain (Base, Ethereum, BNB) for live transactions."
+                })),
+            ));
         }
     };
 
-    let wei = gradience_core::eth_to_wei(&body.amount)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let wei = gradience_core::eth_to_wei(&body.amount).map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let rpc_url = gradience_core::chain::resolve_rpc(&body.chain);
 
     let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let nonce = client.get_transaction_count(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let gas_price_hex = client.get_gas_price().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = client
+        .get_transaction_count(&from_addr)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price_hex = client
+        .get_gas_price()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let chain_num = gradience_core::chain::evm_chain_num(&body.chain);
     let to_bytes = hex::decode(body.to.trim_start_matches("0x")).unwrap_or_default();
-    let data_bytes = hex::decode(body.data.as_deref().unwrap_or("").trim_start_matches("0x")).unwrap_or_default();
+    let data_bytes = hex::decode(body.data.as_deref().unwrap_or("").trim_start_matches("0x"))
+        .unwrap_or_default();
 
     let tx = gradience_core::ows::adapter::Transaction {
         to: Some(body.to.clone()),
@@ -1562,18 +1888,35 @@ pub async fn wallet_sign(
         raw_hex: format!("0x{}", hex::encode(&data_bytes)),
     };
     let (eval, core_policies) = evaluate_wallet_policy(
-        &state, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+        &state,
+        &wallet_id,
+        &format!("eip155:{}", chain_num),
+        tx.clone(),
+    )
+    .await?;
 
     let mut approval_id = None;
     if eval.decision == gradience_core::policy::engine::Decision::Deny {
         let _ = gradience_core::audit::service::log_wallet_action(
-            &state.db, &wallet_id, None, "sign", &serde_json::json!({"to": body.to, "amount": body.amount}).to_string(), "denied",
-        ).await;
-        return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+            &state.db,
+            &wallet_id,
+            None,
+            "sign",
+            &serde_json::json!({"to": body.to, "amount": body.amount}).to_string(),
+            "denied",
+        )
+        .await;
+        return Ok((
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+        ));
     }
     if eval.decision == gradience_core::policy::engine::Decision::Warn {
         let aid = uuid::Uuid::new_v4().to_string();
-        let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+        let policy_id = core_policies
+            .first()
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
         let request_json = serde_json::json!({
             "action": "sign",
             "wallet_id": wallet_id,
@@ -1581,10 +1924,16 @@ pub async fn wallet_sign(
             "amount": body.amount,
             "data": body.data.as_deref().unwrap_or(""),
             "chain": body.chain,
-        }).to_string();
+        })
+        .to_string();
         let _ = gradience_db::queries::create_policy_approval(
-            &state.db, &aid, &policy_id, &wallet_id, &request_json
-        ).await;
+            &state.db,
+            &aid,
+            &policy_id,
+            &wallet_id,
+            &request_json,
+        )
+        .await;
         approval_id = Some(aid);
     }
     let mut rlp = rlp::RlpStream::new_list(9);
@@ -1607,17 +1956,33 @@ pub async fn wallet_sign(
         None,
         Some(rpc_url),
         Some(&state.vault_dir),
-    ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let wallet_ws = gradience_db::queries::get_wallet_by_id(
-        &state.db, &wallet_id)
-        .await.ok().flatten().and_then(|w| w.workspace_id);
+    let wallet_ws = gradience_db::queries::get_wallet_by_id(&state.db, &wallet_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|w| w.workspace_id);
     let _ = gradience_core::policy::spending::record_spending(
-        &state.db, &wallet_id, wallet_ws.as_deref(), &format!("eip155:{}", chain_num), wei, &core_policies,
-    ).await;
+        &state.db,
+        &wallet_id,
+        wallet_ws.as_deref(),
+        &format!("eip155:{}", chain_num),
+        wei,
+        &core_policies,
+    )
+    .await;
     let _ = gradience_core::audit::service::log_wallet_action(
-        &state.db, &wallet_id, None, "sign", &serde_json::json!({"to": body.to, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allowed",
-    ).await;
+        &state.db,
+        &wallet_id,
+        None,
+        "sign",
+        &serde_json::json!({"to": body.to, "amount": body.amount, "tx_hash": result.tx_hash})
+            .to_string(),
+        "allowed",
+    )
+    .await;
 
     let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
     if let Some(aid) = approval_id {
@@ -1645,21 +2010,34 @@ pub struct SwapQuoteReq {
     amount: String,
 }
 
-pub async fn swap_quote(
-    Json(body): Json<SwapQuoteReq>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let chain_num = if body.chain == "solana" { 101u64 } else { gradience_core::chain::evm_chain_num(&body.chain) };
+pub async fn swap_quote(Json(body): Json<SwapQuoteReq>) -> Result<impl IntoResponse, StatusCode> {
+    let chain_num = if body.chain == "solana" {
+        101u64
+    } else {
+        gradience_core::chain::evm_chain_num(&body.chain)
+    };
     let dex = gradience_core::dex::service::DexService::new();
-    let quote = dex.get_quote("", &body.from_token, &body.to_token, &body.amount, chain_num).await
+    let quote = dex
+        .get_quote(
+            "",
+            &body.from_token,
+            &body.to_token,
+            &body.amount,
+            chain_num,
+        )
+        .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({
-        "from_token": quote.from_token,
-        "to_token": quote.to_token,
-        "from_amount": quote.from_amount,
-        "to_amount": quote.to_amount,
-        "price_impact": quote.price_impact,
-        "provider": quote.provider,
-    }))))
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "from_token": quote.from_token,
+            "to_token": quote.to_token,
+            "from_amount": quote.from_amount,
+            "to_amount": quote.to_amount,
+            "price_impact": quote.price_impact,
+            "provider": quote.provider,
+        })),
+    ))
 }
 
 pub async fn wallet_swap(
@@ -1669,7 +2047,9 @@ pub async fn wallet_swap(
     Json(body): Json<SwapReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
@@ -1694,11 +2074,20 @@ pub async fn wallet_swap(
         let from_addr = sol_addr.ok_or(StatusCode::BAD_REQUEST)?;
 
         let dex = gradience_core::dex::service::DexService::new();
-        let tx = dex.build_swap_tx(&from_addr, &body.from_token, &body.to_token, &body.amount, 101u64, body.slippage_bps.unwrap_or(50))
-            .await.map_err(|_| StatusCode::BAD_REQUEST)?;
+        let tx = dex
+            .build_swap_tx(
+                &from_addr,
+                &body.from_token,
+                &body.to_token,
+                &body.amount,
+                101u64,
+                body.slippage_bps.unwrap_or(50),
+            )
+            .await
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let (eval, core_policies) = evaluate_wallet_policy(
-            &state, &wallet_id, "solana:103", tx.clone()).await?;
+        let (eval, core_policies) =
+            evaluate_wallet_policy(&state, &wallet_id, "solana:103", tx.clone()).await?;
 
         let mut approval_id = None;
         if eval.decision == gradience_core::policy::engine::Decision::Deny {
@@ -1706,11 +2095,17 @@ pub async fn wallet_swap(
                 &state.db, &wallet_id, None, "swap",
                 &serde_json::json!({"from_token": body.from_token, "to_token": body.to_token, "amount": body.amount}).to_string(), "denied",
             ).await;
-            return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+            return Ok((
+                StatusCode::FORBIDDEN,
+                axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+            ));
         }
         if eval.decision == gradience_core::policy::engine::Decision::Warn {
             let aid = uuid::Uuid::new_v4().to_string();
-            let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+            let policy_id = core_policies
+                .first()
+                .map(|p| p.id.clone())
+                .unwrap_or_default();
             let request_json = serde_json::json!({
                 "action": "swap",
                 "wallet_id": wallet_id,
@@ -1718,10 +2113,16 @@ pub async fn wallet_swap(
                 "to_token": body.to_token,
                 "amount": body.amount,
                 "chain": body.chain,
-            }).to_string();
+            })
+            .to_string();
             let _ = gradience_db::queries::create_policy_approval(
-                &state.db, &aid, &policy_id, &wallet_id, &request_json
-            ).await;
+                &state.db,
+                &aid,
+                &policy_id,
+                &wallet_id,
+                &request_json,
+            )
+            .await;
             approval_id = Some(aid);
         }
 
@@ -1734,7 +2135,8 @@ pub async fn wallet_swap(
             None,
             Some(rpc_url),
             Some(&state.vault_dir),
-        ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        )
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         let _ = gradience_core::audit::service::log_wallet_action(
             &state.db, &wallet_id, None, "swap",
@@ -1764,17 +2166,25 @@ pub async fn wallet_swap(
     let rpc_url = gradience_core::chain::resolve_rpc(&body.chain);
 
     let dex = gradience_core::dex::service::DexService::new();
-    let tx = dex.build_swap_tx(
-        &from_addr,
-        &body.from_token,
-        &body.to_token,
-        &body.amount,
-        chain_num,
-        body.slippage_bps.unwrap_or(50),
-    ).await.map_err(|_| StatusCode::BAD_REQUEST)?;
+    let tx = dex
+        .build_swap_tx(
+            &from_addr,
+            &body.from_token,
+            &body.to_token,
+            &body.amount,
+            chain_num,
+            body.slippage_bps.unwrap_or(50),
+        )
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     let (eval, core_policies) = evaluate_wallet_policy(
-        &state, &wallet_id, &format!("eip155:{}", chain_num), tx.clone()).await?;
+        &state,
+        &wallet_id,
+        &format!("eip155:{}", chain_num),
+        tx.clone(),
+    )
+    .await?;
 
     let mut approval_id = None;
     if eval.decision == gradience_core::policy::engine::Decision::Deny {
@@ -1782,11 +2192,17 @@ pub async fn wallet_swap(
             &state.db, &wallet_id, None, "swap",
             &serde_json::json!({"from_token": body.from_token, "to_token": body.to_token, "amount": body.amount}).to_string(), "denied",
         ).await;
-        return Ok((StatusCode::FORBIDDEN, axum::Json(serde_json::json!({"error": eval.reasons.join(", ")}))));
+        return Ok((
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+        ));
     }
     if eval.decision == gradience_core::policy::engine::Decision::Warn {
         let aid = uuid::Uuid::new_v4().to_string();
-        let policy_id = core_policies.first().map(|p| p.id.clone()).unwrap_or_default();
+        let policy_id = core_policies
+            .first()
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
         let request_json = serde_json::json!({
             "action": "swap",
             "wallet_id": wallet_id,
@@ -1794,20 +2210,33 @@ pub async fn wallet_swap(
             "to_token": body.to_token,
             "amount": body.amount,
             "chain": body.chain,
-        }).to_string();
+        })
+        .to_string();
         let _ = gradience_db::queries::create_policy_approval(
-            &state.db, &aid, &policy_id, &wallet_id, &request_json
-        ).await;
+            &state.db,
+            &aid,
+            &policy_id,
+            &wallet_id,
+            &request_json,
+        )
+        .await;
         approval_id = Some(aid);
     }
 
     let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let nonce = client.get_transaction_count(&from_addr).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let gas_price_hex = client.get_gas_price().await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = client
+        .get_transaction_count(&from_addr)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let gas_price_hex = client
+        .get_gas_price()
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let to_bytes = hex::decode(tx.to.as_deref().unwrap_or("").trim_start_matches("0x")).unwrap_or_default();
+    let to_bytes =
+        hex::decode(tx.to.as_deref().unwrap_or("").trim_start_matches("0x")).unwrap_or_default();
     let data_bytes = tx.data.clone();
     let value_wei = tx.value.parse::<u128>().unwrap_or(0);
 
@@ -1831,14 +2260,23 @@ pub async fn wallet_swap(
         None,
         Some(rpc_url),
         Some(&state.vault_dir),
-    ).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let wallet_ws = gradience_db::queries::get_wallet_by_id(
-        &state.db, &wallet_id)
-        .await.ok().flatten().and_then(|w| w.workspace_id);
+    let wallet_ws = gradience_db::queries::get_wallet_by_id(&state.db, &wallet_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|w| w.workspace_id);
     let _ = gradience_core::policy::spending::record_spending(
-        &state.db, &wallet_id, wallet_ws.as_deref(), &format!("eip155:{}", chain_num), value_wei, &core_policies,
-    ).await;
+        &state.db,
+        &wallet_id,
+        wallet_ws.as_deref(),
+        &format!("eip155:{}", chain_num),
+        value_wei,
+        &core_policies,
+    )
+    .await;
     let _ = gradience_core::audit::service::log_wallet_action(
         &state.db, &wallet_id, None, "swap",
         &serde_json::json!({"from_token": body.from_token, "to_token": body.to_token, "amount": body.amount, "tx_hash": result.tx_hash}).to_string(), "allowed",
@@ -1860,22 +2298,29 @@ pub async fn list_policy_approvals(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     // For demo, list all pending approvals across all wallets
     let rows = gradience_db::queries::list_all_pending_policy_approvals(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let list: Vec<_> = rows.into_iter().map(|a| serde_json::json!({
-        "id": a.id,
-        "policy_id": a.policy_id,
-        "wallet_id": a.wallet_id,
-        "status": a.status,
-        "request_json": a.request_json,
-        "expires_at": a.expires_at.to_rfc3339(),
-        "created_at": a.created_at.to_rfc3339(),
-    })).collect();
+    let list: Vec<_> = rows
+        .into_iter()
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "policy_id": a.policy_id,
+                "wallet_id": a.wallet_id,
+                "status": a.status,
+                "request_json": a.request_json,
+                "expires_at": a.expires_at.to_rfc3339(),
+                "created_at": a.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
 
     Ok(Json(list))
 }
@@ -1886,10 +2331,15 @@ pub async fn approve_policy_approval(
     Path(approval_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     gradience_db::queries::update_policy_approval_status(
-        &state.db, &approval_id, "approved", Some(&session.username),
+        &state.db,
+        &approval_id,
+        "approved",
+        Some(&session.username),
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1903,10 +2353,15 @@ pub async fn reject_policy_approval(
     Path(approval_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     gradience_db::queries::update_policy_approval_status(
-        &state.db, &approval_id, "rejected", Some(&session.username),
+        &state.db,
+        &approval_id,
+        "rejected",
+        Some(&session.username),
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -1929,20 +2384,25 @@ pub async fn wallet_transactions(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<TxResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let logs = gradience_db::queries::list_audit_logs_by_wallet(&state.db, &wallet_id, 50)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let txs = logs.into_iter().map(|l| TxResp {
-        id: l.id,
-        action: l.action,
-        decision: l.decision,
-        tx_hash: l.tx_hash,
-        created_at: l.created_at.to_rfc3339(),
-    }).collect();
+    let txs = logs
+        .into_iter()
+        .map(|l| TxResp {
+            id: l.id,
+            action: l.action,
+            decision: l.decision,
+            tx_hash: l.tx_hash,
+            created_at: l.created_at.to_rfc3339(),
+        })
+        .collect();
 
     Ok(Json(txs))
 }
@@ -1968,13 +2428,20 @@ pub async fn verify_audit_proof(
     let proof: Vec<[u8; 32]> = body
         .proof
         .iter()
-        .filter_map(|p| hex::decode(p.trim_start_matches("0x")).ok().and_then(|v| v.try_into().ok()))
+        .filter_map(|p| {
+            hex::decode(p.trim_start_matches("0x"))
+                .ok()
+                .and_then(|v| v.try_into().ok())
+        })
         .collect();
     if proof.len() != body.proof.len() {
         return Err(StatusCode::BAD_REQUEST);
     }
     let valid = gradience_core::audit::merkle::verify_proof(root, leaf, &proof);
-    Ok((StatusCode::OK, axum::Json(serde_json::json!({ "valid": valid }))))
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({ "valid": valid })),
+    ))
 }
 
 pub async fn audit_export(
@@ -1984,10 +2451,15 @@ pub async fn audit_export(
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
-    let format = params.get("format").cloned().unwrap_or_else(|| "json".into());
+    let format = params
+        .get("format")
+        .cloned()
+        .unwrap_or_else(|| "json".into());
     let logs = gradience_db::queries::list_audit_logs_by_wallet(&state.db, &wallet_id, i64::MAX)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -2014,14 +2486,19 @@ pub async fn audit_export(
         return Ok(resp);
     }
 
-    let json: Vec<_> = logs.into_iter().map(|l| serde_json::json!({
-        "id": l.id,
-        "wallet_id": l.wallet_id,
-        "action": l.action,
-        "decision": l.decision,
-        "tx_hash": l.tx_hash,
-        "created_at": l.created_at.to_rfc3339(),
-    })).collect();
+    let json: Vec<_> = logs
+        .into_iter()
+        .map(|l| {
+            serde_json::json!({
+                "id": l.id,
+                "wallet_id": l.wallet_id,
+                "action": l.action,
+                "decision": l.decision,
+                "tx_hash": l.tx_hash,
+                "created_at": l.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
     Ok((StatusCode::OK, axum::Json(json)).into_response())
 }
 
@@ -2032,7 +2509,9 @@ pub async fn wallet_audit_proof(
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let log_id = params
@@ -2041,9 +2520,7 @@ pub async fn wallet_audit_proof(
         .ok_or(StatusCode::BAD_REQUEST)?;
 
     let (proof, leaf, root) = gradience_core::audit::service::generate_merkle_proof_for_log(
-        &state.db,
-        &wallet_id,
-        log_id,
+        &state.db, &wallet_id, log_id,
     )
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -2071,7 +2548,9 @@ pub async fn create_api_key(
     Json(body): Json<CreateApiKeyReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
@@ -2080,25 +2559,48 @@ pub async fn create_api_key(
         return Err(StatusCode::BAD_REQUEST);
     }
 
-    let vault = state.ows.init_vault(&passphrase).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let key = state.ows.attach_api_key_and_policies(&vault, &wallet_id, name, vec![])
+    let vault = state
+        .ows
+        .init_vault(&passphrase)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let key = state
+        .ows
+        .attach_api_key_and_policies(&vault, &wallet_id, name, vec![])
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let key_hash = hex::decode(&key.token_hash).unwrap_or_default();
-    gradience_db::queries::create_api_key(&state.db, &key.id, &wallet_id, name, &key_hash, "sign,read", None)
-        .await
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    gradience_db::queries::create_api_key(
+        &state.db,
+        &key.id,
+        &wallet_id,
+        name,
+        &key_hash,
+        "sign,read",
+        None,
+    )
+    .await
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let _ = gradience_core::audit::service::log_wallet_action(
-        &state.db, &wallet_id, None, "create_api_key", &serde_json::json!({"key_id": key.id, "name": name}).to_string(), "allowed",
-    ).await;
+        &state.db,
+        &wallet_id,
+        None,
+        "create_api_key",
+        &serde_json::json!({"key_id": key.id, "name": name}).to_string(),
+        "allowed",
+    )
+    .await;
 
-    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({
-        "id": key.id,
-        "name": name,
-        "raw_token": key.raw_token,
-    }))))
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(serde_json::json!({
+            "id": key.id,
+            "name": name,
+            "raw_token": key.raw_token,
+        })),
+    ))
 }
 
 pub async fn list_api_keys(
@@ -2107,7 +2609,9 @@ pub async fn list_api_keys(
     Path(wallet_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let rows = gradience_db::queries::list_api_keys_by_wallet(&state.db, &wallet_id)
@@ -2122,12 +2626,15 @@ pub async fn list_api_keys(
         expired: bool,
     }
 
-    let keys: Vec<_> = rows.into_iter().map(|k| KeyRow {
-        id: k.id,
-        name: k.name,
-        permissions: k.permissions,
-        expired: k.expires_at.is_some(),
-    }).collect();
+    let keys: Vec<_> = rows
+        .into_iter()
+        .map(|k| KeyRow {
+            id: k.id,
+            name: k.name,
+            permissions: k.permissions,
+            expired: k.expires_at.is_some(),
+        })
+        .collect();
 
     Ok((StatusCode::OK, axum::Json(keys)))
 }
@@ -2138,7 +2645,9 @@ pub async fn revoke_api_key(
     Path((wallet_id, key_id)): Path<(String, String)>,
 ) -> Result<StatusCode, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     gradience_db::queries::revoke_api_key(&state.db, &key_id)
@@ -2146,8 +2655,14 @@ pub async fn revoke_api_key(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let _ = gradience_core::audit::service::log_wallet_action(
-        &state.db, &wallet_id, None, "revoke_api_key", &serde_json::json!({"key_id": key_id}).to_string(), "allowed",
-    ).await;
+        &state.db,
+        &wallet_id,
+        None,
+        "revoke_api_key",
+        &serde_json::json!({"key_id": key_id}).to_string(),
+        "allowed",
+    )
+    .await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -2167,17 +2682,22 @@ pub async fn list_sessions(
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let rows = gradience_db::queries::list_sessions_by_user(&state.db, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let sessions: Vec<SessionRow> = rows.into_iter().map(|(t, u, c, e)| SessionRow {
-        token: t.clone(),
-        username: u,
-        created_at: c.to_rfc3339(),
-        expires_at: e.to_rfc3339(),
-        current: t == token,
-    }).collect();
+    let sessions: Vec<SessionRow> = rows
+        .into_iter()
+        .map(|(t, u, c, e)| SessionRow {
+            token: t.clone(),
+            username: u,
+            created_at: c.to_rfc3339(),
+            expires_at: e.to_rfc3339(),
+            current: t == token,
+        })
+        .collect();
     Ok((StatusCode::OK, axum::Json(sessions)))
 }
 
@@ -2192,7 +2712,9 @@ pub async fn revoke_session(
     Json(body): Json<RevokeSessionReq>,
 ) -> Result<StatusCode, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let user_sessions = gradience_db::queries::list_sessions_by_user(&state.db, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -2220,7 +2742,9 @@ pub async fn create_policy(
     Json(body): Json<CreatePolicyReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let policy_id = gradience_core::policy::service::create_policy_sync(
@@ -2234,10 +2758,19 @@ pub async fn create_policy(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let _ = gradience_core::audit::service::log_wallet_action(
-        &state.db, &wallet_id, None, "create_policy", &serde_json::json!({"policy_id": policy_id}).to_string(), "allowed",
-    ).await;
+        &state.db,
+        &wallet_id,
+        None,
+        "create_policy",
+        &serde_json::json!({"policy_id": policy_id}).to_string(),
+        "allowed",
+    )
+    .await;
 
-    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({ "policy_id": policy_id }))))
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(serde_json::json!({ "policy_id": policy_id })),
+    ))
 }
 
 #[derive(Serialize)]
@@ -2258,7 +2791,9 @@ pub async fn create_workspace_policy(
     Json(body): Json<CreatePolicyReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _ = require_workspace_member(&state, &session.user_id, &workspace_id).await?;
 
     let policy_id = gradience_core::policy::service::create_policy_sync(
@@ -2271,7 +2806,10 @@ pub async fn create_workspace_policy(
     .await
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({ "policy_id": policy_id }))))
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(serde_json::json!({ "policy_id": policy_id })),
+    ))
 }
 
 pub async fn list_workspace_policies(
@@ -2280,22 +2818,27 @@ pub async fn list_workspace_policies(
     Path(workspace_id): Path<String>,
 ) -> Result<Json<Vec<PolicyResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _ = require_workspace_member(&state, &session.user_id, &workspace_id).await?;
 
     let rows = gradience_db::queries::list_active_policies_by_workspace(&state.db, &workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let policies = rows.into_iter().map(|p| PolicyResp {
-        id: p.id,
-        name: p.name,
-        wallet_id: p.wallet_id,
-        workspace_id: p.workspace_id,
-        rules_json: p.rules_json,
-        status: p.status,
-        created_at: p.created_at.to_rfc3339(),
-    }).collect();
+    let policies = rows
+        .into_iter()
+        .map(|p| PolicyResp {
+            id: p.id,
+            name: p.name,
+            wallet_id: p.wallet_id,
+            workspace_id: p.workspace_id,
+            rules_json: p.rules_json,
+            status: p.status,
+            created_at: p.created_at.to_rfc3339(),
+        })
+        .collect();
 
     Ok(Json(policies))
 }
@@ -2306,22 +2849,27 @@ pub async fn list_wallet_policies(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<PolicyResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let rows = gradience_db::queries::list_active_policies_by_wallet(&state.db, &wallet_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let policies = rows.into_iter().map(|p| PolicyResp {
-        id: p.id,
-        name: p.name,
-        wallet_id: p.wallet_id,
-        workspace_id: p.workspace_id,
-        rules_json: p.rules_json,
-        status: p.status,
-        created_at: p.created_at.to_rfc3339(),
-    }).collect();
+    let policies = rows
+        .into_iter()
+        .map(|p| PolicyResp {
+            id: p.id,
+            name: p.name,
+            wallet_id: p.wallet_id,
+            workspace_id: p.workspace_id,
+            rules_json: p.rules_json,
+            status: p.status,
+            created_at: p.created_at.to_rfc3339(),
+        })
+        .collect();
 
     Ok(Json(policies))
 }
@@ -2354,7 +2902,9 @@ pub async fn set_payment_routes(
     Json(body): Json<SetPaymentRoutesReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     gradience_db::queries::clear_payment_routes_by_wallet(&state.db, &wallet_id)
@@ -2385,7 +2935,10 @@ pub async fn set_payment_routes(
     )
     .await;
 
-    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({"saved": body.routes.len()}))))
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(serde_json::json!({"saved": body.routes.len()})),
+    ))
 }
 
 pub async fn list_payment_routes(
@@ -2394,18 +2947,23 @@ pub async fn list_payment_routes(
     Path(wallet_id): Path<String>,
 ) -> Result<Json<Vec<PaymentRouteResp>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let rows = gradience_db::queries::list_payment_routes_by_wallet(&state.db, &wallet_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let routes = rows.into_iter().map(|r| PaymentRouteResp {
-        chain_id: r.chain_id,
-        token_address: r.token_address,
-        priority: r.priority as u32,
-    }).collect();
+    let routes = rows
+        .into_iter()
+        .map(|r| PaymentRouteResp {
+            chain_id: r.chain_id,
+            token_address: r.token_address,
+            priority: r.priority as u32,
+        })
+        .collect();
 
     Ok(Json(routes))
 }
@@ -2418,24 +2976,31 @@ pub async fn list_payments(
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let wallet_id = params.get("wallet_id").cloned().unwrap_or_default();
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let rows = gradience_db::queries::list_payment_records_by_wallet(&state.db, &wallet_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let payments: Vec<_> = rows.into_iter().map(|p| serde_json::json!({
-        "id": p.id,
-        "wallet_id": p.wallet_id,
-        "protocol": p.protocol,
-        "amount": p.amount,
-        "token": p.token,
-        "recipient": p.recipient,
-        "status": p.status,
-        "tx_hash": p.tx_hash,
-        "created_at": p.created_at.to_rfc3339(),
-    })).collect();
+    let payments: Vec<_> = rows
+        .into_iter()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "wallet_id": p.wallet_id,
+                "protocol": p.protocol,
+                "amount": p.amount,
+                "token": p.token,
+                "recipient": p.recipient,
+                "status": p.status,
+                "tx_hash": p.tx_hash,
+                "created_at": p.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
     Ok((StatusCode::OK, axum::Json(payments)))
 }
 
@@ -2456,7 +3021,11 @@ pub async fn handle_socket(mut socket: axum::extract::ws::WebSocket, state: Arc<
             .map(|v| v.len() as i64)
             .unwrap_or(0);
         let payload = serde_json::json!({ "pendingApprovals": count });
-        if socket.send(Message::Text(payload.to_string())).await.is_err() {
+        if socket
+            .send(Message::Text(payload.to_string()))
+            .await
+            .is_err()
+        {
             break;
         }
     }
@@ -2468,7 +3037,9 @@ pub async fn wallet_anchor(
     Path(wallet_id): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
 
     let wm = gradience_core::wallet::service::WalletManagerService::new();
@@ -2479,29 +3050,45 @@ pub async fn wallet_anchor(
     let svc = gradience_core::audit::anchor::AnchorService::from_env()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let Some(svc) = svc else {
-        return Ok((StatusCode::SERVICE_UNAVAILABLE, axum::Json(serde_json::json!({"error": "ANCHOR_RPC_URL not configured"}))));
+        return Ok((
+            StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({"error": "ANCHOR_RPC_URL not configured"})),
+        ));
     };
 
-    let tx_hash = svc.anchor_unanchored_logs(&state.db, &wallet_id, 100)
+    let tx_hash = svc
+        .anchor_unanchored_logs(&state.db, &wallet_id, 100)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let decision = "allowed";
     let _ = gradience_core::audit::service::log_wallet_action(
-        &state.db, &wallet_id, None, "anchor", &serde_json::json!({"tx_hash": tx_hash}).to_string(), decision,
-    ).await;
+        &state.db,
+        &wallet_id,
+        None,
+        "anchor",
+        &serde_json::json!({"tx_hash": tx_hash}).to_string(),
+        decision,
+    )
+    .await;
 
     match tx_hash {
-        Some(hash) => Ok((StatusCode::OK, axum::Json(serde_json::json!({ "tx_hash": hash })))),
-        None => Ok((StatusCode::OK, axum::Json(serde_json::json!({ "message": "No unanchored logs" })))),
+        Some(hash) => Ok((
+            StatusCode::OK,
+            axum::Json(serde_json::json!({ "tx_hash": hash })),
+        )),
+        None => Ok((
+            StatusCode::OK,
+            axum::Json(serde_json::json!({ "message": "No unanchored logs" })),
+        )),
     }
 }
 
 pub async fn mcp_sign_transaction(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let args: gradience_mcp::args::SignTxArgs = serde_json::from_value(body)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let args: gradience_mcp::args::SignTxArgs =
+        serde_json::from_value(body).map_err(|_| StatusCode::BAD_REQUEST)?;
     let resp = gradience_mcp::tools::handle_sign_transaction(args)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok((StatusCode::OK, axum::Json(resp)))
@@ -2510,8 +3097,8 @@ pub async fn mcp_sign_transaction(
 pub async fn mcp_get_balance(
     Json(body): Json<serde_json::Value>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let args: gradience_mcp::args::GetBalanceArgs = serde_json::from_value(body)
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let args: gradience_mcp::args::GetBalanceArgs =
+        serde_json::from_value(body).map_err(|_| StatusCode::BAD_REQUEST)?;
     let resp = gradience_mcp::tools::handle_get_balance(args)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok((StatusCode::OK, axum::Json(resp)))
@@ -2526,7 +3113,11 @@ pub async fn health_check(
         .map(|o| o.is_some())
         .unwrap_or(false);
 
-    let status = if db_healthy && vault_exists { "ok" } else { "degraded" };
+    let status = if db_healthy && vault_exists {
+        "ok"
+    } else {
+        "degraded"
+    };
 
     Ok(axum::Json(serde_json::json!({
         "status": status,
@@ -2552,7 +3143,9 @@ pub async fn create_workspace(
     Json(body): Json<CreateWorkspaceReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let name = body.name.trim();
     if name.is_empty() {
@@ -2560,15 +3153,25 @@ pub async fn create_workspace(
     }
 
     let svc = gradience_core::team::workspace::WorkspaceService::new();
-    let workspace_id = svc.create_workspace(&state.db, name, &session.user_id)
+    let workspace_id = svc
+        .create_workspace(&state.db, name, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     let _ = gradience_core::audit::service::log_wallet_action(
-        &state.db, "system", None, "create_workspace", &serde_json::json!({"workspace_id": workspace_id}).to_string(), "allowed",
-    ).await;
+        &state.db,
+        "system",
+        None,
+        "create_workspace",
+        &serde_json::json!({"workspace_id": workspace_id}).to_string(),
+        "allowed",
+    )
+    .await;
 
-    Ok((StatusCode::CREATED, axum::Json(serde_json::json!({ "workspace_id": workspace_id }))))
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(serde_json::json!({ "workspace_id": workspace_id })),
+    ))
 }
 
 pub async fn list_workspaces(
@@ -2576,19 +3179,26 @@ pub async fn list_workspaces(
     headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let rows = gradience_db::queries::list_workspaces_by_owner(&state.db, &session.user_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let list: Vec<_> = rows.into_iter().map(|w| serde_json::json!({
-        "id": w.id,
-        "name": w.name,
-        "owner_id": w.owner_id,
-        "plan": w.plan,
-        "created_at": w.created_at.to_rfc3339(),
-    })).collect();
+    let list: Vec<_> = rows
+        .into_iter()
+        .map(|w| {
+            serde_json::json!({
+                "id": w.id,
+                "name": w.name,
+                "owner_id": w.owner_id,
+                "plan": w.plan,
+                "created_at": w.created_at.to_rfc3339(),
+            })
+        })
+        .collect();
 
     Ok(Json(list))
 }
@@ -2606,20 +3216,25 @@ pub async fn invite_workspace_member(
     Json(body): Json<InviteMemberReq>,
 ) -> Result<impl IntoResponse, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _role = require_workspace_member(&state, &session.user_id, &workspace_id).await?;
 
-    let role: gradience_core::team::workspace::WorkspaceRole = body.role
-        .parse()
-        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let role: gradience_core::team::workspace::WorkspaceRole =
+        body.role.parse().map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Ensure user exists
-    let user = gradience_db::queries::get_user_by_email(&state.db, &body.email).await.ok().flatten();
+    let user = gradience_db::queries::get_user_by_email(&state.db, &body.email)
+        .await
+        .ok()
+        .flatten();
     let user_id = match user {
         Some(u) => u.id,
         None => {
             let uid = uuid::Uuid::new_v4().to_string();
-            gradience_db::queries::create_user(&state.db, &uid, &body.email).await
+            gradience_db::queries::create_user(&state.db, &uid, &body.email)
+                .await
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             uid
         }
@@ -2639,19 +3254,26 @@ pub async fn list_workspace_members(
     Path(workspace_id): Path<String>,
 ) -> Result<Json<Vec<serde_json::Value>>, StatusCode> {
     let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
     let _role = require_workspace_member(&state, &session.user_id, &workspace_id).await?;
 
     let rows = gradience_db::queries::list_workspace_members(&state.db, &workspace_id)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let list: Vec<_> = rows.into_iter().map(|m| serde_json::json!({
-        "workspace_id": m.workspace_id,
-        "user_id": m.user_id,
-        "role": m.role,
-        "invited_at": m.invited_at.to_rfc3339(),
-    })).collect();
+    let list: Vec<_> = rows
+        .into_iter()
+        .map(|m| {
+            serde_json::json!({
+                "workspace_id": m.workspace_id,
+                "user_id": m.user_id,
+                "role": m.role,
+                "invited_at": m.invited_at.to_rfc3339(),
+            })
+        })
+        .collect();
 
     Ok(Json(list))
 }
@@ -2678,13 +3300,10 @@ pub struct TgChat {
     id: i64,
 }
 
-pub async fn tg_webhook(
-    Json(body): Json<TgWebhookReq>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let token = std::env::var("TELEGRAM_BOT_TOKEN")
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
-    let origin = std::env::var("ORIGIN")
-        .unwrap_or_else(|_| "https://gradience-wallet.example.com".into());
+pub async fn tg_webhook(Json(body): Json<TgWebhookReq>) -> Result<impl IntoResponse, StatusCode> {
+    let token = std::env::var("TELEGRAM_BOT_TOKEN").map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let origin =
+        std::env::var("ORIGIN").unwrap_or_else(|_| "https://gradience-wallet.example.com".into());
 
     let chat_id = body.message.as_ref().map(|m| m.chat.id);
     let text = body.message.as_ref().and_then(|m| m.text.clone());
@@ -2768,8 +3387,9 @@ pub async fn mpp_demo(
     *resp.status_mut() = StatusCode::PAYMENT_REQUIRED;
     resp.headers_mut().insert(
         axum::http::header::WWW_AUTHENTICATE,
-        www_auth.parse().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
+        www_auth
+            .parse()
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
     );
     Ok(resp)
 }
-

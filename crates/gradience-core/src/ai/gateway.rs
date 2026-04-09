@@ -33,7 +33,8 @@ impl AiGatewayService {
         gradience_db::queries::seed_model_pricing(pool).await.ok(); // ensure seed exists
 
         let pricing = gradience_db::queries::get_model_pricing(pool, provider, model).await?;
-        let pricing = pricing.ok_or_else(|| anyhow::anyhow!("No pricing found for {}/{}", provider, model))?;
+        let pricing = pricing
+            .ok_or_else(|| anyhow::anyhow!("No pricing found for {}/{}", provider, model))?;
 
         // Estimate tokens (very rough: 1 token ≈ 4 chars)
         let input_chars = prompt.len() as i64;
@@ -43,11 +44,16 @@ impl AiGatewayService {
         // Cost in raw USDC wei-like units (1 USDC = 1_000_000)
         // price is per 1M tokens
         let scale = 1_000_000i64;
-        let est_cost = (estimated_input_tokens * pricing.input_per_m + estimated_output_tokens * pricing.output_per_m) / 1_000_000;
+        let est_cost = (estimated_input_tokens * pricing.input_per_m
+            + estimated_output_tokens * pricing.output_per_m)
+            / 1_000_000;
         let est_cost_raw = (est_cost * scale).to_string();
 
         // Pre-deduct
-        let ok = self.balance.deduct(pool, wallet_id, &pricing.currency, &est_cost_raw).await?;
+        let ok = self
+            .balance
+            .deduct(pool, wallet_id, &pricing.currency, &est_cost_raw)
+            .await?;
         if !ok {
             return Ok(LlmResponse {
                 content: "Insufficient AI balance.".into(),
@@ -61,45 +67,41 @@ impl AiGatewayService {
         let start = Instant::now();
 
         // Try real API, fallback to mock
-        let (output_text, actual_input_tokens, actual_output_tokens, status_str) =
-            if provider.eq_ignore_ascii_case("anthropic") {
-                if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-                    match super::providers::anthropic::call_anthropic(&key, model, prompt).await {
-                        Ok(res) => {
-                            (
-                                res.content,
-                                res.input_tokens,
-                                res.output_tokens,
-                                "success"
-                            )
-                        }
-                        Err(e) => {
-                            tracing::warn!("Anthropic call failed: {}", e);
-                            let fallback = format!(
+        let (output_text, actual_input_tokens, actual_output_tokens, status_str) = if provider
+            .eq_ignore_ascii_case("anthropic")
+        {
+            if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+                match super::providers::anthropic::call_anthropic(&key, model, prompt).await {
+                    Ok(res) => (res.content, res.input_tokens, res.output_tokens, "success"),
+                    Err(e) => {
+                        tracing::warn!("Anthropic call failed: {}", e);
+                        let fallback = format!(
                                 "[Anthropic unavailable] This is a mock response from {} {} for prompt length {} chars.",
                                 provider, model, input_chars
                             );
-                            (fallback, estimated_input_tokens, 25i64, "fallback_mock")
-                        }
+                        (fallback, estimated_input_tokens, 25i64, "fallback_mock")
                     }
-                } else {
-                    let fallback = format!(
-                        "[ANTHROPIC_API_KEY not set] This is a mock response from {} {} for prompt length {} chars.",
-                        provider, model, input_chars
-                    );
-                    (fallback, estimated_input_tokens, 25i64, "fallback_mock")
                 }
             } else {
                 let fallback = format!(
-                    "This is a mock response from {} {} for prompt length {} chars.",
-                    provider, model, input_chars
-                );
+                        "[ANTHROPIC_API_KEY not set] This is a mock response from {} {} for prompt length {} chars.",
+                        provider, model, input_chars
+                    );
                 (fallback, estimated_input_tokens, 25i64, "fallback_mock")
-            };
+            }
+        } else {
+            let fallback = format!(
+                "This is a mock response from {} {} for prompt length {} chars.",
+                provider, model, input_chars
+            );
+            (fallback, estimated_input_tokens, 25i64, "fallback_mock")
+        };
 
         let duration_ms = start.elapsed().as_millis() as i32;
 
-        let actual_cost = (actual_input_tokens * pricing.input_per_m + actual_output_tokens * pricing.output_per_m) / 1_000_000;
+        let actual_cost = (actual_input_tokens * pricing.input_per_m
+            + actual_output_tokens * pricing.output_per_m)
+            / 1_000_000;
         let actual_cost_raw = (actual_cost * scale).to_string();
 
         // Refund over-estimation
@@ -107,13 +109,21 @@ impl AiGatewayService {
             let est: i64 = est_cost_raw.parse().unwrap_or(0);
             let act: i64 = actual_cost_raw.parse().unwrap_or(0);
             if est > act {
-                let _ = self.balance.topup(pool, wallet_id, &pricing.currency, &(est - act).to_string()).await;
+                let _ = self
+                    .balance
+                    .topup(pool, wallet_id, &pricing.currency, &(est - act).to_string())
+                    .await;
             }
-        } else if actual_cost_raw.parse::<i64>().unwrap_or(0) > est_cost_raw.parse::<i64>().unwrap_or(0) {
+        } else if actual_cost_raw.parse::<i64>().unwrap_or(0)
+            > est_cost_raw.parse::<i64>().unwrap_or(0)
+        {
             // Under-estimation: deduct additional
             let est: i64 = est_cost_raw.parse().unwrap_or(0);
             let act: i64 = actual_cost_raw.parse().unwrap_or(0);
-            let _ = self.balance.deduct(pool, wallet_id, &pricing.currency, &(act - est).to_string()).await;
+            let _ = self
+                .balance
+                .deduct(pool, wallet_id, &pricing.currency, &(act - est).to_string())
+                .await;
         }
 
         // Log
@@ -137,7 +147,11 @@ impl AiGatewayService {
             input_tokens: actual_input_tokens,
             output_tokens: actual_output_tokens,
             cost_raw: actual_cost_raw,
-            status: if status_str == "success" { "success".into() } else { status_str.into() },
+            status: if status_str == "success" {
+                "success".into()
+            } else {
+                status_str.into()
+            },
         })
     }
 

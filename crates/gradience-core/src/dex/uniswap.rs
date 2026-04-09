@@ -58,7 +58,9 @@ pub fn encode_exact_input_single(
     sqrt_price_limit_x96: &str,
     chain_num: u64,
 ) -> Result<UniV3SwapTx> {
-    let selector = &Keccak256::digest(b"exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)")[..4];
+    let selector = &Keccak256::digest(
+        b"exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)",
+    )[..4];
 
     let token_in = parse_address(token_in)?;
     let token_out = parse_address(token_out)?;
@@ -66,9 +68,11 @@ pub fn encode_exact_input_single(
     let amount_in = u128::from_str_radix(amount_in.trim_start_matches("0x"), 16)
         .map_err(|_| GradienceError::Validation(format!("bad amount_in: {}", amount_in)))?;
     let amount_out_min = u128::from_str_radix(amount_out_min.trim_start_matches("0x"), 16)
-        .map_err(|_| GradienceError::Validation(format!("bad amount_out_min: {}", amount_out_min)))?;
-    let sqrt_price_limit = u128::from_str_radix(sqrt_price_limit_x96.trim_start_matches("0x"), 16)
-        .unwrap_or(0);
+        .map_err(|_| {
+            GradienceError::Validation(format!("bad amount_out_min: {}", amount_out_min))
+        })?;
+    let sqrt_price_limit =
+        u128::from_str_radix(sqrt_price_limit_x96.trim_start_matches("0x"), 16).unwrap_or(0);
 
     let mut data = selector.to_vec();
     // tuple is dynamic? No, exactInputSingle takes a single tuple which is static (all fixed size).
@@ -115,7 +119,8 @@ pub fn encode_quote_exact_input_single(
 
 fn parse_address(addr: &str) -> Result<[u8; 20]> {
     let hex = addr.trim_start_matches("0x");
-    let bytes = hex::decode(hex).map_err(|e| GradienceError::Validation(format!("invalid address: {}", e)))?;
+    let bytes = hex::decode(hex)
+        .map_err(|e| GradienceError::Validation(format!("invalid address: {}", e)))?;
     if bytes.len() != 20 {
         return Err(GradienceError::Validation("address length invalid".into()));
     }

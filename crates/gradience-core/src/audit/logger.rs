@@ -4,11 +4,13 @@
 #![allow(deprecated)]
 
 use crate::error::{GradienceError, Result};
-use sha3::{Sha3_256, Digest};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use sha3::{Digest, Sha3_256};
 
-#[deprecated(since = "0.1.0", note = "Use `crate::audit::service` for DB-backed audit logging")]
-
+#[deprecated(
+    since = "0.1.0",
+    note = "Use `crate::audit::service` for DB-backed audit logging"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditLogEntry {
     pub id: i64,
@@ -36,23 +38,15 @@ impl AuditLogger {
         }
     }
 
-    pub fn log(
-        &mut self,
-        wallet_id: &str,
-        action: &str,
-        decision: &str,
-    ) -> Result<AuditLogEntry> {
+    pub fn log(&mut self, wallet_id: &str, action: &str, decision: &str) -> Result<AuditLogEntry> {
         let id = self.entries.len() as i64 + 1;
         let created_at = chrono::Utc::now().to_rfc3339();
-        
+
         let entry_data = format!(
             "{}:{}:{}:{}:{}",
             id, wallet_id, action, decision, created_at
         );
-        let current_hash = compute_audit_hash(&self.secret_key,
-            &self.last_hash,
-            &entry_data,
-        );
+        let current_hash = compute_audit_hash(&self.secret_key, &self.last_hash, &entry_data);
 
         let entry = AuditLogEntry {
             id,
@@ -69,8 +63,7 @@ impl AuditLogger {
         Ok(entry)
     }
 
-    pub fn verify_chain(&self,
-    ) -> Result<()> {
+    pub fn verify_chain(&self) -> Result<()> {
         let mut expected_prev = format!("{:x}", Sha3_256::digest(b"GENESIS"));
         for entry in &self.entries {
             if entry.prev_hash != expected_prev {

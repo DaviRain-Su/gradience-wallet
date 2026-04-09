@@ -1,5 +1,5 @@
 use gradience_core::ows::adapter::Transaction;
-use gradience_core::policy::engine::{PolicyEngine, EvalContext, Decision, Policy};
+use gradience_core::policy::engine::{Decision, EvalContext, Policy, PolicyEngine};
 use serde_json::json;
 
 fn block_on_async<F, T>(f: F) -> T
@@ -10,9 +10,9 @@ where
         Ok(handle) if handle.metrics().num_workers() > 1 => {
             tokio::task::block_in_place(|| handle.block_on(f))
         }
-        _ => {
-            tokio::runtime::Runtime::new().expect("create tokio runtime").block_on(f)
-        }
+        _ => tokio::runtime::Runtime::new()
+            .expect("create tokio runtime")
+            .block_on(f),
     }
 }
 
@@ -20,7 +20,9 @@ fn get_vault_config() -> anyhow::Result<(String, std::path::PathBuf)> {
     let data_dir = std::env::var("GRADIENCE_DATA_DIR")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|_| {
-            dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience")
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".gradience")
         });
     let session_path = data_dir.join(".session");
     let passphrase = std::fs::read_to_string(&session_path)?;
@@ -75,15 +77,23 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
     let is_solana = chain_id.starts_with("solana:");
 
     let (policies, nonce, gas_price) = block_on_async(async {
-        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".gradience")
+                .to_string_lossy()
+                .to_string()
+        });
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
         let db = match sqlx::SqlitePool::connect(&db_path).await {
             Ok(db) => db,
             Err(_) => return anyhow::Result::<_>::Err(anyhow::anyhow!("db connect failed")),
         };
-        let db_policies = gradience_db::queries::list_active_policies_by_wallet(&db, wallet_id).await.unwrap_or_default();
-        let policies: Vec<gradience_core::policy::engine::Policy> = db_policies.iter()
+        let db_policies = gradience_db::queries::list_active_policies_by_wallet(&db, wallet_id)
+            .await
+            .unwrap_or_default();
+        let policies: Vec<gradience_core::policy::engine::Policy> = db_policies
+            .iter()
             .filter_map(|p| gradience_core::policy::engine::Policy::try_from_db(p).ok())
             .collect();
 
@@ -97,7 +107,9 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         }
 
         let rpc_url = resolve_rpc(chain_id);
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+            .await
+            .unwrap_or_default();
         let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
             .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
         let mut from_addr = None;
@@ -108,9 +120,13 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
             }
         }
         let addr = from_addr.unwrap_or_default();
-        let nonce = client.get_transaction_count(&addr).await
+        let nonce = client
+            .get_transaction_count(&addr)
+            .await
             .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
-        let gp_hex = client.get_gas_price().await
+        let gp_hex = client
+            .get_gas_price()
+            .await
             .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
         let gp = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
             .map_err(|e| anyhow::anyhow!("bad gas price: {}", e))?;
@@ -142,24 +158,38 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
 
             let tx_hex = if is_solana {
                 let tx_bytes: Vec<u8> = block_on_async(async {
-                    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-                        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+                    let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+                        dirs::home_dir()
+                            .unwrap_or_else(|| std::path::PathBuf::from("."))
+                            .join(".gradience")
+                            .to_string_lossy()
+                            .to_string()
+                    });
                     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
-                    let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+                    let db = sqlx::SqlitePool::connect(&db_path)
+                        .await
+                        .ok()
                         .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
-                    let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+                    let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+                        .await
+                        .ok()
                         .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
-                    let from = addrs.iter()
+                    let from = addrs
+                        .iter()
                         .find(|a| a.chain_id.starts_with("solana:"))
                         .map(|a| a.address.clone())
                         .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
                     let rpc_url = resolve_rpc(chain_id);
                     let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
-                    let blockhash = client.get_latest_blockhash().await
+                    let blockhash = client
+                        .get_latest_blockhash()
+                        .await
                         .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
                     let lamports: u64 = value.parse().unwrap_or(0);
-                    gradience_core::ows::signing::build_solana_transfer_tx(&from, to, lamports, &blockhash)
-                        .map_err(|e| anyhow::anyhow!("build solana tx failed: {}", e))
+                    gradience_core::ows::signing::build_solana_transfer_tx(
+                        &from, to, lamports, &blockhash,
+                    )
+                    .map_err(|e| anyhow::anyhow!("build solana tx failed: {}", e))
                 })?;
                 format!("0x{}", hex::encode(&tx_bytes))
             } else {
@@ -175,7 +205,8 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
                 Some(&passphrase),
                 None,
                 Some(&vault_dir),
-            ).map_err(|e| anyhow::anyhow!("ows sign failed: {}", e))?;
+            )
+            .map_err(|e| anyhow::anyhow!("ows sign failed: {}", e))?;
 
             Ok(json!({
                 "signature": format!("0x{}", sign_result.signature),
@@ -183,16 +214,15 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
                 "chainId": chain_id,
             }))
         }
-        Decision::Deny => {
-            Err(anyhow::anyhow!("POLICY_DENIED: {}", result.reasons.join(", ")))
-        }
-        Decision::Warn => {
-            Ok(json!({
-                "signature": null,
-                "decision": "warned",
-                "reasons": result.reasons,
-            }))
-        }
+        Decision::Deny => Err(anyhow::anyhow!(
+            "POLICY_DENIED: {}",
+            result.reasons.join(", ")
+        )),
+        Decision::Warn => Ok(json!({
+            "signature": null,
+            "decision": "warned",
+            "reasons": result.reasons,
+        })),
     }
 }
 
@@ -201,13 +231,20 @@ pub fn handle_get_balance(args: crate::args::GetBalanceArgs) -> anyhow::Result<s
     let chain_id = args.chain_id.as_deref().unwrap_or("eip155:8453");
 
     let rpc_url = resolve_rpc(chain_id);
-    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".gradience")
+            .to_string_lossy()
+            .to_string()
+    });
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
     let balance = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()?;
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+            .await
+            .ok()?;
 
         if chain_id.starts_with("solana:") {
             let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
@@ -286,8 +323,13 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
     let rpc_url = resolve_rpc(&chain_id_str);
 
     let result = block_on_async(async {
-        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".gradience")
+                .to_string_lossy()
+                .to_string()
+        });
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
         let db = match sqlx::SqlitePool::connect(&db_path).await {
             Ok(db) => db,
@@ -299,7 +341,9 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
             return anyhow::Result::<_>::Err(anyhow::anyhow!("wallet status check failed: {}", e));
         }
 
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+            .await
+            .unwrap_or_default();
         let mut from_addr = None;
         for a in &addrs {
             if a.chain_id == "eip155:8453" || a.chain_id == "eip155:1" {
@@ -311,15 +355,21 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
 
         let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
             .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
-        let nonce = client.get_transaction_count(&addr).await
+        let nonce = client
+            .get_transaction_count(&addr)
+            .await
             .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
-        let gp_hex = client.get_gas_price().await
+        let gp_hex = client
+            .get_gas_price()
+            .await
             .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
         let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
             .map_err(|_| anyhow::anyhow!("bad gas price"))?;
 
         let dex = gradience_core::dex::service::DexService::new();
-        let tx = dex.build_swap_tx(&addr, from_token, to_token, amount, chain_num, 50).await
+        let tx = dex
+            .build_swap_tx(&addr, from_token, to_token, amount, chain_num, 50)
+            .await
             .map_err(|e| anyhow::anyhow!("build swap tx failed: {}", e))?;
 
         let to = tx.to.as_deref().unwrap_or("");
@@ -328,8 +378,15 @@ pub fn handle_swap(args: crate::args::SwapArgs) -> anyhow::Result<serde_json::Va
         let tx_hex = build_unsigned_tx(nonce, gas_price, to, value, &data, chain_num);
 
         let res = ows_lib::sign_and_send(
-            wallet_id, chain, &tx_hex, Some(&passphrase), None, Some(rpc_url), Some(&vault_dir)
-        ).map_err(|e| anyhow::anyhow!("sign_and_send failed: {}", e))?;
+            wallet_id,
+            chain,
+            &tx_hex,
+            Some(&passphrase),
+            None,
+            Some(rpc_url),
+            Some(&vault_dir),
+        )
+        .map_err(|e| anyhow::anyhow!("sign_and_send failed: {}", e))?;
 
         anyhow::Result::Ok(res)
     });
@@ -344,11 +401,19 @@ pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Valu
     let wallet_id = &args.wallet_id;
     let recipient = &args.recipient;
     let _amount = &args.amount;
-    let _token = args.token.as_deref().unwrap_or("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+    let _token = args
+        .token
+        .as_deref()
+        .unwrap_or("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
     let _chain = args.chain.as_deref().unwrap_or("base");
 
-    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".gradience")
+            .to_string_lossy()
+            .to_string()
+    });
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
     if !recipient.starts_with("http://") && !recipient.starts_with("https://") {
@@ -356,21 +421,34 @@ pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Valu
     }
 
     let mpp_result = block_on_async(async {
-        use gradience_core::payment::router::{PaymentRoutePreference, PaymentRouter};
         use gradience_core::payment::mpp_client::{GradienceMppProvider, MppClient};
+        use gradience_core::payment::router::{PaymentRoutePreference, PaymentRouter};
 
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
-        let routes = gradience_db::queries::list_payment_routes_by_wallet(&db, wallet_id).await.ok()?;
-        let preferences: Vec<PaymentRoutePreference> = routes.into_iter().map(|r| PaymentRoutePreference {
-            chain_id: r.chain_id,
-            token_address: r.token_address,
-            priority: r.priority as u32,
-        }).collect();
+        let routes = gradience_db::queries::list_payment_routes_by_wallet(&db, wallet_id)
+            .await
+            .ok()?;
+        let preferences: Vec<PaymentRoutePreference> = routes
+            .into_iter()
+            .map(|r| PaymentRoutePreference {
+                chain_id: r.chain_id,
+                token_address: r.token_address,
+                priority: r.priority as u32,
+            })
+            .collect();
 
         let router = if preferences.is_empty() {
             PaymentRouter::new(vec![
-                PaymentRoutePreference { chain_id: "eip155:8453".into(), token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(), priority: 1 },
-                PaymentRoutePreference { chain_id: "eip155:1".into(), token_address: "".into(), priority: 2 },
+                PaymentRoutePreference {
+                    chain_id: "eip155:8453".into(),
+                    token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
+                    priority: 1,
+                },
+                PaymentRoutePreference {
+                    chain_id: "eip155:1".into(),
+                    token_address: "".into(),
+                    priority: 2,
+                },
             ])
         } else {
             PaymentRouter::new(preferences)
@@ -378,29 +456,43 @@ pub fn handle_pay(args: crate::args::PayArgs) -> anyhow::Result<serde_json::Valu
 
         let provider = GradienceMppProvider::new(wallet_id, router);
         let client = MppClient::new(provider);
-        client.send(reqwest::Client::new().get(recipient)).await.ok()
+        client
+            .send(reqwest::Client::new().get(recipient))
+            .await
+            .ok()
     });
 
     if let Some(resp) = mpp_result {
         return Ok(json!({"mppStatus": resp.status().as_u16(), "mppUrl": recipient}));
     }
-    Err(anyhow::anyhow!("MPP payment failed (provider may not support this challenge or wallet not configured)"))
+    Err(anyhow::anyhow!(
+        "MPP payment failed (provider may not support this challenge or wallet not configured)"
+    ))
 }
 
-pub fn handle_llm_generate(args: crate::args::LlmGenerateArgs) -> anyhow::Result<serde_json::Value> {
+pub fn handle_llm_generate(
+    args: crate::args::LlmGenerateArgs,
+) -> anyhow::Result<serde_json::Value> {
     let wallet_id = &args.wallet_id;
     let provider = args.provider.as_deref().unwrap_or("anthropic");
     let model = args.model.as_deref().unwrap_or("claude-3-5-sonnet");
     let prompt = &args.prompt;
 
-    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".gradience")
+            .to_string_lossy()
+            .to_string()
+    });
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
     let result = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let svc = gradience_core::ai::gateway::AiGatewayService::new();
-        svc.llm_generate(&db, wallet_id, None, provider, model, prompt).await.ok()
+        svc.llm_generate(&db, wallet_id, None, provider, model, prompt)
+            .await
+            .ok()
     });
 
     match result {
@@ -419,8 +511,13 @@ pub fn handle_ai_balance(args: crate::args::AiBalanceArgs) -> anyhow::Result<ser
     let wallet_id = &args.wallet_id;
     let token = args.token.as_deref().unwrap_or("USDC");
 
-    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".gradience")
+            .to_string_lossy()
+            .to_string()
+    });
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
     let balance = block_on_async(async {
@@ -445,7 +542,9 @@ pub fn handle_ai_models() -> anyhow::Result<serde_json::Value> {
     }))
 }
 
-pub fn handle_sign_message(args: crate::args::SignMessageArgs) -> anyhow::Result<serde_json::Value> {
+pub fn handle_sign_message(
+    args: crate::args::SignMessageArgs,
+) -> anyhow::Result<serde_json::Value> {
     let wallet_id = &args.wallet_id;
     let message = &args.message;
     let (passphrase, vault_dir) = get_vault_config()?;
@@ -458,7 +557,8 @@ pub fn handle_sign_message(args: crate::args::SignMessageArgs) -> anyhow::Result
         Some("utf8"),
         None,
         Some(&vault_dir),
-    ).map_err(|e| anyhow::anyhow!("ows sign_message failed: {}", e))?;
+    )
+    .map_err(|e| anyhow::anyhow!("ows sign_message failed: {}", e))?;
 
     Ok(json!({
         "signature": result.signature,
@@ -466,7 +566,9 @@ pub fn handle_sign_message(args: crate::args::SignMessageArgs) -> anyhow::Result
     }))
 }
 
-pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Result<serde_json::Value> {
+pub fn handle_sign_and_send(
+    args: crate::args::SignAndSendArgs,
+) -> anyhow::Result<serde_json::Value> {
     let wallet_id = &args.wallet_id;
     let chain_id = &args.chain_id;
     let to = &args.transaction.to;
@@ -478,27 +580,39 @@ pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Resul
     let is_solana = chain_id.starts_with("solana:");
 
     let result = block_on_async(async {
-        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".gradience")
+                .to_string_lossy()
+                .to_string()
+        });
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
         let db = match sqlx::SqlitePool::connect(&db_path).await {
             Ok(db) => db,
             Err(_) => return anyhow::Result::<_>::Err(anyhow::anyhow!("db connect failed")),
         };
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.unwrap_or_default();
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+            .await
+            .unwrap_or_default();
 
         let rpc_url = resolve_rpc(chain_id);
         let tx_hex = if is_solana {
-            let from = addrs.iter()
+            let from = addrs
+                .iter()
                 .find(|a| a.chain_id.starts_with("solana:"))
                 .map(|a| a.address.clone())
                 .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
             let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
-            let blockhash = client.get_latest_blockhash().await
+            let blockhash = client
+                .get_latest_blockhash()
+                .await
                 .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
             let lamports: u64 = value.parse().unwrap_or(0);
-            let tx_bytes = gradience_core::ows::signing::build_solana_transfer_tx(&from, to, lamports, &blockhash)
-                .map_err(|e| anyhow::anyhow!("build solana tx failed: {}", e))?;
+            let tx_bytes = gradience_core::ows::signing::build_solana_transfer_tx(
+                &from, to, lamports, &blockhash,
+            )
+            .map_err(|e| anyhow::anyhow!("build solana tx failed: {}", e))?;
             format!("0x{}", hex::encode(&tx_bytes))
         } else {
             let chain_num = gradience_core::chain::evm_chain_num(chain_id);
@@ -513,9 +627,13 @@ pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Resul
             let addr = from_addr.ok_or_else(|| anyhow::anyhow!("wallet address not found"))?;
             let client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
                 .map_err(|e| anyhow::anyhow!("rpc client: {}", e))?;
-            let nonce = client.get_transaction_count(&addr).await
+            let nonce = client
+                .get_transaction_count(&addr)
+                .await
                 .map_err(|e| anyhow::anyhow!("nonce fetch failed: {}", e))?;
-            let gp_hex = client.get_gas_price().await
+            let gp_hex = client
+                .get_gas_price()
+                .await
                 .map_err(|e| anyhow::anyhow!("gas price fetch failed: {}", e))?;
             let gas_price = u128::from_str_radix(gp_hex.trim_start_matches("0x"), 16)
                 .map_err(|_| anyhow::anyhow!("bad gas price"))?;
@@ -530,7 +648,8 @@ pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Resul
             None,
             Some(rpc_url),
             Some(&vault_dir),
-        ).map_err(|e| anyhow::anyhow!("sign_and_send failed: {}", e))?;
+        )
+        .map_err(|e| anyhow::anyhow!("sign_and_send failed: {}", e))?;
 
         let _ = gradience_core::audit::service::log_wallet_action(
             &db,
@@ -550,16 +669,25 @@ pub fn handle_sign_and_send(args: crate::args::SignAndSendArgs) -> anyhow::Resul
     }
 }
 
-pub fn handle_verify_api_key(args: crate::args::VerifyApiKeyArgs) -> anyhow::Result<serde_json::Value> {
+pub fn handle_verify_api_key(
+    args: crate::args::VerifyApiKeyArgs,
+) -> anyhow::Result<serde_json::Value> {
     let api_key = &args.api_key;
-    let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-        .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".gradience")
+            .to_string_lossy()
+            .to_string()
+    });
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
 
     let valid = block_on_async(async {
         let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
         let hash = ring::digest::digest(&ring::digest::SHA256, api_key.as_bytes());
-        gradience_db::queries::get_api_key_by_hash(&db, hash.as_ref()).await.ok()
+        gradience_db::queries::get_api_key_by_hash(&db, hash.as_ref())
+            .await
+            .ok()
     });
 
     Ok(json!({
@@ -568,12 +696,16 @@ pub fn handle_verify_api_key(args: crate::args::VerifyApiKeyArgs) -> anyhow::Res
     }))
 }
 
-pub fn handle_transfer_spl(args: crate::args::TransferSplArgs) -> anyhow::Result<serde_json::Value> {
+pub fn handle_transfer_spl(
+    args: crate::args::TransferSplArgs,
+) -> anyhow::Result<serde_json::Value> {
     let wallet_id = &args.wallet_id;
     let chain_id = &args.chain_id;
     let mint = &args.mint;
     let to = &args.to;
-    let amount: u64 = args.amount.parse()
+    let amount: u64 = args
+        .amount
+        .parse()
         .map_err(|_| anyhow::anyhow!("amount must be a raw integer"))?;
     let decimals = args.decimals;
 
@@ -581,15 +713,25 @@ pub fn handle_transfer_spl(args: crate::args::TransferSplArgs) -> anyhow::Result
     let rpc_url = resolve_rpc(chain_id);
 
     let tx_hex = block_on_async(async {
-        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".gradience")
+                .to_string_lossy()
+                .to_string()
+        });
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
-        let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+        let db = sqlx::SqlitePool::connect(&db_path)
+            .await
+            .ok()
             .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
 
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+            .await
+            .ok()
             .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
-        let from_wallet = addrs.iter()
+        let from_wallet = addrs
+            .iter()
             .find(|a| a.chain_id.starts_with("solana:"))
             .map(|a| a.address.clone())
             .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
@@ -602,17 +744,29 @@ pub fn handle_transfer_spl(args: crate::args::TransferSplArgs) -> anyhow::Result
             Ok(Some(_)) => false,
             Ok(None) => true,
             Err(e) => {
-                tracing::warn!("failed to query recipient ATA: {}, assuming creation needed", e);
+                tracing::warn!(
+                    "failed to query recipient ATA: {}, assuming creation needed",
+                    e
+                );
                 true
             }
         };
 
-        let blockhash = client.get_latest_blockhash().await
+        let blockhash = client
+            .get_latest_blockhash()
+            .await
             .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
 
         let tx_bytes = gradience_core::ows::signing::build_spl_transfer_tx(
-            &from_wallet, to, mint, amount, decimals, &blockhash, create_ata,
-        ).map_err(|e| anyhow::anyhow!("build spl tx failed: {}", e))?;
+            &from_wallet,
+            to,
+            mint,
+            amount,
+            decimals,
+            &blockhash,
+            create_ata,
+        )
+        .map_err(|e| anyhow::anyhow!("build spl tx failed: {}", e))?;
 
         Result::<String, anyhow::Error>::Ok(format!("0x{}", hex::encode(&tx_bytes)))
     })?;
@@ -625,12 +779,15 @@ pub fn handle_transfer_spl(args: crate::args::TransferSplArgs) -> anyhow::Result
         None,
         Some(rpc_url),
         Some(&vault_dir),
-    ).map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
+    )
+    .map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
 
     Ok(json!({"txHash": result.tx_hash, "walletId": wallet_id, "chainId": chain_id}))
 }
 
-pub fn handle_delegate_stake(args: crate::args::DelegateStakeArgs) -> anyhow::Result<serde_json::Value> {
+pub fn handle_delegate_stake(
+    args: crate::args::DelegateStakeArgs,
+) -> anyhow::Result<serde_json::Value> {
     let wallet_id = &args.wallet_id;
     let chain_id = &args.chain_id;
     let stake_account = &args.stake_account;
@@ -640,26 +797,42 @@ pub fn handle_delegate_stake(args: crate::args::DelegateStakeArgs) -> anyhow::Re
     let rpc_url = resolve_rpc(chain_id);
 
     let tx_hex = block_on_async(async {
-        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".gradience")
+                .to_string_lossy()
+                .to_string()
+        });
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
-        let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+        let db = sqlx::SqlitePool::connect(&db_path)
+            .await
+            .ok()
             .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
 
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+            .await
+            .ok()
             .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
-        let authorized_staker = addrs.iter()
+        let authorized_staker = addrs
+            .iter()
             .find(|a| a.chain_id.starts_with("solana:"))
             .map(|a| a.address.clone())
             .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
 
         let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
-        let blockhash = client.get_latest_blockhash().await
+        let blockhash = client
+            .get_latest_blockhash()
+            .await
             .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
 
         let tx_bytes = gradience_core::ows::signing::build_delegate_stake_tx(
-            stake_account, vote_account, &authorized_staker, &blockhash,
-        ).map_err(|e| anyhow::anyhow!("build delegate tx failed: {}", e))?;
+            stake_account,
+            vote_account,
+            &authorized_staker,
+            &blockhash,
+        )
+        .map_err(|e| anyhow::anyhow!("build delegate tx failed: {}", e))?;
 
         Result::<String, anyhow::Error>::Ok(format!("0x{}", hex::encode(&tx_bytes)))
     })?;
@@ -672,12 +845,15 @@ pub fn handle_delegate_stake(args: crate::args::DelegateStakeArgs) -> anyhow::Re
         None,
         Some(rpc_url),
         Some(&vault_dir),
-    ).map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
+    )
+    .map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
 
     Ok(json!({"txHash": result.tx_hash, "walletId": wallet_id, "chainId": chain_id}))
 }
 
-pub fn handle_deactivate_stake(args: crate::args::DeactivateStakeArgs) -> anyhow::Result<serde_json::Value> {
+pub fn handle_deactivate_stake(
+    args: crate::args::DeactivateStakeArgs,
+) -> anyhow::Result<serde_json::Value> {
     let wallet_id = &args.wallet_id;
     let chain_id = &args.chain_id;
     let stake_account = &args.stake_account;
@@ -686,26 +862,41 @@ pub fn handle_deactivate_stake(args: crate::args::DeactivateStakeArgs) -> anyhow
     let rpc_url = resolve_rpc(chain_id);
 
     let tx_hex = block_on_async(async {
-        let data_dir = std::env::var("GRADIENCE_DATA_DIR")
-            .unwrap_or_else(|_| dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from(".")).join(".gradience").to_string_lossy().to_string());
+        let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join(".gradience")
+                .to_string_lossy()
+                .to_string()
+        });
         let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
-        let db = sqlx::SqlitePool::connect(&db_path).await.ok()
+        let db = sqlx::SqlitePool::connect(&db_path)
+            .await
+            .ok()
             .ok_or_else(|| anyhow::anyhow!("db connect failed"))?;
 
-        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id).await.ok()
+        let addrs = gradience_db::queries::list_wallet_addresses(&db, wallet_id)
+            .await
+            .ok()
             .ok_or_else(|| anyhow::anyhow!("no addresses"))?;
-        let authorized_staker = addrs.iter()
+        let authorized_staker = addrs
+            .iter()
             .find(|a| a.chain_id.starts_with("solana:"))
             .map(|a| a.address.clone())
             .ok_or_else(|| anyhow::anyhow!("solana address not found"))?;
 
         let client = gradience_core::rpc::solana::SolanaRpcClient::new(rpc_url);
-        let blockhash = client.get_latest_blockhash().await
+        let blockhash = client
+            .get_latest_blockhash()
+            .await
             .map_err(|e| anyhow::anyhow!("blockhash fetch failed: {}", e))?;
 
         let tx_bytes = gradience_core::ows::signing::build_deactivate_stake_tx(
-            stake_account, &authorized_staker, &blockhash,
-        ).map_err(|e| anyhow::anyhow!("build deactivate tx failed: {}", e))?;
+            stake_account,
+            &authorized_staker,
+            &blockhash,
+        )
+        .map_err(|e| anyhow::anyhow!("build deactivate tx failed: {}", e))?;
 
         Result::<String, anyhow::Error>::Ok(format!("0x{}", hex::encode(&tx_bytes)))
     })?;
@@ -718,7 +909,8 @@ pub fn handle_deactivate_stake(args: crate::args::DeactivateStakeArgs) -> anyhow
         None,
         Some(rpc_url),
         Some(&vault_dir),
-    ).map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
+    )
+    .map_err(|e| anyhow::anyhow!("ows sign_and_send failed: {}", e))?;
 
     Ok(json!({"txHash": result.tx_hash, "walletId": wallet_id, "chainId": chain_id}))
 }

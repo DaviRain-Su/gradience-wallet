@@ -76,10 +76,24 @@ impl Tool {
 
 impl JsonRpcResponse {
     pub fn success(id: Option<serde_json::Value>, result: serde_json::Value) -> Self {
-        Self { jsonrpc: "2.0".into(), id, result: Some(result), error: None }
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: Some(result),
+            error: None,
+        }
     }
 
     pub fn error(id: Option<serde_json::Value>, code: i32, message: String) -> Self {
-        Self { jsonrpc: "2.0".into(), id, result: None, error: Some(JsonRpcError { code, message, data: None }) }
+        Self {
+            jsonrpc: "2.0".into(),
+            id,
+            result: None,
+            error: Some(JsonRpcError {
+                code,
+                message,
+                data: None,
+            }),
+        }
     }
 }

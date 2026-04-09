@@ -29,10 +29,7 @@ impl PaymentRouter {
 
     /// Select the best route by checking balances in priority order.
     /// For demo this uses a naive balance check heuristic.
-    pub async fn select_route(
-        &self,
-        _req: &PaymentRequirement,
-    ) -> Result<PaymentRoutePreference> {
+    pub async fn select_route(&self, _req: &PaymentRequirement) -> Result<PaymentRoutePreference> {
         let mut prefs = self.preferences.clone();
         prefs.sort_by_key(|p| p.priority);
         if let Some(pref) = prefs.into_iter().next() {

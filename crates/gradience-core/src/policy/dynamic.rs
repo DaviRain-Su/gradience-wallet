@@ -34,19 +34,30 @@ impl RiskSignalCache {
         map.get(&(wallet_id.into(), signal_type.into())).cloned()
     }
 
-    pub fn evaluate(&self, wallet_id: &str, max_forta: f64, max_chainalysis: f64) -> Result<(bool, Vec<String>)> {
+    pub fn evaluate(
+        &self,
+        wallet_id: &str,
+        max_forta: f64,
+        max_chainalysis: f64,
+    ) -> Result<(bool, Vec<String>)> {
         let mut reasons = Vec::new();
         let mut denied = false;
 
         if let Some(sig) = self.get(wallet_id, "forta") {
             if sig.score > max_forta {
-                reasons.push(format!("Forta risk score {} exceeds threshold {}", sig.score, max_forta));
+                reasons.push(format!(
+                    "Forta risk score {} exceeds threshold {}",
+                    sig.score, max_forta
+                ));
                 denied = true;
             }
         }
         if let Some(sig) = self.get(wallet_id, "chainalysis") {
             if sig.score > max_chainalysis {
-                reasons.push(format!("Chainalysis risk score {} exceeds threshold {}", sig.score, max_chainalysis));
+                reasons.push(format!(
+                    "Chainalysis risk score {} exceeds threshold {}",
+                    sig.score, max_chainalysis
+                ));
                 denied = true;
             }
         }
@@ -75,7 +86,8 @@ pub async fn fetch_signals(cache: RiskSignalCache, interval_sec: u64) {
 
         tracing::info!(
             "Dynamic signals updated: market_fear={}, forta_threat={}",
-            market_score, forta_score
+            market_score,
+            forta_score
         );
 
         // Use a wildcard wallet key so any wallet can be checked against the latest global signal.

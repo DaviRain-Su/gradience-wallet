@@ -11,7 +11,7 @@ pub fn run_stdio_server() -> anyhow::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        
+
         let req: JsonRpcRequest = match serde_json::from_str(&line) {
             Ok(r) => r,
             Err(e) => {
@@ -20,11 +20,11 @@ pub fn run_stdio_server() -> anyhow::Result<()> {
                 continue;
             }
         };
-        
+
         let resp = handle_request(req)?;
         send_response(&mut stdout, &resp)?;
     }
-    
+
     Ok(())
 }
 
@@ -41,31 +41,59 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
             let result = InitializeResult {
                 protocol_version: "2024-11-05".into(),
                 capabilities: ServerCapabilities::default(),
-                server_info: ServerInfo { name: "gradience-mcp".into(), version: "0.1.0".into() },
+                server_info: ServerInfo {
+                    name: "gradience-mcp".into(),
+                    version: "0.1.0".into(),
+                },
             };
-            Ok(JsonRpcResponse::success(req.id, serde_json::to_value(result)?))
+            Ok(JsonRpcResponse::success(
+                req.id,
+                serde_json::to_value(result)?,
+            ))
         }
-        "notifications/initialized" => {
-            Ok(JsonRpcResponse::success(req.id, json!({})))
-        }
+        "notifications/initialized" => Ok(JsonRpcResponse::success(req.id, json!({}))),
         "tools/list" => {
             let tools = vec![
-                Tool::with_schema::<SignTxArgs>("sign_transaction", "Sign a blockchain transaction"),
+                Tool::with_schema::<SignTxArgs>(
+                    "sign_transaction",
+                    "Sign a blockchain transaction",
+                ),
                 Tool::with_schema::<SignMessageArgs>("sign_message", "Sign a raw message"),
-                Tool::with_schema::<SignAndSendArgs>("sign_and_send", "Sign and broadcast a transaction"),
+                Tool::with_schema::<SignAndSendArgs>(
+                    "sign_and_send",
+                    "Sign and broadcast a transaction",
+                ),
                 Tool::with_schema::<GetBalanceArgs>("get_balance", "Get wallet balance"),
                 Tool::with_schema::<SwapArgs>("swap", "Execute DEX swap"),
                 Tool::with_schema::<PayArgs>("pay", "Execute payment or MPP service call"),
-                Tool::with_schema::<LlmGenerateArgs>("llm_generate", "Generate text via AI Gateway"),
+                Tool::with_schema::<LlmGenerateArgs>(
+                    "llm_generate",
+                    "Generate text via AI Gateway",
+                ),
                 Tool::with_schema::<AiBalanceArgs>("ai_balance", "Query AI Gateway balance"),
-                Tool::with_schema::<AiModelsArgs>("ai_models", "List available LLM models and pricing"),
-                Tool::with_schema::<TransferSplArgs>("transfer_spl_token", "Transfer SPL token on Solana (auto-creates recipient ATA if needed)"),
-                Tool::with_schema::<DelegateStakeArgs>("delegate_stake", "Delegate an existing Solana stake account to a validator"),
-                Tool::with_schema::<DeactivateStakeArgs>("deactivate_stake", "Deactivate a delegated Solana stake account"),
+                Tool::with_schema::<AiModelsArgs>(
+                    "ai_models",
+                    "List available LLM models and pricing",
+                ),
+                Tool::with_schema::<TransferSplArgs>(
+                    "transfer_spl_token",
+                    "Transfer SPL token on Solana (auto-creates recipient ATA if needed)",
+                ),
+                Tool::with_schema::<DelegateStakeArgs>(
+                    "delegate_stake",
+                    "Delegate an existing Solana stake account to a validator",
+                ),
+                Tool::with_schema::<DeactivateStakeArgs>(
+                    "deactivate_stake",
+                    "Deactivate a delegated Solana stake account",
+                ),
                 Tool::with_schema::<VerifyApiKeyArgs>("verify_api_key", "Verify an API key hash"),
             ];
             let result = ToolsListResult { tools };
-            Ok(JsonRpcResponse::success(req.id, serde_json::to_value(result)?))
+            Ok(JsonRpcResponse::success(
+                req.id,
+                serde_json::to_value(result)?,
+            ))
         }
         "tools/call" => {
             let params = req.params.unwrap_or(json!({}));
@@ -76,7 +104,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "sign_transaction" => {
                     let a: SignTxArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_sign_transaction(a) {
                         Ok(v) => v,
@@ -86,7 +120,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "get_balance" => {
                     let a: GetBalanceArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_get_balance(a) {
                         Ok(v) => v,
@@ -96,7 +136,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "swap" => {
                     let a: SwapArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_swap(a) {
                         Ok(v) => v,
@@ -106,7 +152,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "pay" => {
                     let a: PayArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_pay(a) {
                         Ok(v) => v,
@@ -116,7 +168,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "llm_generate" => {
                     let a: LlmGenerateArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_llm_generate(a) {
                         Ok(v) => v,
@@ -126,7 +184,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "ai_balance" => {
                     let a: AiBalanceArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_ai_balance(a) {
                         Ok(v) => v,
@@ -140,7 +204,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "sign_message" => {
                     let a: SignMessageArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_sign_message(a) {
                         Ok(v) => v,
@@ -150,7 +220,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "sign_and_send" => {
                     let a: SignAndSendArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_sign_and_send(a) {
                         Ok(v) => v,
@@ -160,7 +236,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "transfer_spl_token" => {
                     let a: TransferSplArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_transfer_spl(a) {
                         Ok(v) => v,
@@ -170,7 +252,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "delegate_stake" => {
                     let a: DelegateStakeArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_delegate_stake(a) {
                         Ok(v) => v,
@@ -180,7 +268,13 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "deactivate_stake" => {
                     let a: DeactivateStakeArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_deactivate_stake(a) {
                         Ok(v) => v,
@@ -190,20 +284,39 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                 "verify_api_key" => {
                     let a: VerifyApiKeyArgs = match serde_json::from_value(args) {
                         Ok(v) => v,
-                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, format!("invalid args: {}", e))),
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
                     };
                     match crate::tools::handle_verify_api_key(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }
                 }
-                _ => return Ok(JsonRpcResponse::error(req.id, -32601, format!("Unknown tool: {}", name))),
+                _ => {
+                    return Ok(JsonRpcResponse::error(
+                        req.id,
+                        -32601,
+                        format!("Unknown tool: {}", name),
+                    ))
+                }
             };
 
-            Ok(JsonRpcResponse::success(req.id, json!({
-                "content": [{ "type": "text", "text": result.to_string() }]
-            })))
+            Ok(JsonRpcResponse::success(
+                req.id,
+                json!({
+                    "content": [{ "type": "text", "text": result.to_string() }]
+                }),
+            ))
         }
-        _ => Ok(JsonRpcResponse::error(req.id, -32601, format!("Method not found: {}", req.method))),
+        _ => Ok(JsonRpcResponse::error(
+            req.id,
+            -32601,
+            format!("Method not found: {}", req.method),
+        )),
     }
 }

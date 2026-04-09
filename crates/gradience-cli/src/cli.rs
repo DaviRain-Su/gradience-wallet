@@ -118,17 +118,11 @@ pub enum PolicyCommands {
         file: String,
     },
     /// Approve a policy warning ticket
-    Approve {
-        approval_id: String,
-    },
+    Approve { approval_id: String },
     /// Reject a policy warning ticket
-    Reject {
-        approval_id: String,
-    },
+    Reject { approval_id: String },
     /// List pending policy approvals
-    ListApprovals {
-        wallet_id: Option<String>,
-    },
+    ListApprovals { wallet_id: Option<String> },
 }
 
 #[derive(Subcommand, Debug)]
@@ -140,13 +134,9 @@ pub enum ApiKeyCommands {
         name: String,
     },
     /// Revoke an API key
-    Revoke {
-        key_id: String,
-    },
+    Revoke { key_id: String },
     /// List API keys for a wallet
-    List {
-        wallet_id: String,
-    },
+    List { wallet_id: String },
 }
 
 #[derive(Subcommand, Debug)]
@@ -180,13 +170,9 @@ pub enum DexCommands {
 #[derive(Subcommand, Debug)]
 pub enum AuditCommands {
     /// List audit logs for a wallet
-    List {
-        wallet_id: String,
-    },
+    List { wallet_id: String },
     /// Verify audit chain integrity
-    Verify {
-        wallet_id: String,
-    },
+    Verify { wallet_id: String },
     /// Export audit logs to csv or json
     Export {
         #[arg(long)]
@@ -245,14 +231,9 @@ pub enum TeamCommands {
 #[derive(Subcommand, Debug)]
 pub enum AiCommands {
     /// Query AI balance
-    Balance {
-        wallet_id: String,
-    },
+    Balance { wallet_id: String },
     /// Generate text via LLM
-    Generate {
-        wallet_id: String,
-        prompt: String,
-    },
+    Generate { wallet_id: String, prompt: String },
 }
 
 #[derive(Subcommand, Debug)]
@@ -267,8 +248,5 @@ pub enum McpCommands {
         amount: String,
     },
     /// Get balance via MCP tool
-    Balance {
-        wallet_id: String,
-        chain_id: String,
-    },
+    Balance { wallet_id: String, chain_id: String },
 }

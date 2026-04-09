@@ -51,7 +51,11 @@ impl SharedBudgetService {
         period: &str,
     ) -> Result<u128> {
         let tracker = gradience_db::queries::get_shared_budget_spending(
-            db, workspace_id, token, chain_id, period,
+            db,
+            workspace_id,
+            token,
+            chain_id,
+            period,
         )
         .await
         .map_err(|e| GradienceError::Database(e.to_string()))?;

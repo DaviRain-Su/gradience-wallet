@@ -50,9 +50,20 @@ fn test_agent_balance_success() {
     cmd.args(["agent", "create", "--name", "balance-test"]);
     let out = cmd.assert().success().get_output().stdout.clone();
     let out_str = String::from_utf8_lossy(&out);
-    let wallet_id = out_str.lines().find(|l| l.contains("id:")).map(|l| {
-        l.split("id:").nth(1).unwrap().trim().trim_matches(')').split_whitespace().next().unwrap()
-    }).unwrap_or("wallet-123");
+    let wallet_id = out_str
+        .lines()
+        .find(|l| l.contains("id:"))
+        .map(|l| {
+            l.split("id:")
+                .nth(1)
+                .unwrap()
+                .trim()
+                .trim_matches(')')
+                .split_whitespace()
+                .next()
+                .unwrap()
+        })
+        .unwrap_or("wallet-123");
 
     let mut cmd2 = Command::cargo_bin("gradience").unwrap();
     cmd2.env("GRADIENCE_DATA_DIR", _temp.path());

@@ -24,17 +24,57 @@ pub struct KnownToken {
 
 fn known_tokens_for_chain(chain_id: &str) -> Vec<KnownToken> {
     let tokens = vec![
-        KnownToken { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(), symbol: "USDC".into(), name: "USD Coin".into(), decimals: 6 },
-        KnownToken { address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb".into(), symbol: "DAI".into(),  name: "Dai Stablecoin".into(), decimals: 18 },
-        KnownToken { address: "0x4200000000000000000000000000000000000006".into(), symbol: "WETH".into(), name: "Wrapped Ether".into(), decimals: 18 },
+        KnownToken {
+            address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
+            symbol: "USDC".into(),
+            name: "USD Coin".into(),
+            decimals: 6,
+        },
+        KnownToken {
+            address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb".into(),
+            symbol: "DAI".into(),
+            name: "Dai Stablecoin".into(),
+            decimals: 18,
+        },
+        KnownToken {
+            address: "0x4200000000000000000000000000000000000006".into(),
+            symbol: "WETH".into(),
+            name: "Wrapped Ether".into(),
+            decimals: 18,
+        },
     ];
 
     let eth_common = vec![
-        KnownToken { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".into(), symbol: "USDC".into(), name: "USD Coin".into(), decimals: 6 },
-        KnownToken { address: "0xdAC17F958D2ee523a2206206994597C13D831ec7".into(), symbol: "USDT".into(), name: "Tether USD".into(), decimals: 6 },
-        KnownToken { address: "0x6B175474E89094C44Da98b954EedeAC495271d0F".into(), symbol: "DAI".into(),  name: "Dai Stablecoin".into(), decimals: 18 },
-        KnownToken { address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".into(), symbol: "WETH".into(), name: "Wrapped Ether".into(), decimals: 18 },
-        KnownToken { address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599".into(), symbol: "WBTC".into(), name: "Wrapped BTC".into(), decimals: 8 },
+        KnownToken {
+            address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".into(),
+            symbol: "USDC".into(),
+            name: "USD Coin".into(),
+            decimals: 6,
+        },
+        KnownToken {
+            address: "0xdAC17F958D2ee523a2206206994597C13D831ec7".into(),
+            symbol: "USDT".into(),
+            name: "Tether USD".into(),
+            decimals: 6,
+        },
+        KnownToken {
+            address: "0x6B175474E89094C44Da98b954EedeAC495271d0F".into(),
+            symbol: "DAI".into(),
+            name: "Dai Stablecoin".into(),
+            decimals: 18,
+        },
+        KnownToken {
+            address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2".into(),
+            symbol: "WETH".into(),
+            name: "Wrapped Ether".into(),
+            decimals: 18,
+        },
+        KnownToken {
+            address: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599".into(),
+            symbol: "WBTC".into(),
+            name: "Wrapped BTC".into(),
+            decimals: 8,
+        },
     ];
 
     match chain_id {
@@ -112,8 +152,8 @@ impl TokenDiscoveryService {
                 Ok(hex) => hex,
                 Err(_) => continue,
             };
-            let balance_raw = u128::from_str_radix(balance_hex.trim_start_matches("0x"), 16)
-                .unwrap_or(0);
+            let balance_raw =
+                u128::from_str_radix(balance_hex.trim_start_matches("0x"), 16).unwrap_or(0);
             if balance_raw == 0 {
                 continue;
             }
@@ -127,7 +167,10 @@ impl TokenDiscoveryService {
                 name: token.name,
                 decimals: token.decimals,
                 balance: format!("0x{:x}", balance_raw),
-                balance_formatted: format!("{:.6}", formatted).trim_end_matches('0').trim_end_matches('.').to_string(),
+                balance_formatted: format!("{:.6}", formatted)
+                    .trim_end_matches('0')
+                    .trim_end_matches('.')
+                    .to_string(),
             });
         }
         Ok(assets)

@@ -78,9 +78,7 @@ fn test_evm_erc20_multicall3_calldata() {
             let struct_offset = U256::from_be_slice(&bytes[68..100]);
             let struct_start = array_data_start + struct_offset.to::<usize>();
 
-            let target = Address::from_slice(
-                &bytes[struct_start + 12..struct_start + 32],
-            );
+            let target = Address::from_slice(&bytes[struct_start + 12..struct_start + 32]);
             assert_eq!(
                 target,
                 "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
@@ -93,8 +91,7 @@ fn test_evm_erc20_multicall3_calldata() {
             assert_eq!(calldata_offset, U256::from(128));
 
             let calldata_start = struct_start + 128 + 32;
-            let calldata_len =
-                U256::from_be_slice(&bytes[struct_start + 128..calldata_start]);
+            let calldata_len = U256::from_be_slice(&bytes[struct_start + 128..calldata_start]);
             assert_eq!(calldata_len, U256::from(68)); // 4 + 32 + 32
 
             assert_eq!(
@@ -130,7 +127,9 @@ fn test_solana_batch_serialization_roundtrip() {
     let batch = svc.build_batch(&req).unwrap();
     match batch {
         BatchTransferPayload::Solana { serialized_tx } => {
-            let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &serialized_tx).unwrap();
+            let decoded =
+                base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &serialized_tx)
+                    .unwrap();
             let (sig_count, sig_offset) = decode_compact_u16(&decoded).unwrap();
             assert_eq!(sig_count, 1);
 
@@ -206,7 +205,11 @@ fn test_gradience_mpp_provider_supports_matrix() {
     let secret = [1u8; 32];
 
     let provider = GradienceMppProvider::new("test-wallet", router)
-        .with_evm_chain(EvmChargeConfig::new(8453, "https://mainnet.base.org", secret))
+        .with_evm_chain(EvmChargeConfig::new(
+            8453,
+            "https://mainnet.base.org",
+            secret,
+        ))
         .with_solana_secret(secret);
 
     assert!(provider.supports("evm", "charge"));
@@ -222,7 +225,11 @@ fn test_gradience_mpp_provider_supports_session_with_escrow() {
     let secret = [1u8; 32];
 
     let provider = GradienceMppProvider::new("test-wallet", router)
-        .with_evm_chain(EvmChargeConfig::new(8453, "https://mainnet.base.org", secret))
+        .with_evm_chain(EvmChargeConfig::new(
+            8453,
+            "https://mainnet.base.org",
+            secret,
+        ))
         .with_escrow_address(8453, "0x1234567890123456789012345678901234567890");
 
     assert!(provider.supports("evm", "session"));
@@ -254,13 +261,11 @@ async fn test_payment_router_prefers_lower_priority() {
 
 #[tokio::test]
 async fn test_payment_router_no_match_falls_back() {
-    let router = PaymentRouter::new(vec![
-        PaymentRoutePreference {
-            chain_id: "56".into(),
-            token_address: "0x55d398326f99059fF775485246999027B3197955".into(),
-            priority: 1,
-        },
-    ]);
+    let router = PaymentRouter::new(vec![PaymentRoutePreference {
+        chain_id: "56".into(),
+        token_address: "0x55d398326f99059fF775485246999027B3197955".into(),
+        priority: 1,
+    }]);
 
     let req = PaymentRequirement {
         amount: "1000000".into(),
@@ -280,8 +285,8 @@ async fn test_tempo_provider_configured() {
     let router = PaymentRouter::default();
     let signer = alloy::signers::local::PrivateKeySigner::random();
 
-    let provider = GradienceMppProvider::new("test-wallet", router)
-        .with_tempo_signer(signer.clone());
+    let provider =
+        GradienceMppProvider::new("test-wallet", router).with_tempo_signer(signer.clone());
 
     assert!(provider.supports("tempo", "charge"));
     assert!(!provider.supports("tempo", "session"));
@@ -300,8 +305,7 @@ fn test_mpp_credential_header_roundtrip() {
         realm: "test".into(),
         method: "evm".into(),
         intent: "charge".into(),
-        request: Base64UrlJson::from_value(
-            &serde_json::json!({"amount":"1000"})).unwrap(),
+        request: Base64UrlJson::from_value(&serde_json::json!({"amount":"1000"})).unwrap(),
         expires: None,
         description: None,
         digest: None,

@@ -1,4 +1,4 @@
-use crate::audit::merkle::{MerkleTree, verify_proof, keccak256};
+use crate::audit::merkle::{keccak256, verify_proof, MerkleTree};
 
 #[test]
 fn test_merkle_tree_root_consistency() {

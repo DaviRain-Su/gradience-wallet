@@ -12,11 +12,15 @@ pub async fn create(ctx: &AppContext, wallet_id: String, name: String) -> Result
         anyhow::bail!("Wallet not found: {}", wallet_id);
     }
 
-    let passphrase = ctx.read_passphrase()
+    let passphrase = ctx
+        .read_passphrase()
         .ok_or_else(|| anyhow::anyhow!("No session found. Run 'gradience auth login' first."))?;
     let vault = ctx.ows.init_vault(&passphrase).await?;
 
-    let key = ctx.ows.attach_api_key_and_policies(&vault, &wallet_id, &name, vec![]).await?;
+    let key = ctx
+        .ows
+        .attach_api_key_and_policies(&vault, &wallet_id, &name, vec![])
+        .await?;
 
     // Store in Gradience DB
     let key_hash = hex::decode(&key.token_hash).unwrap_or_default();
@@ -28,7 +32,8 @@ pub async fn create(ctx: &AppContext, wallet_id: String, name: String) -> Result
         &key_hash,
         "sign,read",
         None,
-    ).await?;
+    )
+    .await?;
 
     println!("Created API key '{}' (id: {})", key.name, key.id);
     if let Some(token) = key.raw_token {
@@ -59,7 +64,11 @@ pub async fn list(ctx: &AppContext, wallet_id: String) -> Result<()> {
     }
     println!("API keys for wallet {}:", wallet_id);
     for k in keys {
-        let status = if k.expires_at.is_some() { "revoked" } else { "active" };
+        let status = if k.expires_at.is_some() {
+            "revoked"
+        } else {
+            "active"
+        };
         println!("  {} - {} [{}]", k.id, k.name, status);
     }
     Ok(())

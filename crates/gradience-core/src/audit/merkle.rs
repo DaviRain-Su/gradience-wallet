@@ -1,4 +1,4 @@
-use sha3::{Keccak256, Digest};
+use sha3::{Digest, Keccak256};
 use std::convert::TryInto;
 
 #[derive(Debug, Clone)]
@@ -30,12 +30,14 @@ impl MerkleTree {
             current = next;
         }
         let root = current[0];
-        Self { root, leaves, layers }
+        Self {
+            root,
+            leaves,
+            layers,
+        }
     }
 
-    pub fn generate_proof(&self,
-        index: usize,
-    ) -> Option<(Vec<[u8; 32]>, [u8; 32])> {
+    pub fn generate_proof(&self, index: usize) -> Option<(Vec<[u8; 32]>, [u8; 32])> {
         if index >= self.leaves.len() {
             return None;
         }
@@ -46,7 +48,11 @@ impl MerkleTree {
                 break;
             }
             let sibling = if idx.is_multiple_of(2) {
-                if idx + 1 < layer.len() { layer[idx + 1] } else { layer[idx] }
+                if idx + 1 < layer.len() {
+                    layer[idx + 1]
+                } else {
+                    layer[idx]
+                }
             } else {
                 layer[idx - 1]
             };

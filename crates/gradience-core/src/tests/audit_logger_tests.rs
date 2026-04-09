@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 
-use crate::audit::logger::{AuditLogger, compute_audit_hash};
+use crate::audit::logger::{compute_audit_hash, AuditLogger};
 
 #[test]
 fn test_audit_hmac_chain_integrity() {
@@ -22,7 +22,10 @@ fn test_audit_tamper_detection() {
     let recomputed = compute_audit_hash(
         logger.secret_key(),
         &entry.prev_hash,
-        &format!("{}:{}:{}:{}:{}", entry.id, entry.wallet_id, entry.action, entry.decision, entry.created_at),
+        &format!(
+            "{}:{}:{}:{}:{}",
+            entry.id, entry.wallet_id, entry.action, entry.decision, entry.created_at
+        ),
     );
     assert_ne!(recomputed, entry.current_hash);
 }

@@ -1,6 +1,6 @@
+use gradience_core::ows::adapter::OwsAdapter;
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
-use gradience_core::ows::adapter::OwsAdapter;
 
 #[napi]
 pub struct WalletDescriptor {
@@ -30,9 +30,16 @@ pub async fn create_wallet(passphrase: String, name: String) -> Result<WalletDes
     std::fs::create_dir_all(&vault_dir).map_err(|e| Error::from_reason(e.to_string()))?;
 
     let adapter = gradience_core::ows::local_adapter::LocalOwsAdapter::new(vault_dir.clone());
-    let vault = adapter.init_vault(&passphrase).await
+    let vault = adapter
+        .init_vault(&passphrase)
+        .await
         .map_err(|e| Error::from_reason(e.to_string()))?;
-    let wallet = adapter.create_wallet(&vault, &name, gradience_core::ows::adapter::DerivationParams::default())
+    let wallet = adapter
+        .create_wallet(
+            &vault,
+            &name,
+            gradience_core::ows::adapter::DerivationParams::default(),
+        )
         .await
         .map_err(|e| Error::from_reason(e.to_string()))?;
 
@@ -63,7 +70,8 @@ pub fn sign_transaction(
         None,
         None,
         Some(&vault_dir),
-    ).map_err(|e| Error::from_reason(e.to_string()))?;
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))?;
 
     Ok(result.tx_hash)
 }
@@ -75,10 +83,12 @@ pub async fn get_balance(wallet_id: String, chain: String) -> Result<Vec<Balance
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join(".gradience");
     let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir.display());
-    let db = sqlx::SqlitePool::connect(&db_path).await
+    let db = sqlx::SqlitePool::connect(&db_path)
+        .await
         .map_err(|e| Error::from_reason(e.to_string()))?;
 
-    let addrs = gradience_db::queries::list_wallet_addresses(&db, &wallet_id).await
+    let addrs = gradience_db::queries::list_wallet_addresses(&db, &wallet_id)
+        .await
         .map_err(|e| Error::from_reason(e.to_string()))?;
 
     let rpc_url = if chain == "base" {

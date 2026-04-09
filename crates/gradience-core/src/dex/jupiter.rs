@@ -50,7 +50,10 @@ impl JupiterClient {
             .map_err(|e| GradienceError::Http(e.to_string()))?;
 
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| GradienceError::Http(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| GradienceError::Http(e.to_string()))?;
         if !status.is_success() {
             return Err(GradienceError::Http(format!(
                 "Jupiter quote error ({}): {}",
@@ -105,7 +108,10 @@ impl JupiterClient {
             .map_err(|e| GradienceError::Http(e.to_string()))?;
 
         let status = resp.status();
-        let text = resp.text().await.map_err(|e| GradienceError::Http(e.to_string()))?;
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| GradienceError::Http(e.to_string()))?;
         if !status.is_success() {
             return Err(GradienceError::Http(format!(
                 "Jupiter swap error ({}): {}",
@@ -117,7 +123,10 @@ impl JupiterClient {
             .map_err(|e| GradienceError::Http(format!("Jupiter swap decode error: {}", e)))?;
 
         if let Some(err) = swap.error {
-            return Err(GradienceError::Http(format!("Jupiter swap API error: {}", err)));
+            return Err(GradienceError::Http(format!(
+                "Jupiter swap API error: {}",
+                err
+            )));
         }
         Ok(swap)
     }

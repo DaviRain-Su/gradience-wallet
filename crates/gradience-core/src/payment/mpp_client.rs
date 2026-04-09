@@ -75,10 +75,7 @@ impl GradienceMppProvider {
         self
     }
 
-    pub fn with_tempo_signer(
-        mut self,
-        signer: alloy::signers::local::PrivateKeySigner,
-    ) -> Self {
+    pub fn with_tempo_signer(mut self, signer: alloy::signers::local::PrivateKeySigner) -> Self {
         self.tempo_signer = Some(signer);
         self
     }
@@ -305,7 +302,9 @@ impl GradienceMppProvider {
         let recipient_bytes = hex::decode(recipient_str.trim_start_matches("0x"))
             .map_err(|e| mpp::MppError::InvalidConfig(format!("bad recipient: {}", e)))?;
         if recipient_bytes.len() != 20 {
-            return Err(mpp::MppError::InvalidConfig("recipient must be 20 bytes".into()));
+            return Err(mpp::MppError::InvalidConfig(
+                "recipient must be 20 bytes".into(),
+            ));
         }
 
         // Determine which EVM chain to use
@@ -327,7 +326,9 @@ impl GradienceMppProvider {
         let escrow_bytes = hex::decode(escrow_addr_str.trim_start_matches("0x"))
             .map_err(|e| mpp::MppError::InvalidConfig(format!("bad escrow address: {}", e)))?;
         if escrow_bytes.len() != 20 {
-            return Err(mpp::MppError::InvalidConfig("escrow address must be 20 bytes".into()));
+            return Err(mpp::MppError::InvalidConfig(
+                "escrow address must be 20 bytes".into(),
+            ));
         }
 
         // Generate sessionId = keccak256(wallet_id || timestamp || random)
@@ -497,10 +498,7 @@ impl PaymentProvider for GradienceMppProvider {
             || (method == "ton" && intent == "charge" && self.ton_seed.is_some())
     }
 
-    async fn pay(
-        &self,
-        challenge: &PaymentChallenge,
-    ) -> Result<PaymentCredential, mpp::MppError> {
+    async fn pay(&self, challenge: &PaymentChallenge) -> Result<PaymentCredential, mpp::MppError> {
         use mpp::protocol::core::ChallengeEcho;
         use mpp::protocol::intents::ChargeRequest;
 
@@ -592,14 +590,13 @@ impl MppClient {
     }
 
     /// Build a request and send it, automatically handling HTTP 402 via MPP.
-    pub async fn send(
-        &self,
-        req: reqwest::RequestBuilder,
-    ) -> crate::Result<reqwest::Response> {
+    pub async fn send(&self, req: reqwest::RequestBuilder) -> crate::Result<reqwest::Response> {
         let retry_builder = req
             .try_clone()
             .ok_or_else(|| GradienceError::Http("request not cloneable".into()))?;
-        let request = req.build().map_err(|e| GradienceError::Http(e.to_string()))?;
+        let request = req
+            .build()
+            .map_err(|e| GradienceError::Http(e.to_string()))?;
 
         let resp = self
             .http

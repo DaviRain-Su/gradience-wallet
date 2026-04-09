@@ -98,18 +98,21 @@ impl MppService {
             }
 
             let target: alloy::primitives::Address = if is_native {
-                r.address.parse()
-                    .map_err(|e| crate::error::GradienceError::Validation(format!("bad address: {}", e)))?
+                r.address.parse().map_err(|e| {
+                    crate::error::GradienceError::Validation(format!("bad address: {}", e))
+                })?
             } else {
-                req.token_address.parse()
-                    .map_err(|e| crate::error::GradienceError::Validation(format!("bad token address: {}", e)))?
+                req.token_address.parse().map_err(|e| {
+                    crate::error::GradienceError::Validation(format!("bad token address: {}", e))
+                })?
             };
 
             let call_data = if is_native {
                 alloy::primitives::Bytes::new()
             } else {
-                let to_addr: alloy::primitives::Address = r.address.parse()
-                    .map_err(|e| crate::error::GradienceError::Validation(format!("bad recipient: {}", e)))?;
+                let to_addr: alloy::primitives::Address = r.address.parse().map_err(|e| {
+                    crate::error::GradienceError::Validation(format!("bad recipient: {}", e))
+                })?;
 
                 let mut calldata = vec![0xa9u8, 0x05, 0x9c, 0xbb];
                 calldata.extend_from_slice(&[0u8; 12]);
@@ -186,10 +189,7 @@ impl MppService {
             let recipient_idx = key_index(&recipient_pk);
 
             if is_native {
-                let accounts = vec![
-                    (sender_idx, true, true),
-                    (recipient_idx, false, true),
-                ];
+                let accounts = vec![(sender_idx, true, true), (recipient_idx, false, true)];
                 let mut data = vec![0u8; 12];
                 data[0..4].copy_from_slice(&2u32.to_le_bytes());
                 data[4..12].copy_from_slice(&amount.to_le_bytes());
@@ -202,20 +202,12 @@ impl MppService {
                     decode_solana_pubkey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")?;
                 let token_idx = key_index(&token_program);
 
-                let sender_ata_b58 = crate::ows::signing::find_associated_token_address(
-                    sender,
-                    mint.unwrap(),
-                )
-                .map_err(|e| {
-                    crate::error::GradienceError::Validation(e.to_string())
-                })?;
-                let recipient_ata_b58 = crate::ows::signing::find_associated_token_address(
-                    &r.address,
-                    mint.unwrap(),
-                )
-                .map_err(|e| {
-                    crate::error::GradienceError::Validation(e.to_string())
-                })?;
+                let sender_ata_b58 =
+                    crate::ows::signing::find_associated_token_address(sender, mint.unwrap())
+                        .map_err(|e| crate::error::GradienceError::Validation(e.to_string()))?;
+                let recipient_ata_b58 =
+                    crate::ows::signing::find_associated_token_address(&r.address, mint.unwrap())
+                        .map_err(|e| crate::error::GradienceError::Validation(e.to_string()))?;
                 let sender_ata = decode_solana_pubkey(&sender_ata_b58)?;
                 let recipient_ata = decode_solana_pubkey(&recipient_ata_b58)?;
                 let sender_ata_idx = key_index(&sender_ata);
@@ -235,12 +227,8 @@ impl MppService {
 
         let blockhash = [0u8; 32];
 
-        let message = build_solana_legacy_message(
-            &sender_pk,
-            &all_keys,
-            &blockhash,
-            &instructions,
-        )?;
+        let message =
+            build_solana_legacy_message(&sender_pk, &all_keys, &blockhash, &instructions)?;
 
         let mut tx = encode_compact_u16(1);
         tx.extend_from_slice(&[0u8; 64]);
@@ -351,9 +339,9 @@ fn build_solana_legacy_message(
         .filter(|(i, _)| *i != 0)
         .filter(|(i, _)| {
             let idx = *i as u8;
-            !instructions.iter().any(|(_, accts, _)| {
-                accts.iter().any(|(a, _, w)| *a == idx && *w)
-            })
+            !instructions
+                .iter()
+                .any(|(_, accts, _)| accts.iter().any(|(a, _, w)| *a == idx && *w))
         })
         .count() as u8;
 
@@ -466,7 +454,11 @@ mod tests {
         match batch {
             BatchTransferPayload::Solana { serialized_tx } => {
                 assert!(!serialized_tx.is_empty());
-                let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &serialized_tx).unwrap();
+                let decoded = base64::Engine::decode(
+                    &base64::engine::general_purpose::STANDARD,
+                    &serialized_tx,
+                )
+                .unwrap();
                 assert!(decoded.len() > 64 + 32); // sig + blockhash
             }
             _ => panic!("expected Solana payload"),

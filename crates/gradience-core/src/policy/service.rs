@@ -42,7 +42,8 @@ pub async fn create_policy_sync(
         policy_value["action"] = "deny".into();
     }
 
-    let ows_policy_result: std::result::Result<ows_core::Policy, _> = serde_json::from_value(policy_value.clone());
+    let ows_policy_result: std::result::Result<ows_core::Policy, _> =
+        serde_json::from_value(policy_value.clone());
 
     let (policy_id_out, name_out) = match ows_policy_result {
         Ok(ows_policy) => {
@@ -54,11 +55,13 @@ pub async fn create_policy_sync(
         }
         Err(_) => {
             // Gradience-only policy: skip OWS, generate id/name from JSON
-            let id = policy_value.get("id")
+            let id = policy_value
+                .get("id")
                 .and_then(|v| v.as_str())
                 .unwrap_or(&policy_id)
                 .to_string();
-            let name = policy_value.get("name")
+            let name = policy_value
+                .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("gradience-policy")
                 .to_string();
