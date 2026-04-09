@@ -10,7 +10,11 @@ export type {
   TransactionRequest,
   SignResult,
   Policy,
+  MppChain,
+  MppChargeParams,
+  MppChargeResult,
 } from "./types";
+export { MPP_SUPPORTED_CHAINS } from "./types";
 
 export { GradienceProvider, type GradienceProviderOptions, type EIP1193Provider } from "./provider";
 

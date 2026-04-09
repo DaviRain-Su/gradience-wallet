@@ -63,3 +63,42 @@ export interface Policy {
   status: string;
   created_at: string;
 }
+
+export type MppChain =
+  | "tempo"
+  | "base"
+  | "bsc"
+  | "conflux"
+  | "xlayer"
+  | "arbitrum"
+  | "polygon"
+  | "optimism"
+  | "solana"
+  | "ton";
+
+export const MPP_SUPPORTED_CHAINS: MppChain[] = [
+  "tempo",
+  "base",
+  "bsc",
+  "conflux",
+  "xlayer",
+  "arbitrum",
+  "polygon",
+  "optimism",
+  "solana",
+  "ton",
+];
+
+export interface MppChargeParams {
+  walletId: string;
+  provider: string;
+  model: string;
+  prompt: string;
+  preferredChain?: MppChain;
+}
+
+export interface MppChargeResult {
+  provider_status: number;
+  data: unknown;
+  chain_used?: string;
+}

@@ -1,6 +1,8 @@
-# Gradience AuditAnchor Contract
+# Gradience Contracts
 
-Solidity contract for tamper-proof Merkle root anchoring of audit logs on HashKey Chain.
+Solidity contracts for Gradience Wallet:
+- **AuditAnchor** — tamper-proof Merkle root anchoring of audit logs
+- **MppEscrow** — MPP session escrow for agent micro-payments (multi-chain)
 
 ## Quick Start
 
@@ -67,3 +69,19 @@ event Anchored(
     address indexed submittedBy
 );
 ```
+
+---
+
+## MppEscrow Multi-Chain Deploy
+
+Deploy the MPP session escrow contract to supported testnets:
+
+```bash
+# Deploy to a single chain
+bun run deploy-mpp-escrow.ts bsc-testnet
+
+# Deploy to all supported testnets
+bun run deploy-mpp-escrow.ts all
+```
+
+Supported chains: `bsc-testnet`, `conflux-espace-testnet`, `xlayer-testnet`, `base-sepolia`, `arbitrum-sepolia`, `polygon-amoy`

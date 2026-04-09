@@ -153,6 +153,24 @@ export default function AiGateway() {
         {error && <div className="text-sm" style={{ color: "#B45309" }}>{error}</div>}
 
         <div className="border rounded p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}>
+          <h2 className="font-semibold mb-2">Supported MPP chains</h2>
+          <p className="text-sm mb-2" style={{ color: "var(--muted-foreground)" }}>
+            Gradience routes MPP payments to the cheapest available chain automatically.
+          </p>
+          <div className="flex flex-wrap gap-2 mb-2">
+            {["Tempo", "Base", "BSC (BNB)", "Conflux eSpace", "Conflux Core", "XLayer (OKX)", "Arbitrum", "Polygon", "Optimism", "Solana", "TON"].map((chain) => (
+              <span
+                key={chain}
+                className="text-xs px-2 py-1 rounded"
+                style={{ backgroundColor: "var(--muted)", color: "var(--foreground)" }}
+              >
+                {chain}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        <div className="border rounded p-4" style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}>
           <h2 className="font-semibold mb-2">Agent configuration</h2>
           <p className="text-sm mb-2" style={{ color: "var(--muted-foreground)" }}>
             Set these environment variables in your agent or IDE:

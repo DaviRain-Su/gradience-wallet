@@ -107,3 +107,35 @@ class GradienceClient:
             f"/api/wallets/{wallet_id}/audit/export",
             params={"format": fmt},
         )
+
+    def mpp_generate(
+        self,
+        wallet_id: str,
+        provider: str,
+        model: str,
+        prompt: str,
+        preferred_chain: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        body: Dict[str, Any] = {
+            "wallet_id": wallet_id,
+            "provider": provider,
+            "model": model,
+            "prompt": prompt,
+        }
+        if preferred_chain:
+            body["preferred_chain"] = preferred_chain
+        return self._request("POST", "/api/ai/mpp-generate", json=body)
+
+
+MPP_SUPPORTED_CHAINS = [
+    "tempo",
+    "base",
+    "bsc",
+    "conflux",
+    "xlayer",
+    "arbitrum",
+    "polygon",
+    "optimism",
+    "solana",
+    "ton",
+]

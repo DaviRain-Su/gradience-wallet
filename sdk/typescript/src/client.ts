@@ -9,6 +9,8 @@ import type {
   TransactionRequest,
   SignResult,
   Policy,
+  MppChargeParams,
+  MppChargeResult,
 } from "./types";
 
 export class GradienceError extends Error {
@@ -177,5 +179,17 @@ export class GradienceClient {
       "GET",
       `/api/wallets/${walletId}/addresses`
     );
+  }
+
+  async mppGenerate(params: MppChargeParams): Promise<MppChargeResult> {
+    return this.request<MppChargeResult>("POST", "/api/ai/mpp-generate", {
+      body: {
+        wallet_id: params.walletId,
+        provider: params.provider,
+        model: params.model,
+        prompt: params.prompt,
+        preferred_chain: params.preferredChain,
+      },
+    });
   }
 }
