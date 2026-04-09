@@ -164,7 +164,59 @@ pub async fn ai_proxy_handler(
 
     let wallet_id = key_row.wallet_id;
 
-    // 2. Resolve provider base URL
+    // 2. Optional state-channel payment verification
+    if let Some(header_val) = req.headers().get("X-State-Update") {
+        let raw = header_val.to_str().map_err(|_| StatusCode::BAD_REQUEST)?;
+        let update_req: VerifyStateUpdateReq =
+            serde_json::from_str(raw).map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let channel_id =
+            hex::decode(update_req.channel_id.trim_start_matches("0x"))
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let channel_id: [u8; 32] =
+            channel_id.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let signature =
+            hex::decode(update_req.signature.trim_start_matches("0x"))
+                .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let signature: [u8; 65] =
+            signature.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let amount = update_req
+            .amount
+            .parse::<u128>()
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+        let valid = gradience_core::payment::state_channel::verify_state_update(
+            &channel_id,
+            update_req.nonce,
+            amount,
+            &signature,
+            &update_req.expected_payer,
+        )
+        .unwrap_or(false);
+
+        if !valid {
+            return Err(StatusCode::PAYMENT_REQUIRED);
+        }
+
+        let mut tracker = state.state_channels.lock().unwrap();
+        if let Some(existing) = tracker.get(&channel_id) {
+            if update_req.nonce <= existing.nonce {
+                return Err(StatusCode::PAYMENT_REQUIRED);
+            }
+        }
+        tracker.insert(
+            channel_id,
+            crate::state::VerifiedState {
+                nonce: update_req.nonce,
+                amount,
+                signature,
+            },
+        );
+    }
+
+    // 3. Resolve provider base URL
     let base_url = match provider.as_str() {
         "openai" => "https://openai.mpp.tempo.xyz",
         "anthropic" => "https://anthropic.mpp.tempo.xyz",

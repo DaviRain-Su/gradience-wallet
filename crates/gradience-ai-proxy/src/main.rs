@@ -31,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
         sessions: SessionStore::new(db),
         ows: Arc::new(LocalOwsAdapter::new(vault_dir.clone())),
         vault_dir,
+        state_channels: Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
     });
 
     let app = Router::new()

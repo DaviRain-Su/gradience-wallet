@@ -47,6 +47,15 @@ impl SessionStore {
     }
 }
 
+/// Latest verified state update for a channel (payee-side tracker).
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+pub struct VerifiedState {
+    pub nonce: u64,
+    pub amount: u128,
+    pub signature: [u8; 65],
+}
+
 pub struct AppState {
     pub db: Pool<Sqlite>,
     pub sessions: SessionStore,
@@ -54,4 +63,5 @@ pub struct AppState {
     pub ows: Arc<gradience_core::ows::local_adapter::LocalOwsAdapter>,
     #[allow(dead_code)]
     pub vault_dir: std::path::PathBuf,
+    pub state_channels: Arc<std::sync::Mutex<HashMap<[u8; 32], VerifiedState>>>,
 }
