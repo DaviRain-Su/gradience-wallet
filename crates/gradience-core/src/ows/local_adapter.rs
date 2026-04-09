@@ -166,7 +166,10 @@ impl OwsAdapter for LocalOwsAdapter {
         } else if chain.starts_with("cfx:") {
             let network_id = crate::chain::conflux_core_network_id(chain);
             crate::rpc::conflux_core::cfx_address_from_seed(&secret, network_id)?
-        } else if chain.starts_with("eip155:") || chain.starts_with("base:") {
+        } else if chain.starts_with("eip155:")
+            || chain.starts_with("base:")
+            || chain.starts_with("tempo:")
+        {
             crate::ows::signing::eth_address_from_secret_key(&secret)?
         } else if chain.starts_with("stellar:") {
             crate::ows::signing::stellar_address_from_secret_key(&secret)?
@@ -258,6 +261,23 @@ impl OwsAdapter for LocalOwsAdapter {
             let tx_hash = client.sign_and_send(&private_key, to, &tx.value, network_id)?;
             return Ok(SignedTransaction {
                 raw_hex: tx_hash,
+                chain_id: chain.into(),
+            });
+        }
+
+        if chain.starts_with("tempo:") {
+            let tempo_chain = "eip155:42431";
+            let result = ows_lib::sign_transaction(
+                wallet_id,
+                tempo_chain,
+                &tx.raw_hex,
+                Some(credential),
+                None,
+                Some(&self.vault_dir),
+            )
+            .map_err(map_ows_err)?;
+            return Ok(SignedTransaction {
+                raw_hex: format!("0x{}", result.signature),
                 chain_id: chain.into(),
             });
         }

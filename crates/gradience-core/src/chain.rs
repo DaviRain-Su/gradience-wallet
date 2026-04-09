@@ -18,6 +18,7 @@ pub fn resolve_rpc(chain_id: &str) -> &str {
         "eip155:80002" | "polygon-amoy" | "80002" => "https://rpc-amoy.polygon.technology",
         "eip155:10" | "optimism" | "op" | "10" => "https://mainnet.optimism.io",
         "eip155:11155420" | "optimism-sepolia" | "11155420" => "https://sepolia.optimism.io",
+        "eip155:42431" | "tempo" | "moderato" | "42431" => "https://rpc.moderato.tempo.xyz",
         "solana:101" | "solana" | "sol" => "https://api.mainnet-beta.solana.com",
         "solana:103" => "https://api.devnet.solana.com",
         "cfx:1029" | "conflux-core:mainnet" => "https://main.confluxrpc.com",
@@ -52,6 +53,7 @@ pub fn chain_id_from_name(chain: &str) -> String {
         "polygon-amoy" | "80002" => "eip155:80002".into(),
         "optimism" | "op" | "10" => "eip155:10".into(),
         "optimism-sepolia" | "11155420" => "eip155:11155420".into(),
+        "tempo" | "moderato" | "42431" => "eip155:42431".into(),
         "solana" | "sol" => "solana:101".into(),
         "ton" | "toncoin" => "ton:0".into(),
         "stellar" | "xlm" => "stellar:pubnet".into(),
@@ -98,6 +100,9 @@ pub fn is_evm_chain(chain_id: &str) -> bool {
                 | "80002"
                 | "10"
                 | "11155420"
+                | "tempo"
+                | "moderato"
+                | "42431"
         )
 }
 
@@ -147,6 +152,7 @@ pub fn evm_chain_num(chain_id: &str) -> u64 {
         "eip155:80002" | "polygon-amoy" | "80002" => 80002,
         "eip155:10" | "optimism" | "op" | "10" => 10,
         "eip155:11155420" | "optimism-sepolia" | "11155420" => 11155420,
+        "eip155:42431" | "tempo" | "moderato" | "42431" => 42431,
         _ => 1,
     }
 }
