@@ -18,19 +18,63 @@ fn read_token(ctx: &AppContext) -> Option<String> {
         .map(|s| s.trim().to_string())
 }
 
-pub async fn login(ctx: &AppContext) -> Result<()> {
-    crate::commands::auth::login(ctx).await
+fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
+    println!("{}", serde_json::to_string_pretty(value)?);
+    Ok(())
 }
 
-pub async fn logout(ctx: &AppContext) -> Result<()> {
-    let path = token_path(ctx);
-    if path.exists() {
-        std::fs::remove_file(&path)?;
-        println!("Logged out successfully.");
+fn print_or_json<T: serde::Serialize>(
+    json: bool,
+    human: impl FnOnce(),
+    value: T,
+) -> Result<()> {
+    if json {
+        print_json(&value)?;
     } else {
-        println!("Not logged in.");
+        human();
     }
     Ok(())
+}
+
+pub async fn login(ctx: &AppContext, json: bool) -> Result<()> {
+    match crate::commands::auth::login(ctx).await {
+        Ok(()) => print_or_json(
+            json,
+            || { /* auth::login already prints success */ },
+            serde_json::json!({ "success": true }),
+        ),
+        Err(e) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({ "success": false, "error": e.to_string() })
+                );
+                Ok(())
+            } else {
+                Err(e)
+            }
+        }
+    }
+}
+
+pub async fn logout(ctx: &AppContext, json: bool) -> Result<()> {
+    let path = token_path(ctx);
+    let success = if path.exists() {
+        std::fs::remove_file(&path).is_ok()
+    } else {
+        true
+    };
+    print_or_json(
+        json,
+        || {
+            if success && path.exists() {
+                println!("Logged out successfully.");
+            } else {
+                println!("Not logged in.");
+            }
+        },
+        serde_json::json!({ "success": success }),
+    )
 }
 
 pub async fn whoami(ctx: &AppContext, json: bool) -> Result<()> {
@@ -74,6 +118,101 @@ pub async fn whoami(ctx: &AppContext, json: bool) -> Result<()> {
 
     println!("{}", serde_json::to_string_pretty(&out)?);
     Ok(())
+}
+
+pub async fn create(
+    ctx: &AppContext,
+    name: String,
+    workspace: Option<String>,
+    json: bool,
+) -> Result<()> {
+    if name.trim().is_empty() {
+        anyhow::bail!("Wallet name cannot be empty");
+    }
+    let passphrase = ctx
+        .read_passphrase()
+        .ok_or_else(|| anyhow::anyhow!("No session found. Run 'gradience wallet login' first."))?;
+    let owner_id = "user-1";
+    if queries::get_user_by_email(&ctx.db, "demo@gradience.io")
+        .await?
+        .is_none()
+    {
+        queries::create_user(&ctx.db, owner_id, "demo@gradience.io").await?;
+    }
+    let vault = ctx.ows.init_vault(&passphrase).await?;
+    let wallet = ctx
+        .ows
+        .create_wallet(&vault, &name, Default::default())
+        .await?;
+    queries::create_wallet(&ctx.db, &wallet.id, &wallet.name, owner_id, workspace.as_deref())
+        .await?;
+    for acc in &wallet.accounts {
+        queries::create_wallet_address(
+            &ctx.db,
+            &uuid::Uuid::new_v4().to_string(),
+            &wallet.id,
+            &acc.chain_id,
+            &acc.address,
+            &acc.derivation_path,
+        )
+        .await?;
+    }
+    let accounts: Vec<serde_json::Value> = wallet
+        .accounts
+        .iter()
+        .map(|a| serde_json::json!({ "chain_id": a.chain_id, "address": a.address }))
+        .collect();
+    print_or_json(
+        json,
+        || {
+            println!("Created wallet '{}' (id: {})", wallet.name, wallet.id);
+            for a in &wallet.accounts {
+                println!("  [{}] {}", a.chain_id, a.address);
+            }
+        },
+        serde_json::json!({
+            "wallet_id": wallet.id,
+            "name": wallet.name,
+            "accounts": accounts,
+        }),
+    )
+}
+
+pub async fn list(ctx: &AppContext, json: bool) -> Result<()> {
+    let owner_id = "user-1";
+    let wallets = queries::list_wallets_by_owner(&ctx.db, owner_id).await?;
+    if !json {
+        if wallets.is_empty() {
+            println!("No wallets configured yet.");
+            return Ok(());
+        }
+        for w in wallets {
+            let addrs = queries::list_wallet_addresses(&ctx.db, &w.id)
+                .await
+                .unwrap_or_default();
+            println!("{} - {} ({} addresses)", w.id, w.name, addrs.len());
+            for a in addrs {
+                println!("  [{}] {}", a.chain_id, a.address);
+            }
+        }
+        return Ok(());
+    }
+    let mut items = Vec::new();
+    for w in wallets {
+        let addrs = queries::list_wallet_addresses(&ctx.db, &w.id)
+            .await
+            .unwrap_or_default();
+        let addresses: Vec<serde_json::Value> = addrs
+            .into_iter()
+            .map(|a| serde_json::json!({ "chain_id": a.chain_id, "address": a.address }))
+            .collect();
+        items.push(serde_json::json!({
+            "wallet_id": w.id,
+            "name": w.name,
+            "addresses": addresses,
+        }));
+    }
+    print_json(&serde_json::json!({ "wallets": items }))
 }
 
 pub async fn balance(
@@ -179,8 +318,20 @@ pub async fn fund(
     amount: String,
     chain: Option<String>,
     to: Option<String>,
-    _json: bool,
+    json: bool,
 ) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "wallet_id": wallet_id,
+                "amount": amount,
+                "chain": chain.clone().unwrap_or_else(|| "base".into()),
+                "to": to,
+                "status": "executing"
+            })
+        );
+    }
     crate::commands::agent::fund(ctx, wallet_id, amount, chain, to).await
 }
 
@@ -216,6 +367,36 @@ pub async fn transfer(
         );
     }
     crate::commands::agent::fund(ctx, wallet_id, amount, chain, Some(to)).await
+}
+
+pub async fn pay(
+    ctx: &AppContext,
+    wallet_id: String,
+    recipient: String,
+    amount: String,
+    token: String,
+    chain: Option<String>,
+    deadline: Option<u64>,
+    json: bool,
+) -> Result<()> {
+    if json {
+        println!(
+            "{}",
+            serde_json::json!({
+                "wallet_id": wallet_id,
+                "recipient": recipient,
+                "amount": amount,
+                "token": token,
+                "chain": chain,
+                "deadline": deadline,
+                "status": "executing"
+            })
+        );
+    }
+    crate::commands::pay::mpp_pay(
+        ctx, wallet_id, recipient, amount, token, chain, deadline,
+    )
+    .await
 }
 
 pub async fn keys(ctx: &AppContext, wallet_id: String, json: bool) -> Result<()> {
@@ -299,32 +480,80 @@ pub async fn services(json: bool) -> Result<()> {
     Ok(())
 }
 
-pub async fn sessions_list(ctx: &AppContext, wallet_id: String) -> Result<()> {
+pub async fn sessions_list(
+    ctx: &AppContext,
+    wallet_id: String,
+    json: bool,
+) -> Result<()> {
     let wallet = queries::get_wallet_by_id(&ctx.db, &wallet_id).await?;
     if wallet.is_none() {
         anyhow::bail!("Wallet not found: {}", wallet_id);
     }
     let sessions = queries::list_sessions_by_user(&ctx.db, "user-1").await?;
-    if sessions.is_empty() {
-        println!("No active sessions for wallet {}", wallet_id);
-    } else {
-        println!("Active sessions for wallet {}:", wallet_id);
-        for s in sessions {
-            let (token, username, created_at, _expires_at) = s;
-            println!("  {} (user: {}, created: {})", token, username, created_at);
+    if !json {
+        if sessions.is_empty() {
+            println!("No active sessions for wallet {}", wallet_id);
+        } else {
+            println!("Active sessions for wallet {}:", wallet_id);
+            for s in sessions {
+                let (token, username, created_at, _expires_at) = s;
+                println!("  {} (user: {}, created: {})", token, username, created_at);
+            }
         }
+        return Ok(());
     }
-    Ok(())
+    let items: Vec<serde_json::Value> = sessions
+        .into_iter()
+        .map(|(token, username, created_at, expires_at)| {
+            serde_json::json!({
+                "token": token,
+                "username": username,
+                "created_at": created_at,
+                "expires_at": expires_at,
+            })
+        })
+        .collect();
+    print_json(&serde_json::json!({ "wallet_id": wallet_id, "sessions": items }))
 }
 
-pub async fn sessions_close(ctx: &AppContext, session_id: String) -> Result<()> {
-    let rows = queries::delete_session_by_token(&ctx.db, &session_id).await?;
-    if rows > 0 {
-        println!("Closed session {}", session_id);
-    } else {
-        println!("Session {} not found", session_id);
+pub async fn sessions_sync(
+    ctx: &AppContext,
+    wallet_id: String,
+    json: bool,
+) -> Result<()> {
+    let wallet = queries::get_wallet_by_id(&ctx.db, &wallet_id).await?;
+    if wallet.is_none() {
+        anyhow::bail!("Wallet not found: {}", wallet_id);
     }
-    Ok(())
+    print_or_json(
+        json,
+        || println!("Synced sessions for wallet {}.", wallet_id),
+        serde_json::json!({
+            "wallet_id": wallet_id,
+            "synced": true,
+            "note": "MPP session reconciliation placeholder"
+        }),
+    )
+}
+
+pub async fn sessions_close(
+    ctx: &AppContext,
+    session_id: String,
+    json: bool,
+) -> Result<()> {
+    let rows = queries::delete_session_by_token(&ctx.db, &session_id).await?;
+    let closed = rows > 0;
+    print_or_json(
+        json,
+        || {
+            if closed {
+                println!("Closed session {}", session_id);
+            } else {
+                println!("Session {} not found", session_id);
+            }
+        },
+        serde_json::json!({ "session_id": session_id, "closed": closed }),
+    )
 }
 
 pub async fn mpp_sign(

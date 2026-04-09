@@ -23,13 +23,27 @@ for agent consumption.
 - `gradience wallet logout` — clear local token and session.
 - `gradience wallet whoami --json` — check remote + local vault status.
 
-### Balances & Transfers
+### Wallet Management
+- `gradience wallet create --name=<name> [--workspace=<ws>] --json`
+- `gradience wallet list --json`
+
+### Balances, Funding & Transfers
 - `gradience wallet balance <wallet_id> --json [--chain=<chain>]`
+- `gradience wallet fund <wallet_id> <amount> [--chain=<chain>] [--to=<to>] --json`
 - `gradience wallet transfer <wallet_id> <amount> <token> <to> [--chain=<chain>] --json`
+
+### Payments
+- `gradience wallet pay <wallet_id> <recipient> <amount> --token=<token> [--chain=<chain>] [--deadline=<ts>] --json`
+  *Executes an MPP payment directly.*
 
 ### Keys & Services
 - `gradience wallet keys <wallet_id> --json`
 - `gradience wallet services --json`
+
+### Sessions
+- `gradience wallet sessions list <wallet_id> --json`
+- `gradience wallet sessions sync <wallet_id> --json`
+- `gradience wallet sessions close <session_id> --json`
 
 ### Batch & MPP
 - `gradience wallet batch <request_file> --json`
@@ -37,9 +51,6 @@ for agent consumption.
   `MppPaymentRequest` file.*
 - `gradience wallet mpp-sign <wallet_id> <challenge_file> --json`
   *Signs an MPP `PaymentChallenge` JSON file and returns a credential.*
-
-### Direct Payment (top-level)
-- `gradience pay <wallet_id> <recipient> <amount> --token=<token> [--chain=<chain>] [--deadline=<ts>]`
 
 ## Workflow Guidelines
 

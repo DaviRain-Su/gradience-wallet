@@ -259,11 +259,31 @@ pub enum McpCommands {
 #[derive(Subcommand, Debug)]
 pub enum WalletCommands {
     /// Login to your vault (browser-based device auth)
-    Login,
+    Login {
+        #[arg(long)]
+        json: bool,
+    },
     /// Logout and clear local credentials
-    Logout,
+    Logout {
+        #[arg(long)]
+        json: bool,
+    },
     /// Show current authentication status and linked wallets
     Whoami {
+        #[arg(long)]
+        json: bool,
+    },
+    /// Create a new wallet
+    Create {
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        workspace: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// List wallets
+    List {
         #[arg(long)]
         json: bool,
     },
@@ -294,6 +314,20 @@ pub enum WalletCommands {
         to: String,
         #[arg(long)]
         chain: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Execute MPP payment
+    Pay {
+        wallet_id: String,
+        recipient: String,
+        amount: String,
+        #[arg(long)]
+        token: String,
+        #[arg(long)]
+        chain: Option<String>,
+        #[arg(long)]
+        deadline: Option<u64>,
         #[arg(long)]
         json: bool,
     },
@@ -330,6 +364,19 @@ pub enum WalletCommands {
 
 #[derive(Subcommand, Debug)]
 pub enum WalletSessionCommands {
-    List { wallet_id: String },
-    Close { session_id: String },
+    List {
+        wallet_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Sync {
+        wallet_id: String,
+        #[arg(long)]
+        json: bool,
+    },
+    Close {
+        session_id: String,
+        #[arg(long)]
+        json: bool,
+    },
 }
