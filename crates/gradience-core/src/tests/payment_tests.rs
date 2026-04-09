@@ -1,6 +1,6 @@
 use crate::payment::protocol::PaymentProtocol;
 use crate::payment::router::{PaymentRouter, PaymentRoutePreference, PaymentRequirement};
-use crate::payment::mpp::{MppService, MppPaymentRequest, MppRecipient};
+use crate::payment::mpp::{MppService, MppPaymentRequest, MppRecipient, BatchTransferPayload, MULTICALL3_ADDRESS};
 
 #[test]
 fn test_payment_protocol_from_str() {
@@ -32,24 +32,24 @@ fn test_mpp_service_build_batch_erc20() {
     let svc = MppService::new();
     let req = MppPaymentRequest {
         sender_wallet_id: "wallet-1".into(),
+        sender_address: Some("0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C".into()),
         recipients: vec![MppRecipient {
-            address: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C".into(),
+            address: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C".into(), // EIP-55 checksummed
             amount: "1000000".into(),
         }],
-        token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
+        token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(), // USDC on Base (checksummed)
         chain: "base".into(),
         memo: None,
     };
     let batch = svc.build_batch(&req).unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&batch).unwrap();
-    let arr = parsed.as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    // ERC20 transfer should target the token contract
-    assert_eq!(arr[0]["to"].as_str().unwrap(), "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
-    assert_eq!(arr[0]["value"].as_str().unwrap(), "0");
-    // Calldata should start with transfer selector 0xa9059cbb
-    let data = arr[0]["data"].as_str().unwrap();
-    assert!(data.starts_with("0xa9059cbb"));
+    match batch {
+        BatchTransferPayload::Evm { to, value, data } => {
+            assert_eq!(to, MULTICALL3_ADDRESS);
+            assert_eq!(value, "0x0"); // No native value for ERC20
+            assert!(data.starts_with("0x1749e1e3")); // aggregate3Value selector
+        }
+        _ => panic!("expected EVM payload"),
+    }
 }
 
 #[test]
@@ -57,8 +57,9 @@ fn test_mpp_service_build_batch_native() {
     let svc = MppService::new();
     let req = MppPaymentRequest {
         sender_wallet_id: "wallet-1".into(),
+        sender_address: Some("0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C".into()),
         recipients: vec![MppRecipient {
-            address: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C".into(),
+            address: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C".into(), // EIP-55 checksummed address
             amount: "1000000".into(),
         }],
         token_address: "0x0000000000000000000000000000000000000000".into(),
@@ -66,13 +67,14 @@ fn test_mpp_service_build_batch_native() {
         memo: None,
     };
     let batch = svc.build_batch(&req).unwrap();
-    let parsed: serde_json::Value = serde_json::from_slice(&batch).unwrap();
-    let arr = parsed.as_array().unwrap();
-    assert_eq!(arr.len(), 1);
-    // Native transfer targets the recipient directly
-    assert_eq!(arr[0]["to"].as_str().unwrap(), "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C");
-    assert_eq!(arr[0]["value"].as_str().unwrap(), "1000000");
-    assert_eq!(arr[0]["data"].as_str().unwrap(), "");
+    match batch {
+        BatchTransferPayload::Evm { to, value, data } => {
+            assert_eq!(to, MULTICALL3_ADDRESS);
+            assert_eq!(value, "0xf4240"); // 1000000 in hex
+            assert!(data.starts_with("0x1749e1e3")); // aggregate3Value selector
+        }
+        _ => panic!("expected EVM payload"),
+    }
 }
 
 #[test]
@@ -80,6 +82,7 @@ fn test_mpp_service_build_batch_empty_recipients_fails() {
     let svc = MppService::new();
     let req = MppPaymentRequest {
         sender_wallet_id: "wallet-1".into(),
+        sender_address: Some("0x742d35Cc6634C0532925a3b844Bc9e7595f2bD0C".into()),
         recipients: vec![],
         token_address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
         chain: "base".into(),

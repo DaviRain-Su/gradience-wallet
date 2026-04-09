@@ -7,3 +7,4 @@ pub mod merkle_tests;
 pub mod team_tests;
 pub mod payment_tests;
 pub mod dex_service_tests;
+pub mod mpp_integration_tests;

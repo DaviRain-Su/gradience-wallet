@@ -2,6 +2,21 @@
 
 > 基于 2026-04-09 项目全面 Review 后整理
 > 核心目标：将 Tempo MPP 支付推向更多未被官方覆盖的链
+>
+> **最后更新**: 2026-04-09
+> **已完成**: Phase A + B + C1 + D (核心) + E1 + E2 + F (全部)
+> - Phase A: 修复 (chain_id, x402, build_batch)
+> - Phase B: 通用 EVM 多链 (7 条链)
+> - Phase C1: Conflux Core Space pure Rust provider
+> - Phase D: TON MPP provider (native TON transfers)
+> - Phase E1: MppEscrow 多链部署脚本
+> - Phase E2: Session intent 支持 (openSession)
+> - Phase F1-F2: SDK + 前端更新
+> - Phase F3: 集成测试 + CI/CD (GitHub Actions)
+>
+> **支持的链**: Tempo, Base, BSC, Conflux eSpace, Conflux Core, XLayer, Arbitrum, Polygon, Optimism, Solana, TON (11 chains)
+>
+> **待完成**: MppEscrow 合约部署到测试网，awesome-mpp PR，Jetton 支持
 
 ---
 

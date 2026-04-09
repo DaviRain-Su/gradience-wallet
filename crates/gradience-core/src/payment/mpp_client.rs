@@ -2,6 +2,7 @@ use crate::error::GradienceError;
 use crate::payment::router::{PaymentRequirement, PaymentRouter};
 use mpp::client::PaymentProvider;
 use mpp::{PaymentChallenge, PaymentCredential};
+use std::collections::HashMap;
 
 /// Per-chain EVM configuration for MPP charge payments.
 #[derive(Clone, Debug)]
@@ -42,8 +43,14 @@ pub struct GradienceMppProvider {
     pub tempo_rpc: String,
     /// Multi-chain EVM configs keyed by chain_id.
     pub evm_chains: Vec<EvmChargeConfig>,
+    /// MppEscrow contract addresses by chain_id for session support.
+    pub escrow_addresses: HashMap<u64, String>,
     pub solana_secret: Option<[u8; 32]>,
     pub solana_rpc: String,
+    /// TON wallet seed (32 bytes).
+    pub ton_seed: Option<[u8; 32]>,
+    /// TON mainnet (true) or testnet (false).
+    pub ton_mainnet: bool,
 }
 
 impl GradienceMppProvider {
@@ -55,8 +62,11 @@ impl GradienceMppProvider {
             tempo_signer: None,
             tempo_rpc: "https://rpc.moderato.tempo.xyz".into(),
             evm_chains: Vec::new(),
+            escrow_addresses: HashMap::new(),
             solana_secret: None,
             solana_rpc: "https://api.mainnet-beta.solana.com".into(),
+            ton_seed: None,
+            ton_mainnet: false,
         }
     }
 
@@ -111,6 +121,24 @@ impl GradienceMppProvider {
 
     pub fn with_solana_rpc(mut self, rpc: impl Into<String>) -> Self {
         self.solana_rpc = rpc.into();
+        self
+    }
+
+    /// Add MppEscrow contract address for a specific chain (for session support).
+    pub fn with_escrow_address(mut self, chain_id: u64, address: impl Into<String>) -> Self {
+        self.escrow_addresses.insert(chain_id, address.into());
+        self
+    }
+
+    /// Set TON wallet seed for MPP charge payments.
+    pub fn with_ton_seed(mut self, seed: [u8; 32]) -> Self {
+        self.ton_seed = Some(seed);
+        self
+    }
+
+    /// Set TON network (mainnet=true, testnet=false).
+    pub fn with_ton_mainnet(mut self, mainnet: bool) -> Self {
+        self.ton_mainnet = mainnet;
         self
     }
 
@@ -254,14 +282,174 @@ impl GradienceMppProvider {
         let payload = PaymentPayload::hash(sig);
         Ok(PaymentCredential::new(challenge_echo, payload))
     }
+
+    async fn pay_session(
+        &self,
+        charge_req: &mpp::protocol::intents::ChargeRequest,
+        challenge_echo: mpp::protocol::core::ChallengeEcho,
+    ) -> Result<PaymentCredential, mpp::MppError> {
+        use mpp::protocol::core::PaymentPayload;
+        use sha3::{Digest, Keccak256};
+
+        // Parse amount and recipient
+        let amount = charge_req
+            .amount
+            .parse::<u128>()
+            .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
+        let recipient_str = charge_req
+            .recipient
+            .as_deref()
+            .ok_or_else(|| mpp::MppError::InvalidConfig("missing recipient".into()))?;
+
+        // Parse recipient address (remove 0x prefix)
+        let recipient_bytes = hex::decode(recipient_str.trim_start_matches("0x"))
+            .map_err(|e| mpp::MppError::InvalidConfig(format!("bad recipient: {}", e)))?;
+        if recipient_bytes.len() != 20 {
+            return Err(mpp::MppError::InvalidConfig("recipient must be 20 bytes".into()));
+        }
+
+        // Determine which EVM chain to use
+        let evm_config = self
+            .evm_chains
+            .first()
+            .ok_or_else(|| mpp::MppError::Http("no EVM chain configured for session".into()))?;
+
+        // Get MppEscrow address for this chain
+        let escrow_addr_str = self
+            .escrow_addresses
+            .get(&evm_config.chain_id)
+            .ok_or_else(|| {
+                mpp::MppError::Http(format!(
+                    "no MppEscrow address for chain_id {}",
+                    evm_config.chain_id
+                ))
+            })?;
+        let escrow_bytes = hex::decode(escrow_addr_str.trim_start_matches("0x"))
+            .map_err(|e| mpp::MppError::InvalidConfig(format!("bad escrow address: {}", e)))?;
+        if escrow_bytes.len() != 20 {
+            return Err(mpp::MppError::InvalidConfig("escrow address must be 20 bytes".into()));
+        }
+
+        // Generate sessionId = keccak256(wallet_id || timestamp || random)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let random = rand::random::<u64>();
+        let mut hasher = Keccak256::new();
+        hasher.update(self.wallet_id.as_bytes());
+        hasher.update(&now.to_be_bytes());
+        hasher.update(&random.to_be_bytes());
+        let session_id_bytes: [u8; 32] = hasher.finalize().into();
+
+        // Set expiry to 1 hour from now
+        let expires_at = now + 3600;
+
+        // Build MppEscrow.openSession(sessionId, recipient, expiresAt) calldata
+        // function selector: keccak256("openSession(bytes32,address,uint256)") = 0x8e8c4a1f
+        let mut calldata = vec![0x8eu8, 0x8c, 0x4a, 0x1f];
+        calldata.extend_from_slice(&session_id_bytes); // sessionId (32 bytes)
+        calldata.extend_from_slice(&[0u8; 12]); // padding for address
+        calldata.extend_from_slice(&recipient_bytes); // recipient (20 bytes)
+        let mut expires_bytes = [0u8; 32];
+        expires_bytes[24..32].copy_from_slice(&expires_at.to_be_bytes());
+        calldata.extend_from_slice(&expires_bytes); // expiresAt (uint256)
+
+        // Get sender address from secret
+        let from_addr = crate::ows::signing::eth_address_from_secret_key(&evm_config.secret)
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        // Get nonce and gas price
+        let rpc_client = crate::rpc::evm::EvmRpcClient::new(
+            &evm_config.chain_id.to_string(),
+            &evm_config.rpc_url,
+        )
+        .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        let nonce = rpc_client
+            .get_transaction_count(&from_addr)
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        let gas_price_hex = rpc_client
+            .get_gas_price()
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+        let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
+            .map_err(|e| mpp::MppError::Http(format!("invalid gas price: {}", e)))?;
+
+        // Sign transaction
+        let signed_tx = crate::ows::signing::sign_eth_transaction(
+            &evm_config.secret,
+            nonce,
+            gas_price,
+            100000, // gas limit for openSession
+            escrow_addr_str,
+            amount,
+            &calldata,
+            evm_config.chain_id,
+        )
+        .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        // Send transaction
+        let tx_hash = rpc_client
+            .send_raw_transaction(&format!("0x{}", hex::encode(&signed_tx)))
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        // Return credential with sessionId in payload
+        let payload_str = format!("session:{}", hex::encode(session_id_bytes));
+        let payload = PaymentPayload::hash(payload_str);
+        Ok(PaymentCredential::new(challenge_echo, payload))
+    }
+
+    async fn pay_ton_charge(
+        &self,
+        charge_req: &mpp::protocol::intents::ChargeRequest,
+        challenge_echo: mpp::protocol::core::ChallengeEcho,
+    ) -> Result<PaymentCredential, mpp::MppError> {
+        use mpp::protocol::core::PaymentPayload;
+
+        let seed = self
+            .ton_seed
+            .as_ref()
+            .ok_or_else(|| mpp::MppError::Http("no TON seed configured".into()))?;
+
+        let recipient = charge_req
+            .recipient
+            .as_deref()
+            .ok_or_else(|| mpp::MppError::InvalidConfig("missing recipient".into()))?;
+
+        // Parse amount (in nanoTON)
+        let amount = charge_req
+            .amount
+            .parse::<u64>()
+            .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
+
+        // Build TON transfer transaction
+        let tx_boc = crate::ows::signing::build_ton_transfer_tx(seed, recipient, amount, 60)
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        // Send transaction via TON RPC
+        let rpc_client = crate::rpc::ton::TonRpcClient::new(self.ton_mainnet);
+        let _tx_hash = rpc_client
+            .send_boc(&tx_boc)
+            .await
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+        // Return credential with tx hash
+        let payload = PaymentPayload::hash(_tx_hash);
+        Ok(PaymentCredential::new(challenge_echo, payload))
+    }
 }
 
 impl PaymentProvider for GradienceMppProvider {
     fn supports(&self, method: &str, intent: &str) -> bool {
         (method == "tempo" && intent == "charge" && self.tempo_signer.is_some())
             || (method == "evm" && intent == "charge" && !self.evm_chains.is_empty())
+            || (method == "evm" && intent == "session" && !self.escrow_addresses.is_empty())
             || (method == "solana" && intent == "charge" && self.solana_secret.is_some())
-            || (method == "gradience" && intent == "session")
+            || (method == "ton" && intent == "charge" && self.ton_seed.is_some())
     }
 
     async fn pay(
@@ -302,11 +490,9 @@ impl PaymentProvider for GradienceMppProvider {
             return tempo.pay(challenge).await;
         }
 
-        // --- Gradience session ---
-        if challenge.method.as_str() == "gradience" && challenge.intent.as_str() == "session" {
-            return Err(mpp::MppError::Http(
-                "session credentials must be attached manually".into(),
-            ));
+        // --- EVM session (MppEscrow) ---
+        if challenge.method.as_str() == "evm" && challenge.intent.as_str() == "session" {
+            return self.pay_session(&charge_req, challenge_echo).await;
         }
 
         // --- Multi-chain routing ---
@@ -327,6 +513,11 @@ impl PaymentProvider for GradienceMppProvider {
         // --- Solana charge ---
         if challenge.method.as_str() == "solana" && challenge.intent.as_str() == "charge" {
             return self.pay_solana_charge(&charge_req, challenge_echo).await;
+        }
+
+        // --- TON charge ---
+        if challenge.method.as_str() == "ton" && challenge.intent.as_str() == "charge" {
+            return self.pay_ton_charge(&charge_req, challenge_echo).await;
         }
 
         Err(mpp::MppError::Http(
