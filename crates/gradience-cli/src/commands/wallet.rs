@@ -23,11 +23,7 @@ fn print_json<T: serde::Serialize>(value: &T) -> Result<()> {
     Ok(())
 }
 
-fn print_or_json<T: serde::Serialize>(
-    json: bool,
-    human: impl FnOnce(),
-    value: T,
-) -> Result<()> {
+fn print_or_json<T: serde::Serialize>(json: bool, human: impl FnOnce(), value: T) -> Result<()> {
     if json {
         print_json(&value)?;
     } else {
@@ -144,8 +140,14 @@ pub async fn create(
         .ows
         .create_wallet(&vault, &name, Default::default())
         .await?;
-    queries::create_wallet(&ctx.db, &wallet.id, &wallet.name, owner_id, workspace.as_deref())
-        .await?;
+    queries::create_wallet(
+        &ctx.db,
+        &wallet.id,
+        &wallet.name,
+        owner_id,
+        workspace.as_deref(),
+    )
+    .await?;
     for acc in &wallet.accounts {
         queries::create_wallet_address(
             &ctx.db,
@@ -393,10 +395,7 @@ pub async fn pay(
             })
         );
     }
-    crate::commands::pay::mpp_pay(
-        ctx, wallet_id, recipient, amount, token, chain, deadline,
-    )
-    .await
+    crate::commands::pay::mpp_pay(ctx, wallet_id, recipient, amount, token, chain, deadline).await
 }
 
 pub async fn keys(ctx: &AppContext, wallet_id: String, json: bool) -> Result<()> {
@@ -480,11 +479,7 @@ pub async fn services(json: bool) -> Result<()> {
     Ok(())
 }
 
-pub async fn sessions_list(
-    ctx: &AppContext,
-    wallet_id: String,
-    json: bool,
-) -> Result<()> {
+pub async fn sessions_list(ctx: &AppContext, wallet_id: String, json: bool) -> Result<()> {
     let wallet = queries::get_wallet_by_id(&ctx.db, &wallet_id).await?;
     if wallet.is_none() {
         anyhow::bail!("Wallet not found: {}", wallet_id);
@@ -516,11 +511,7 @@ pub async fn sessions_list(
     print_json(&serde_json::json!({ "wallet_id": wallet_id, "sessions": items }))
 }
 
-pub async fn sessions_sync(
-    ctx: &AppContext,
-    wallet_id: String,
-    json: bool,
-) -> Result<()> {
+pub async fn sessions_sync(ctx: &AppContext, wallet_id: String, json: bool) -> Result<()> {
     let wallet = queries::get_wallet_by_id(&ctx.db, &wallet_id).await?;
     if wallet.is_none() {
         anyhow::bail!("Wallet not found: {}", wallet_id);
@@ -536,11 +527,7 @@ pub async fn sessions_sync(
     )
 }
 
-pub async fn sessions_close(
-    ctx: &AppContext,
-    session_id: String,
-    json: bool,
-) -> Result<()> {
+pub async fn sessions_close(ctx: &AppContext, session_id: String, json: bool) -> Result<()> {
     let rows = queries::delete_session_by_token(&ctx.db, &session_id).await?;
     let closed = rows > 0;
     print_or_json(

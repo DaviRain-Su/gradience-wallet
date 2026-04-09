@@ -170,17 +170,13 @@ pub async fn ai_proxy_handler(
         let update_req: VerifyStateUpdateReq =
             serde_json::from_str(raw).map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let channel_id =
-            hex::decode(update_req.channel_id.trim_start_matches("0x"))
-                .map_err(|_| StatusCode::BAD_REQUEST)?;
-        let channel_id: [u8; 32] =
-            channel_id.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
+        let channel_id = hex::decode(update_req.channel_id.trim_start_matches("0x"))
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let channel_id: [u8; 32] = channel_id.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
 
-        let signature =
-            hex::decode(update_req.signature.trim_start_matches("0x"))
-                .map_err(|_| StatusCode::BAD_REQUEST)?;
-        let signature: [u8; 65] =
-            signature.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
+        let signature = hex::decode(update_req.signature.trim_start_matches("0x"))
+            .map_err(|_| StatusCode::BAD_REQUEST)?;
+        let signature: [u8; 65] = signature.try_into().map_err(|_| StatusCode::BAD_REQUEST)?;
 
         let amount = update_req
             .amount
@@ -269,6 +265,14 @@ pub async fn ai_proxy_handler(
     let evm_path = "m/44'/60'/0'/0/0";
     let evm_seed =
         gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "eip155:8453", evm_path);
+
+    // Register Tempo signer (uses same EVM seed)
+    if let Ok(tempo_signer) = mpp::PrivateKeySigner::from_bytes(&evm_seed.into()) {
+        mpp_provider = mpp_provider
+            .with_tempo_signer(tempo_signer)
+            .with_tempo_rpc("https://rpc.moderato.tempo.xyz");
+    }
+
     // Register multiple EVM chains for MPP charge
     mpp_provider = mpp_provider
         .with_evm_chain(EvmChargeConfig::new(

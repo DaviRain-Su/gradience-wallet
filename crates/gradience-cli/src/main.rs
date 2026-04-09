@@ -192,24 +192,26 @@ async fn main() -> anyhow::Result<()> {
                 chain,
                 deadline,
                 json,
-            } => commands::wallet::pay(&ctx, wallet_id, recipient, amount, token, chain, deadline, json).await,
+            } => {
+                commands::wallet::pay(
+                    &ctx, wallet_id, recipient, amount, token, chain, deadline, json,
+                )
+                .await
+            }
             WalletCommands::Keys { wallet_id, json } => {
                 commands::wallet::keys(&ctx, wallet_id, json).await
             }
             WalletCommands::Services { json } => commands::wallet::services(json).await,
             WalletCommands::Sessions { cmd } => match cmd {
-                WalletSessionCommands::List {
-                    wallet_id,
-                    json,
-                } => commands::wallet::sessions_list(&ctx, wallet_id, json).await,
-                WalletSessionCommands::Sync {
-                    wallet_id,
-                    json,
-                } => commands::wallet::sessions_sync(&ctx, wallet_id, json).await,
-                WalletSessionCommands::Close {
-                    session_id,
-                    json,
-                } => commands::wallet::sessions_close(&ctx, session_id, json).await,
+                WalletSessionCommands::List { wallet_id, json } => {
+                    commands::wallet::sessions_list(&ctx, wallet_id, json).await
+                }
+                WalletSessionCommands::Sync { wallet_id, json } => {
+                    commands::wallet::sessions_sync(&ctx, wallet_id, json).await
+                }
+                WalletSessionCommands::Close { session_id, json } => {
+                    commands::wallet::sessions_close(&ctx, session_id, json).await
+                }
             },
             WalletCommands::MppSign {
                 wallet_id,
