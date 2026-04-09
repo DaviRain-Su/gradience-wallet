@@ -3,6 +3,12 @@ use sqlx::{Pool, Sqlite};
 
 pub struct AiBalanceService;
 
+impl Default for AiBalanceService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AiBalanceService {
     pub fn new() -> Self {
         Self

@@ -31,7 +31,7 @@ fn build_anchor_calldata(
 
 fn compute_audit_leaf(log: &gradience_db::models::AuditLog) -> [u8; 32] {
     let mut hasher = sha3::Keccak256::new();
-    hasher.update(&log.id.to_be_bytes());
+    hasher.update(log.id.to_be_bytes());
     hasher.update(log.wallet_id.as_bytes());
     hasher.update(log.action.as_bytes());
     hasher.update(log.decision.as_bytes());

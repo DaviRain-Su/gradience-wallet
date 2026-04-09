@@ -85,3 +85,9 @@ bun run deploy-mpp-escrow.ts all
 ```
 
 Supported chains: `bsc-testnet`, `conflux-espace-testnet`, `xlayer-testnet`, `base-sepolia`, `arbitrum-sepolia`, `polygon-amoy`
+
+### Deployed Contracts
+
+| Chain | Chain ID | Contract Address | Tx Hash |
+|-------|----------|------------------|---------|
+| XLayer Testnet | 1952 | `0x3ca2292b53cbc8f1bff10f3e052eddd7fba86532` | `0xcf651c82fcff709cd0dd71f84bd613745e82fba5abb5dcaf7a6aee5c8c3dd7e2` |

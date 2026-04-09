@@ -642,6 +642,7 @@ pub async fn recover_register(
 
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 pub struct DeviceInitiateReq {
     client_name: Option<String>,
 }
@@ -1465,7 +1466,7 @@ pub async fn wallet_fund(
     rlp.append(&chain_num);
     rlp.append(&0u8);
     rlp.append(&0u8);
-    let tx_hex = format!("0x{}", hex::encode(&rlp.out()));
+    let tx_hex = format!("0x{}", hex::encode(rlp.out()));
 
     let result = ows_lib::sign_and_send(
         &wallet_id,
@@ -1596,7 +1597,7 @@ pub async fn wallet_sign(
     rlp.append(&chain_num);
     rlp.append(&0u8);
     rlp.append(&0u8);
-    let tx_hex = format!("0x{}", hex::encode(&rlp.out()));
+    let tx_hex = format!("0x{}", hex::encode(rlp.out()));
 
     let result = ows_lib::sign_and_send(
         &wallet_id,
@@ -1820,7 +1821,7 @@ pub async fn wallet_swap(
     rlp.append(&chain_num);
     rlp.append(&0u8);
     rlp.append(&0u8);
-    let tx_hex = format!("0x{}", hex::encode(&rlp.out()));
+    let tx_hex = format!("0x{}", hex::encode(rlp.out()));
 
     let result = ows_lib::sign_and_send(
         &wallet_id,
@@ -2485,7 +2486,7 @@ pub async fn wallet_anchor(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let decision = if tx_hash.is_some() { "allowed" } else { "allowed" };
+    let decision = "allowed";
     let _ = gradience_core::audit::service::log_wallet_action(
         &state.db, &wallet_id, None, "anchor", &serde_json::json!({"tx_hash": tx_hash}).to_string(), decision,
     ).await;
@@ -2608,7 +2609,8 @@ pub async fn invite_workspace_member(
     let session = get_session(&state, &token).await.ok_or(StatusCode::UNAUTHORIZED)?;
     let _role = require_workspace_member(&state, &session.user_id, &workspace_id).await?;
 
-    let role = gradience_core::team::workspace::WorkspaceRole::from_str(&body.role)
+    let role: gradience_core::team::workspace::WorkspaceRole = body.role
+        .parse()
         .map_err(|_| StatusCode::BAD_REQUEST)?;
 
     // Ensure user exists

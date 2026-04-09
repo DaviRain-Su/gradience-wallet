@@ -17,6 +17,12 @@ pub struct JupiterQuote {
 
 pub struct JupiterClient;
 
+impl Default for JupiterClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JupiterClient {
     pub fn new() -> Self {
         Self

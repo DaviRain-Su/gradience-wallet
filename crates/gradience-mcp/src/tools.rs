@@ -50,7 +50,7 @@ fn build_unsigned_tx(
     rlp.append(&chain_id);
     rlp.append(&0u8);
     rlp.append(&0u8);
-    format!("0x{}", hex::encode(&rlp.out()))
+    format!("0x{}", hex::encode(rlp.out()))
 }
 
 fn resolve_rpc(chain_id: &str) -> &str {

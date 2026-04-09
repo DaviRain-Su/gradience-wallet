@@ -45,7 +45,7 @@ impl MerkleTree {
             if layer.len() <= 1 {
                 break;
             }
-            let sibling = if idx % 2 == 0 {
+            let sibling = if idx.is_multiple_of(2) {
                 if idx + 1 < layer.len() { layer[idx + 1] } else { layer[idx] }
             } else {
                 layer[idx - 1]

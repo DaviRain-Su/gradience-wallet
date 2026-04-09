@@ -33,15 +33,11 @@ pub struct SignedTransaction {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct DerivationParams {
     pub account_index: u32,
 }
 
-impl Default for DerivationParams {
-    fn default() -> Self {
-        Self { account_index: 0 }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub struct GradienceApiKey {

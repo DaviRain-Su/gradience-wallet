@@ -1,4 +1,4 @@
-use crate::policy::engine::{Policy, PolicyEngine, EvalContext, Decision, Rule, Intent};
+use crate::policy::engine::{Policy, PolicyEngine, EvalContext, Decision, Rule};
 use crate::policy::merge::merge_policies_strictest;
 use crate::ows::adapter::Transaction;
 

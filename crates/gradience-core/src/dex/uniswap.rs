@@ -51,7 +51,7 @@ pub struct UniV3SwapTx {
 pub fn encode_exact_input_single(
     token_in: &str,
     token_out: &str,
-    fee: u24,
+    fee: U24,
     recipient: &str,
     amount_in: &str,
     amount_out_min: &str,
@@ -96,7 +96,7 @@ pub fn encode_exact_input_single(
 pub fn encode_quote_exact_input_single(
     token_in: &str,
     token_out: &str,
-    fee: u24,
+    fee: U24,
     amount_in: u128,
     sqrt_price_limit_x96: u128,
 ) -> Result<Vec<u8>> {
@@ -130,7 +130,7 @@ fn pad_address(addr: &[u8; 20]) -> Vec<u8> {
     out
 }
 
-fn pad_u24(v: u24) -> Vec<u8> {
+fn pad_u24(v: U24) -> Vec<u8> {
     let mut out = vec![0u8; 28];
     out.extend_from_slice(&v.to_be_bytes());
     out
@@ -143,4 +143,4 @@ fn pad_u256(v: u128) -> Vec<u8> {
 }
 
 // tiny u24 type alias using u32 with validation
-pub type u24 = u32;
+pub type U24 = u32;

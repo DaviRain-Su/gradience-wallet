@@ -35,7 +35,7 @@ impl PaymentRouter {
     ) -> Result<PaymentRoutePreference> {
         let mut prefs = self.preferences.clone();
         prefs.sort_by_key(|p| p.priority);
-        for pref in prefs {
+        if let Some(pref) = prefs.into_iter().next() {
             // TODO: real balance check via RPC
             // For development demo, return first configured route.
             return Ok(pref);

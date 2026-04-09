@@ -10,7 +10,7 @@ pub enum WorkspaceRole {
 }
 
 impl WorkspaceRole {
-    pub fn from_str(s: &str) -> Result<Self> {
+    pub fn parse(s: &str) -> Result<Self> {
         match s {
             "owner" => Ok(WorkspaceRole::Owner),
             "admin" => Ok(WorkspaceRole::Admin),
@@ -38,7 +38,21 @@ impl WorkspaceRole {
     }
 }
 
+impl std::str::FromStr for WorkspaceRole {
+    type Err = GradienceError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        Self::parse(s)
+    }
+}
+
 pub struct WorkspaceService;
+
+impl Default for WorkspaceService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl WorkspaceService {
     pub fn new() -> Self {

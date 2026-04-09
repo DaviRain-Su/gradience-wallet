@@ -26,6 +26,14 @@ struct WalletInfo {
     seqno: u32,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct RunGetMethodResult {
+    exit_code: i64,
+    stack: Vec<Vec<serde_json::Value>>,
+    #[serde(rename = "gas_used")]
+    _gas_used: Option<u64>,
+}
+
 impl TonRpcClient {
     pub fn new(mainnet: bool) -> Self {
         let base_url = if mainnet {
@@ -121,5 +129,137 @@ impl TonRpcClient {
         }
         // toncenter returns { "@type": "ok", "@extra": "..." }
         Ok("sent".into())
+    }
+
+    /// Call a get-method on a TON contract.
+    pub async fn run_get_method(
+        &self,
+        address: &str,
+        method: &str,
+        stack: Vec<serde_json::Value>,
+    ) -> Result<RunGetMethodResult> {
+        let url = format!("{}/runGetMethod", self.base_url);
+        let resp = self
+            .client
+            .post(&url)
+            .json(&serde_json::json!({
+                "address": address,
+                "method": method,
+                "stack": stack,
+            }))
+            .send()
+            .await
+            .map_err(|e| GradienceError::Blockchain(format!("ton rpc runGetMethod failed: {}", e)))?;
+        let text = resp.text().await.map_err(|e| {
+            GradienceError::Blockchain(format!("ton rpc runGetMethod read text failed: {}", e))
+        })?;
+        let body: TonResponse<RunGetMethodResult> = serde_json::from_str(&text).map_err(|e| {
+            GradienceError::Blockchain(format!(
+                "ton rpc runGetMethod decode failed: {} | raw: {}",
+                e,
+                text.chars().take(200).collect::<String>()
+            ))
+        })?;
+        if !body.ok {
+            return Err(GradienceError::Blockchain(format!(
+                "ton rpc runGetMethod error: {:?}",
+                body.error
+            )));
+        }
+        let result = body.result.ok_or_else(|| {
+            GradienceError::Blockchain("ton rpc runGetMethod empty result".into())
+        })?;
+        if result.exit_code != 0 {
+            return Err(GradienceError::Blockchain(format!(
+                "ton rpc runGetMethod exit_code: {}",
+                result.exit_code
+            )));
+        }
+        Ok(result)
+    }
+
+    /// Get Jetton wallet address for a given owner and Jetton master.
+    pub async fn get_jetton_wallet_address(
+        &self,
+        jetton_master: &str,
+        owner_address: &str,
+    ) -> Result<String> {
+        // Encode owner address as tvm.Slice (base64 BoC)
+        let owner: tlb_ton::MsgAddress = owner_address
+            .parse()
+            .map_err(|e: <tlb_ton::MsgAddress as std::str::FromStr>::Err| {
+                GradienceError::Blockchain(format!("invalid owner ton address: {}", e))
+            })?;
+        let mut builder = tlb_ton::Cell::builder();
+        use tlb_ton::bits::ser::BitWriterExt;
+        builder
+            .pack(owner, ())
+            .map_err(|e| GradienceError::Blockchain(format!("ton cell pack failed: {}", e)))?;
+        let cell = builder.into_cell();
+        let boc = tlb_ton::BoC::from_root(cell);
+        let boc_bytes = boc
+            .serialize(tlb_ton::BagOfCellsArgs {
+                has_idx: false,
+                has_crc32c: true,
+            })
+            .map_err(|e| GradienceError::Blockchain(format!("ton boc serialize failed: {}", e)))?;
+        let owner_boc_b64 = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &boc_bytes,
+        );
+
+        let result = self
+            .run_get_method(
+                jetton_master,
+                "get_wallet_address",
+                vec![serde_json::json!([
+                    "tvm.Slice",
+                    owner_boc_b64
+                ])],
+            )
+            .await?;
+
+        let slice_b64 = result
+            .stack
+            .first()
+            .and_then(|item| item.get(1))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                GradienceError::Blockchain("runGetMethod stack missing slice value".into())
+            })?;
+
+        let boc_bytes = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            slice_b64,
+        )
+        .map_err(|e| GradienceError::Blockchain(format!("invalid base64 slice: {}", e)))?;
+        let boc = tlb_ton::BoC::deserialize(&boc_bytes)
+            .map_err(|e| GradienceError::Blockchain(format!("ton boc deserialize failed: {}", e)))?;
+        let cell = boc.into_single_root().ok_or_else(|| {
+            GradienceError::Blockchain("ton boc missing root cell".into())
+        })?;
+        let addr: tlb_ton::MsgAddress = tlb_ton::bits::de::unpack(&cell.data, ())
+            .map_err(|e| GradienceError::Blockchain(format!("ton address unpack failed: {}", e)))?;
+        Ok(addr.to_base64_url())
+    }
+
+    /// Get Jetton wallet balance.
+    pub async fn get_jetton_balance(&self, jetton_wallet: &str) -> Result<u128> {
+        let result = self
+            .run_get_method(jetton_wallet, "get_wallet_data", vec![])
+            .await?;
+        // get_wallet_data returns: [balance, owner_address, jetton_master_address, wallet_code]
+        let balance_str = result
+            .stack
+            .first()
+            .and_then(|item| item.first())
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                GradienceError::Blockchain("runGetMethod stack missing balance num".into())
+            })?;
+        let balance = balance_str
+            .parse::<u128>()
+            .map_err(|e| GradienceError::Blockchain(format!("invalid jetton balance: {}", e)))?;
+        Ok(balance)
     }
 }

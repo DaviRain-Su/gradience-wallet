@@ -4,6 +4,12 @@ use sqlx::{Pool, Sqlite};
 
 pub struct SharedBudgetService;
 
+impl Default for SharedBudgetService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SharedBudgetService {
     pub fn new() -> Self {
         Self

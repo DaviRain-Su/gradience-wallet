@@ -1,5 +1,5 @@
 use crate::error::GradienceError;
-use crate::identity::api_key::{ApiKeyService, ApiKeyDescriptor};
+use crate::identity::api_key::ApiKeyService;
 use crate::wallet::service::WalletManagerService;
 use crate::ows::adapter::{OwsAdapter, Transaction, PolicyAction, DerivationParams};
 use crate::ows::vault::VaultHandle;
@@ -59,7 +59,7 @@ impl OwsAdapter for TestOwsAdapter {
     async fn derive_account(
         &self,
         _vault: &VaultHandle,
-        wallet_id: &str,
+        _wallet_id: &str,
         chain: &str,
         derivation_path: &str,
     ) -> Result<crate::wallet::manager::AccountDescriptor, GradienceError> {

@@ -214,10 +214,10 @@ pub async fn ai_proxy_handler(
     let solana_seed = gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "solana:mainnet", solana_path);
     mpp_provider = mpp_provider.with_solana_secret(solana_seed).with_solana_rpc("https://api.mainnet-beta.solana.com");
 
-    // Register TON (testnet for now)
+    // Register TON mainnet
     let ton_path = "m/44'/607'/0'/0";
-    let ton_seed = gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "ton:testnet", ton_path);
-    mpp_provider = mpp_provider.with_ton_seed(ton_seed).with_ton_mainnet(false);
+    let ton_seed = gradience_core::ows::local_adapter::derive_demo_seed(&wallet_id, "ton:mainnet", ton_path);
+    mpp_provider = mpp_provider.with_ton_seed(ton_seed).with_ton_mainnet(true);
 
     let client = MppClient::new(mpp_provider);
 

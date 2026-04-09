@@ -14,6 +14,12 @@ pub struct SwapQuote {
 
 pub struct DexService;
 
+impl Default for DexService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DexService {
     pub fn new() -> Self {
         Self
@@ -94,11 +100,10 @@ impl DexService {
                                 let hex = resp.trim_start_matches("0x");
                                 if hex.len() >= 64 {
                                     let out = u128::from_str_radix(&hex[0..64], 16).unwrap_or(0);
-                                    if out > 0 {
-                                        if best_out.map(|b| out > b).unwrap_or(true) {
+                                    if out > 0
+                                        && best_out.map(|b| out > b).unwrap_or(true) {
                                             best_out = Some(out);
                                         }
-                                    }
                                 } else if hex.is_empty() || hex.starts_with("08c379a0") {
                                     tracing::warn!("Uniswap quoter reverted for fee={}", fee);
                                 }

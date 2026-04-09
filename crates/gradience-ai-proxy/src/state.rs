@@ -6,7 +6,9 @@ use tokio::sync::Mutex;
 #[derive(Clone)]
 pub struct Session {
     pub user_id: String,
+    #[allow(dead_code)]
     pub username: String,
+    #[allow(dead_code)]
     pub passphrase: Option<String>,
 }
 
@@ -45,6 +47,8 @@ impl SessionStore {
 pub struct AppState {
     pub db: Pool<Sqlite>,
     pub sessions: SessionStore,
+    #[allow(dead_code)]
     pub ows: Arc<gradience_core::ows::local_adapter::LocalOwsAdapter>,
+    #[allow(dead_code)]
     pub vault_dir: std::path::PathBuf,
 }

@@ -6,3 +6,8 @@ vault/
 .env
 node_modules
 dist
+
+# Foundry artifacts at workspace root
+cache/
+out/
+

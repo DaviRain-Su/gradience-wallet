@@ -63,9 +63,9 @@ async fn test_add_member() {
 
 #[test]
 fn test_role_from_str() {
-    assert_eq!(WorkspaceRole::from_str("owner").unwrap(), WorkspaceRole::Owner);
-    assert_eq!(WorkspaceRole::from_str("admin").unwrap(), WorkspaceRole::Admin);
-    assert_eq!(WorkspaceRole::from_str("member").unwrap(), WorkspaceRole::Member);
-    assert_eq!(WorkspaceRole::from_str("viewer").unwrap(), WorkspaceRole::Viewer);
-    assert!(WorkspaceRole::from_str("hacker").is_err());
+    assert_eq!("owner".parse::<WorkspaceRole>().unwrap(), WorkspaceRole::Owner);
+    assert_eq!("admin".parse::<WorkspaceRole>().unwrap(), WorkspaceRole::Admin);
+    assert_eq!("member".parse::<WorkspaceRole>().unwrap(), WorkspaceRole::Member);
+    assert_eq!("viewer".parse::<WorkspaceRole>().unwrap(), WorkspaceRole::Viewer);
+    assert!("hacker".parse::<WorkspaceRole>().is_err());
 }

@@ -20,6 +20,12 @@ fn generate_token() -> String {
 
 pub struct ApiKeyService;
 
+impl Default for ApiKeyService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApiKeyService {
     pub fn new() -> Self {
         Self

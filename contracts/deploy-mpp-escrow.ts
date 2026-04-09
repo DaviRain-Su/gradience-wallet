@@ -28,7 +28,7 @@ const chains: Record<string, Chain> = {
     },
   }),
   "xlayer-testnet": defineChain({
-    id: 195,
+    id: 1952,
     name: "XLayer Testnet",
     nativeCurrency: { name: "OKB", symbol: "OKB", decimals: 18 },
     rpcUrls: {
@@ -65,6 +65,20 @@ const chains: Record<string, Chain> = {
   }),
 };
 
+function detectArtifact(): string {
+  const candidates = [
+    "out/MppEscrow.sol/MppEscrow.json",
+    "out/MppEscrow.json",
+  ];
+  for (const p of candidates) {
+    try {
+      readFileSync(p, "utf8");
+      return p;
+    } catch {}
+  }
+  throw new Error("MppEscrow artifact not found. Searched: " + candidates.join(", "));
+}
+
 function loadArtifact(path: string) {
   const json = JSON.parse(readFileSync(path, "utf8"));
   const abi = json.abi || json;
@@ -83,7 +97,7 @@ async function deployToChain(chainName: string, chain: Chain) {
     transport: http(),
   });
 
-  const artifactPath = process.env.ESCROW_ARTIFACT || "out/MppEscrow.json";
+  const artifactPath = process.env.ESCROW_ARTIFACT || detectArtifact();
   const { abi, bytecode } = loadArtifact(artifactPath);
 
   console.log(`\nDeploying MppEscrow to ${chainName} (chainId=${chain.id})...`);

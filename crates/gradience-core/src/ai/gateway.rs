@@ -7,6 +7,12 @@ pub struct AiGatewayService {
     balance: AiBalanceService,
 }
 
+impl Default for AiGatewayService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AiGatewayService {
     pub fn new() -> Self {
         Self {

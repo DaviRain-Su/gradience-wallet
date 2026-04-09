@@ -308,15 +308,16 @@ web/
 1. **Jetton 支持**: 设计完成，实现待排期（~12-18h）
 2. **MppEscrow 部署**: 脚本就绪，需测试网资金部署
 3. **TON Mainnet**: 当前 AI proxy 配置为 testnet
-4. **TON Mainnet**: 当前 AI proxy 配置为 testnet
+4. ~~TON Mainnet~~: ✅ 已切换到 mainnet (AI proxy `handlers.rs`)
+5. ~~Policy Engine 测试~~: ✅ 2 个 spend limit 测试已修复 (value 解析先尝试 `u128` 再回退 `eth_to_wei`)
 
 ### 待办事项
 
 详见 [`docs/TODO.md`](./TODO.md)。核心待办：
 
 - [ ] 部署 MppEscrow 到 6 条 testnet (Base, BSC, Conflux, XLayer, Arbitrum, Polygon)
-- [ ] 提交 [awesome-mpp](https://github.com/mbeato/awesome-mpp) PR，注册 Gradience 为 BSC/Conflux/TON payment method
-- [ ] 实现 Jetton transfer 支持
+- [x] 提交 [awesome-mpp](https://github.com/mbeato/awesome-mpp) PR: [#5](https://github.com/mbeato/awesome-mpp/pull/5)
+- [x] 实现 Jetton transfer 支持
 - [ ] 提取 `mpp-conflux` 为独立 crate（可选，后续优化）
 
 ---

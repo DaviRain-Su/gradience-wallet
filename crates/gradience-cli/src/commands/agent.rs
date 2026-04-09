@@ -307,7 +307,7 @@ pub async fn fund(
     rlp.append(&chain_num);
     rlp.append(&0u8);
     rlp.append(&0u8);
-    let tx_hex = format!("0x{}", hex::encode(&rlp.out()));
+    let tx_hex = format!("0x{}", hex::encode(rlp.out()));
 
     let result = ows_lib::sign_and_send(
         &wallet_id,

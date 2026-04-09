@@ -130,7 +130,7 @@ fn test_solana_batch_serialization_roundtrip() {
     let batch = svc.build_batch(&req).unwrap();
     match batch {
         BatchTransferPayload::Solana { serialized_tx } => {
-            let decoded = base64::decode(&serialized_tx).unwrap();
+            let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &serialized_tx).unwrap();
             let (sig_count, sig_offset) = decode_compact_u16(&decoded).unwrap();
             assert_eq!(sig_count, 1);
 

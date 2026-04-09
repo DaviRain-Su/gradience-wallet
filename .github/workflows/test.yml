@@ -58,7 +58,7 @@ jobs:
         run: cargo build --workspace --verbose
       
       - name: Run tests
-        run: cargo test --workspace -- --skip policy_engine
+        run: cargo test --workspace --exclude gradience-sdk-node
       
       - name: Build frontend
         working-directory: ./web

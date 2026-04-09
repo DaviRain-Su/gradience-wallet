@@ -17,7 +17,7 @@ pub async fn sign_tx(_ctx: &AppContext, wallet_id: String, chain_id: String, to:
         },
     };
     let resp = gradience_mcp::tools::handle_sign_transaction(args)?;
-    println!("{}", resp.to_string());
+    println!("{}", resp);
     Ok(())
 }
 
@@ -27,6 +27,6 @@ pub async fn balance(_ctx: &AppContext, wallet_id: String, chain_id: String) -> 
         chain_id: Some(chain_id),
     };
     let resp = gradience_mcp::tools::handle_get_balance(args)?;
-    println!("{}", resp.to_string());
+    println!("{}", resp);
     Ok(())
 }

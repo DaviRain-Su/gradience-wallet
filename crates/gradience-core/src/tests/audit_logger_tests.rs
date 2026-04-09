@@ -1,5 +1,6 @@
+#![allow(deprecated)]
+
 use crate::audit::logger::{AuditLogger, compute_audit_hash};
-use crate::error::GradienceError;
 
 #[test]
 fn test_audit_hmac_chain_integrity() {

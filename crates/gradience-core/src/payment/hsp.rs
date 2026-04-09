@@ -17,6 +17,12 @@ pub struct HspPaymentResult {
 
 pub struct HspService;
 
+impl Default for HspService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HspService {
     pub fn new() -> Self {
         Self

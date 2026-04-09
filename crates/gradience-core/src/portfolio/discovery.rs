@@ -23,11 +23,11 @@ pub struct KnownToken {
 }
 
 fn known_tokens_for_chain(chain_id: &str) -> Vec<KnownToken> {
-    let mut tokens = Vec::new();
-    // Stablecoins + wrapped
-    tokens.push(KnownToken { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(), symbol: "USDC".into(), name: "USD Coin".into(), decimals: 6 });
-    tokens.push(KnownToken { address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb".into(), symbol: "DAI".into(),  name: "Dai Stablecoin".into(), decimals: 18 });
-    tokens.push(KnownToken { address: "0x4200000000000000000000000000000000000006".into(), symbol: "WETH".into(), name: "Wrapped Ether".into(), decimals: 18 });
+    let tokens = vec![
+        KnownToken { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(), symbol: "USDC".into(), name: "USD Coin".into(), decimals: 6 },
+        KnownToken { address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb".into(), symbol: "DAI".into(),  name: "Dai Stablecoin".into(), decimals: 18 },
+        KnownToken { address: "0x4200000000000000000000000000000000000006".into(), symbol: "WETH".into(), name: "Wrapped Ether".into(), decimals: 18 },
+    ];
 
     let eth_common = vec![
         KnownToken { address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48".into(), symbol: "USDC".into(), name: "USD Coin".into(), decimals: 6 },
@@ -81,6 +81,12 @@ fn resolve_rpc(chain_id: &str) -> &str {
 }
 
 pub struct TokenDiscoveryService;
+
+impl Default for TokenDiscoveryService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl TokenDiscoveryService {
     pub fn new() -> Self {

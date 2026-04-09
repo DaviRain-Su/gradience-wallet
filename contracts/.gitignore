@@ -1,0 +1,11 @@
+# Foundry generated files
+cache/
+out/
+lib/
+script/
+test/
+
+# Template files from forge init
+src/Counter.sol
+src/Counter.s.sol
+src/Counter.t.sol

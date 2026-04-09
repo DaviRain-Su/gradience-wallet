@@ -4,10 +4,10 @@ use crate::payment::mpp::{MppService, MppPaymentRequest, MppRecipient, BatchTran
 
 #[test]
 fn test_payment_protocol_from_str() {
-    assert_eq!(PaymentProtocol::from_str("mpp"), Some(PaymentProtocol::Mpp));
-    assert_eq!(PaymentProtocol::from_str("hsp"), Some(PaymentProtocol::Hsp));
-    assert_eq!(PaymentProtocol::from_str("paypal"), None);
-    assert_eq!(PaymentProtocol::from_str("unknown"), None);
+    assert_eq!(PaymentProtocol::parse("mpp"), Some(PaymentProtocol::Mpp));
+    assert_eq!(PaymentProtocol::parse("hsp"), Some(PaymentProtocol::Hsp));
+    assert_eq!(PaymentProtocol::parse("paypal"), None);
+    assert_eq!(PaymentProtocol::parse("unknown"), None);
 }
 
 #[tokio::test]

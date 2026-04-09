@@ -29,6 +29,12 @@ pub struct LiFiTxRequest {
 
 pub struct LiFiClient;
 
+impl Default for LiFiClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LiFiClient {
     pub fn new() -> Self {
         Self

@@ -27,7 +27,7 @@ pub fn merge_policies_strictest(
     agents: Vec<&Policy>,
 ) -> MergedPolicy {
     let mut merged = MergedPolicy::default();
-    let all: Vec<&Policy> = workspace.into_iter().chain(agents.into_iter()).collect();
+    let all: Vec<&Policy> = workspace.into_iter().chain(agents).collect();
 
     // spend_limit: min
     let limits: Vec<String> = all.iter()

@@ -6,6 +6,12 @@ use sqlx::{Pool, Sqlite};
 
 pub struct WalletManagerService;
 
+impl Default for WalletManagerService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl WalletManagerService {
     pub fn new() -> Self {
         Self

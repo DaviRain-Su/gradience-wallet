@@ -9,6 +9,6 @@ fn show_base_sepolia_address() {
     let path = path_for(chain, 0);
     let seed = derive_demo_seed(wallet_id, chain, &path);
     let addr = eth_address_from_secret_key(&seed).unwrap();
-    let pk = format!("0x{}", hex::encode(&seed));
+    let pk = format!("0x{}", hex::encode(seed));
     println!("address = {}  private_key = {}", addr, pk);
 }

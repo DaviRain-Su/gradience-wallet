@@ -21,7 +21,7 @@ pub async fn invite(ctx: &AppContext, workspace_id: String, user_email: String, 
     };
 
     let svc = gradience_core::team::workspace::WorkspaceService::new();
-    let role = gradience_core::team::workspace::WorkspaceRole::from_str(&role)?;
+    let role: gradience_core::team::workspace::WorkspaceRole = role.parse()?;
     svc.add_member(&ctx.db, &workspace_id, &user_id, role).await?;
     println!("Invited {} to workspace {} as {:?}", user_email, workspace_id, role);
     Ok(())

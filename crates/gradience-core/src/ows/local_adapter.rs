@@ -151,7 +151,7 @@ impl OwsAdapter for LocalOwsAdapter {
             let index = derivation_path
                 .split('/')
                 .filter_map(|s| s.trim_end_matches('\'').parse::<u32>().ok())
-                .last();
+                .next_back();
             let address = ows_lib::derive_address(&exported, chain, index)
                 .map_err(map_ows_err)?;
 

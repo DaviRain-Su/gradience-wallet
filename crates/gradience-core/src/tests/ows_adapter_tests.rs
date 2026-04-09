@@ -112,7 +112,7 @@ impl OwsAdapter for TestOwsAdapter {
 async fn test_init_vault_success() {
     let adapter = TestOwsAdapter;
     let vault = adapter.init_vault("secure-pass-123").await.unwrap();
-    assert!(std::ptr::addr_of!(vault) != std::ptr::null());
+    assert!(!std::ptr::addr_of!(vault).is_null());
 }
 
 #[tokio::test]

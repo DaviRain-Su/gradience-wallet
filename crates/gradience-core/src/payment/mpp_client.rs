@@ -338,8 +338,8 @@ impl GradienceMppProvider {
         let random = rand::random::<u64>();
         let mut hasher = Keccak256::new();
         hasher.update(self.wallet_id.as_bytes());
-        hasher.update(&now.to_be_bytes());
-        hasher.update(&random.to_be_bytes());
+        hasher.update(now.to_be_bytes());
+        hasher.update(random.to_be_bytes());
         let session_id_bytes: [u8; 32] = hasher.finalize().into();
 
         // Set expiry to 1 hour from now
@@ -392,7 +392,7 @@ impl GradienceMppProvider {
         .map_err(|e| mpp::MppError::Http(e.to_string()))?;
 
         // Send transaction
-        let tx_hash = rpc_client
+        let _tx_hash = rpc_client
             .send_raw_transaction(&format!("0x{}", hex::encode(&signed_tx)))
             .await
             .map_err(|e| mpp::MppError::Http(e.to_string()))?;
@@ -420,18 +420,63 @@ impl GradienceMppProvider {
             .as_deref()
             .ok_or_else(|| mpp::MppError::InvalidConfig("missing recipient".into()))?;
 
-        // Parse amount (in nanoTON)
-        let amount = charge_req
-            .amount
-            .parse::<u64>()
-            .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
+        let currency = &charge_req.currency;
+        let rpc_client = crate::rpc::ton::TonRpcClient::new(self.ton_mainnet);
 
-        // Build TON transfer transaction
-        let tx_boc = crate::ows::signing::build_ton_transfer_tx(seed, recipient, amount, 60)
-            .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+        // Determine if this is a Jetton transfer.
+        // Heuristic: non-empty, not "TON", and starts with a TON address prefix (EQ or UQ).
+        let is_jetton = !currency.is_empty()
+            && currency != "TON"
+            && (currency.starts_with("EQ") || currency.starts_with("UQ"));
+
+        let tx_boc = if is_jetton {
+            let amount_jetton = charge_req
+                .amount
+                .parse::<u128>()
+                .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
+
+            // 1. Resolve sender's Jetton wallet address
+            let sender_addr = crate::ows::signing::ton_address_from_seed(seed)
+                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+            let jetton_wallet = rpc_client
+                .get_jetton_wallet_address(currency, &sender_addr)
+                .await
+                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+            // 2. Get seqno from sender's TON wallet
+            let seqno = rpc_client
+                .get_seqno(&sender_addr)
+                .await
+                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+
+            // 3. Build Jetton transfer (~0.05 TON for gas)
+            let ton_amount_nanoton = 50_000_000u64;
+            crate::ows::signing::build_jetton_transfer_tx(
+                seed,
+                &jetton_wallet,
+                recipient,
+                amount_jetton,
+                ton_amount_nanoton,
+                seqno,
+            )
+            .map_err(|e| mpp::MppError::Http(e.to_string()))?
+        } else {
+            // Native TON transfer
+            let amount = charge_req
+                .amount
+                .parse::<u64>()
+                .map_err(|e| mpp::MppError::InvalidConfig(format!("invalid amount: {}", e)))?;
+            let sender_addr = crate::ows::signing::ton_address_from_seed(seed)
+                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+            let seqno = rpc_client
+                .get_seqno(&sender_addr)
+                .await
+                .map_err(|e| mpp::MppError::Http(e.to_string()))?;
+            crate::ows::signing::build_ton_transfer_tx(seed, recipient, amount, seqno)
+                .map_err(|e| mpp::MppError::Http(e.to_string()))?
+        };
 
         // Send transaction via TON RPC
-        let rpc_client = crate::rpc::ton::TonRpcClient::new(self.ton_mainnet);
         let _tx_hash = rpc_client
             .send_boc(&tx_boc)
             .await

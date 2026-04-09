@@ -22,9 +22,8 @@ async fn main() -> anyhow::Result<()> {
         data_dir.join("gradience.db").to_string_lossy().trim_start_matches('/')
     );
 
-    match &cli.command {
-        Commands::Start => return commands::start::run().await,
-        _ => {}
+    if let Commands::Start = &cli.command {
+        return commands::start::run().await;
     }
 
     let ctx = context::AppContext::new(&db_path, data_dir, vault_dir).await?;

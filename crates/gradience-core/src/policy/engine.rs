@@ -213,7 +213,9 @@ impl PolicyEngine {
                         }
                     }
                     Rule::SpendLimit { max, .. } => {
-                        let val = crate::eth_to_wei(&ctx.transaction.value).unwrap_or(0);
+                        let val = ctx.transaction.value.parse::<u128>()
+                            .or_else(|_| crate::eth_to_wei(&ctx.transaction.value))
+                            .unwrap_or(0);
                         let limit = max.parse::<u128>().unwrap_or(u128::MAX);
                         if val > limit {
                             deny_reasons.push("spend limit exceeded".into());

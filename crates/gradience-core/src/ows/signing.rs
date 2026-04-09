@@ -612,15 +612,23 @@ pub fn build_deactivate_stake_tx(
 
 // ==================== TON helpers ====================
 
+use std::sync::Arc;
 use ton_contracts::wallet::{KeyPair, Wallet, v4r2::V4R2};
 use tlb_ton::{
     action::SendMsgAction,
     message::Message,
-    ser::CellSerializeExt,
+    ser::{CellBuilder, CellSerialize, CellSerializeExt},
+    bits::NBits,
+    currency::Grams,
+    Ref, EitherInlineOrRef,
     BoC,
     BagOfCellsArgs,
+    MsgAddress,
 };
 use num_bigint::BigUint;
+
+/// Alias for tlb cell builder error.
+pub type TonCellError = tlb_ton::ser::CellBuilderError;
 
 pub fn ton_secret_from_seed(seed: &[u8]) -> [u8; 32] {
     let mut hasher = sha2::Sha512::new();
@@ -663,7 +671,7 @@ pub fn build_ton_transfer_tx(
     nacl_secret[32..].copy_from_slice(&pubkey);
     let keypair = KeyPair::new(nacl_secret, pubkey);
 
-    let wallet = Wallet::<V4R2>::derive_default(keypair.clone())
+    let wallet = Wallet::<V4R2>::derive_default(keypair)
         .map_err(|e| GradienceError::Validation(format!("ton wallet derive failed: {}", e)))?;
 
     let dest_address = to.parse()
@@ -685,6 +693,132 @@ pub fn build_ton_transfer_tx(
     let boc = BoC::from_root(cell);
 
     let bytes = boc.serialize(BagOfCellsArgs { has_idx: false, has_crc32c: true })
+        .map_err(|e| GradienceError::Validation(format!("ton boc serialize failed: {}", e)))?;
+    Ok(bytes)
+}
+
+/// Jetton transfer message body.
+/// TL-B: transfer#0f8a7ea5 query_id:uint64 amount:(VarUInteger 16)
+///   destination:MsgAddress response_destination:MsgAddress
+///   custom_payload:(Maybe ^Cell) forward_ton_amount:(VarUInteger 16)
+///   forward_payload:(Either Cell ^Cell) = InternalMsgBody;
+#[derive(Debug, Clone)]
+pub struct JettonTransferBody {
+    pub query_id: u64,
+    pub amount: BigUint,
+    pub destination: MsgAddress,
+    pub response_destination: MsgAddress,
+    pub custom_payload: Option<Arc<tlb_ton::Cell>>,
+    pub forward_ton_amount: BigUint,
+    pub forward_payload: Option<Arc<tlb_ton::Cell>>,
+}
+
+impl CellSerialize for JettonTransferBody {
+    type Args = ();
+
+    fn store(&self, builder: &mut CellBuilder, _: Self::Args) -> std::result::Result<(), tlb_ton::StringError> {
+        use tlb_ton::bits::ser::BitWriterExt;
+        builder
+            .pack_as::<_, NBits<32>>(0x0f8a7ea5u32, ())?
+            .pack(self.query_id, ())?
+            .pack_as::<_, &Grams>(&self.amount, ())?
+            .pack(self.destination, ())?
+            .pack(self.response_destination, ())?
+            .store_as::<_, Option<Ref>>(self.custom_payload.clone(), ())?
+            .pack_as::<_, &Grams>(&self.forward_ton_amount, ())?
+            .store_as::<_, EitherInlineOrRef>(self.forward_payload.clone(), ())?;
+        Ok(())
+    }
+}
+
+/// Build a TON V4R2 external message that sends a Jetton transfer.
+///
+/// `amount_jetton` is in the Jetton's base units (e.g. 0.1 USDT = 100000 for 6 decimals).
+/// `ton_amount_nanoton` is the TON value attached to the message (gas, ~0.05 TON).
+pub fn build_jetton_transfer_tx(
+    seed: &[u8],
+    jetton_wallet: &str,
+    recipient: &str,
+    amount_jetton: u128,
+    ton_amount_nanoton: u64,
+    seqno: u32,
+) -> Result<Vec<u8>> {
+    let secret = ton_secret_from_seed(seed);
+    let signing_key = ed25519_dalek::SigningKey::from_bytes(&secret);
+    let pubkey = signing_key.verifying_key().to_bytes();
+
+    let mut nacl_secret = [0u8; 64];
+    nacl_secret[..32].copy_from_slice(&secret);
+    nacl_secret[32..].copy_from_slice(&pubkey);
+    let keypair = KeyPair::new(nacl_secret, pubkey);
+
+    let wallet = Wallet::<V4R2>::derive_default(keypair)
+        .map_err(|e| GradienceError::Validation(format!("ton wallet derive failed: {}", e)))?;
+
+    let jetton_wallet_addr: MsgAddress = jetton_wallet
+        .parse()
+        .map_err(|e: <MsgAddress as std::str::FromStr>::Err| {
+            GradienceError::Validation(format!("invalid jetton wallet address: {}", e))
+        })?;
+    let recipient_addr: MsgAddress = recipient
+        .parse()
+        .map_err(|e: <MsgAddress as std::str::FromStr>::Err| {
+            GradienceError::Validation(format!("invalid recipient ton address: {}", e))
+        })?;
+
+    let sender_addr: MsgAddress = ton_address_from_seed(seed)
+        .map_err(|e| GradienceError::Validation(format!("ton address derive failed: {}", e)))?
+        .parse()
+        .map_err(|e: <MsgAddress as std::str::FromStr>::Err| {
+            GradienceError::Validation(format!("ton address parse failed: {}", e))
+        })?;
+
+    let body = JettonTransferBody {
+        query_id: rand::random(),
+        amount: BigUint::from(amount_jetton),
+        destination: recipient_addr,
+        response_destination: sender_addr,
+        custom_payload: None,
+        forward_ton_amount: BigUint::from(0u64),
+        forward_payload: None,
+    };
+
+    let body_cell = body
+        .to_cell(())
+        .map_err(|e| GradienceError::Validation(format!("jetton body cell build failed: {}", e)))?;
+
+    let msg = tlb_ton::message::Message::<tlb_ton::Cell> {
+        info: tlb_ton::message::CommonMsgInfo::transfer(
+            jetton_wallet_addr,
+            BigUint::from(ton_amount_nanoton),
+            false,
+        ),
+        init: None,
+        body: body_cell,
+    };
+
+    let action = SendMsgAction {
+        mode: 3,
+        message: msg
+            .normalize()
+            .map_err(|e| GradienceError::Validation(format!("ton message normalize failed: {}", e)))?,
+    };
+
+    let expire_at = chrono::DateTime::UNIX_EPOCH;
+    let msg = wallet
+        .create_external_message(expire_at, seqno, [action], true)
+        .map_err(|e| GradienceError::Validation(format!("ton external message failed: {}", e)))?;
+
+    let cell = msg
+        .to_cell(())
+        .map_err(|e| GradienceError::Validation(format!("ton cell build failed: {}", e)))?;
+    let boc = BoC::from_root(cell);
+
+    let bytes = boc
+        .serialize(BagOfCellsArgs {
+            has_idx: false,
+            has_crc32c: true,
+        })
         .map_err(|e| GradienceError::Validation(format!("ton boc serialize failed: {}", e)))?;
     Ok(bytes)
 }
@@ -715,5 +849,45 @@ mod tests {
         let seed = [0u8; 32];
         let addr = ton_address_from_seed(&seed).unwrap();
         assert!(addr.starts_with("EQ") || addr.starts_with("UQ"));
+    }
+
+    #[test]
+    fn test_jetton_transfer_body_cell_encoding() {
+        let addr: MsgAddress = "EQBGXZ9ddZeWypx8EkJieHJX75ct0bpkmu0Y4YoYr3NM0Z9e".parse().unwrap();
+        let body = JettonTransferBody {
+            query_id: 123,
+            amount: BigUint::from(1000000u64),
+            destination: addr,
+            response_destination: addr,
+            custom_payload: None,
+            forward_ton_amount: BigUint::from(0u64),
+            forward_payload: None,
+        };
+        let cell = body.to_cell(()).unwrap();
+        // Verify OP code 0x0f8a7ea5 is present in first 32 bits
+        let first_4_bytes: [u8; 4] = cell.data.as_raw_slice()[0..4].try_into().unwrap();
+        assert_eq!(first_4_bytes, [0x0f, 0x8a, 0x7e, 0xa5]);
+        // No refs for empty custom_payload / forward_payload
+        assert!(cell.references.is_empty());
+    }
+
+    #[test]
+    fn test_build_jetton_transfer_tx_produces_boc() {
+        let seed = [0u8; 32];
+        let jetton_wallet = "EQBGXZ9ddZeWypx8EkJieHJX75ct0bpkmu0Y4YoYr3NM0Z9e";
+        // Derive a valid recipient from a different seed
+        let mut recipient_seed = [1u8; 32];
+        recipient_seed[0] = 1;
+        let recipient = ton_address_from_seed(&recipient_seed).unwrap();
+        let result = build_jetton_transfer_tx(
+            &seed, jetton_wallet, &recipient, 1000, 50_000_000, 1
+        );
+        match result {
+            Ok(tx_boc) => {
+                assert!(!tx_boc.is_empty());
+                assert_eq!(&tx_boc[0..4], [0xb5, 0xee, 0x9c, 0x72]);
+            }
+            Err(e) => panic!("build_jetton_transfer_tx failed: {:?}", e),
+        }
     }
 }

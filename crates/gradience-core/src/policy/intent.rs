@@ -4,6 +4,12 @@ use crate::ows::adapter::Transaction;
 
 pub struct IntentParser;
 
+impl Default for IntentParser {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IntentParser {
     pub fn new() -> Self {
         Self

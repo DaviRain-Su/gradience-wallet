@@ -45,6 +45,12 @@ pub const MULTICALL3_ADDRESS: &str = "0xcA11bde05977b3631167028862bE2a173976CA11
 
 pub struct MppService;
 
+impl Default for MppService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MppService {
     pub fn new() -> Self {
         Self
@@ -241,7 +247,7 @@ impl MppService {
         tx.extend_from_slice(&message);
 
         Ok(BatchTransferPayload::Solana {
-            serialized_tx: base64::encode(&tx),
+            serialized_tx: base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &tx),
         })
     }
 }
@@ -460,7 +466,7 @@ mod tests {
         match batch {
             BatchTransferPayload::Solana { serialized_tx } => {
                 assert!(!serialized_tx.is_empty());
-                let decoded = base64::decode(&serialized_tx).unwrap();
+                let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &serialized_tx).unwrap();
                 assert!(decoded.len() > 64 + 32); // sig + blockhash
             }
             _ => panic!("expected Solana payload"),

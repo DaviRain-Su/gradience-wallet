@@ -1,6 +1,5 @@
 /// Standard HD derivation path helpers for multi-chain wallet management.
 /// This module provides the local abstraction layer for BIP-44 style paths.
-
 pub fn path_for(chain_id: &str, account_index: u32) -> String {
     if chain_id.starts_with("eip155:") {
         path_for_evm(account_index)

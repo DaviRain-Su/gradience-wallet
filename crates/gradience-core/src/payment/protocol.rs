@@ -5,11 +5,19 @@ pub enum PaymentProtocol {
 }
 
 impl PaymentProtocol {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "mpp" => Some(PaymentProtocol::Mpp),
             "hsp" => Some(PaymentProtocol::Hsp),
             _ => None,
         }
+    }
+}
+
+impl std::str::FromStr for PaymentProtocol {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or(())
     }
 }
