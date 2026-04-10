@@ -1,0 +1,35 @@
+name: Publish @gradience/sdk to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'SDK version to publish (e.g. 0.1.1)'
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: cd sdk/typescript && npm ci
+
+      - name: Build SDK
+        run: cd sdk/typescript && npm run build
+
+      - name: Set version
+        run: cd sdk/typescript && npm version --no-git-tag-version ${{ github.event.inputs.version }}
+
+      - name: Publish to npm
+        run: cd sdk/typescript && npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

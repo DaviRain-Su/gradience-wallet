@@ -2,7 +2,28 @@
 
 > 目标：从当前 ~65% 完成度推进到 100%，所有 PRD 功能全部实现并可用。
 > 文档维护者：Droid
-> 最后更新：2026-04-08
+> 最后更新：2026-04-10
+
+---
+
+## 最新进展（2026-04-10）
+
+### 已完成
+- **本地分发链路打通**：单 binary `gradience` 通过 `rust-embed` 完全内嵌 `web/dist`，不再依赖外部文件；GitHub Actions 自动构建 macOS (Apple Silicon) + Linux x86_64 预编译包；Homebrew `brew tap DaviRain-Su/gradience && brew install gradience` 已可用。
+- **终端用户文档**：新增 [`GETTING_STARTED.md`](GETTING_STARTED.md)，覆盖下载、安装、启动、首次设置、常见操作、MCP Agent 配置、FAQ。
+- **AI Gateway 真实化**：Anthropic Claude 之外新增 OpenAI 支持（`gpt-4o`、`gpt-4o-mini`）；MCP `llm_generate` 和 REST `POST /api/ai/generate` 均可通过 `provider=openai` 调用；pricing seed 已包含 OpenAI 模型定价。
+- **TypeScript SDK 发布就绪**：`@gradience/sdk` 升级至 `v0.1.1`，支持 `provider` 参数；新增 `.github/workflows/npm-publish.yml`，配置 `NPM_TOKEN` secret 后即可手动触发发布。
+
+### 待记录 / 待排期
+- **LiFi 协议集成**：作为 DEX 聚合器的增强路径，计划替代或补充现有 1inch + Uniswap 方案，实现单签跨链 swap。
+- **OpenAPI 自动生成**：基于 axum 路由自动生成 Swagger / OpenAPI 文档，用于外部开发者集成。
+
+### 下一步建议
+1. 配置 GitHub Secret `NPM_TOKEN` 并触发首次 `@gradience/sdk` 发布。
+2. 评估 LiFi API/SDK，撰写技术方案后实现 `dex/lifi.rs`。
+3. 引入 `utoipa` 或 ` aide` 到 `gradience-api`，生成 OpenAPI spec。
+
+---
 
 ---
 
