@@ -17,11 +17,13 @@
 ### 待记录 / 待排期
 - **LiFi 协议集成**：作为 DEX 聚合器的增强路径，计划替代或补充现有 1inch + Uniswap 方案，实现单签跨链 swap。
 - **OpenAPI 自动生成**：基于 axum 路由自动生成 Swagger / OpenAPI 文档，用于外部开发者集成。
+- **Agent-First 钱包架构**：已产出 [`docs/agent-first-wallet.md`](docs/agent-first-wallet.md)，需要按 Phase 1 → Phase 2 → Phase 3 逐步落地。
 
 ### 下一步建议
 1. 配置 GitHub Secret `NPM_TOKEN` 并触发首次 `@gradience/sdk` 发布。
 2. 评估 LiFi API/SDK，撰写技术方案后实现 `dex/lifi.rs`。
 3. 引入 `utoipa` 或 ` aide` 到 `gradience-api`，生成 OpenAPI spec。
+4. **Agent-First Phase 1**：实现 `agent_sessions` 数据层、AgentSessionService、MCP `approval_id` + `check_approval` 闭环。
 
 ---
 
@@ -574,6 +576,212 @@ Architecture 中列出的多个 REST 路由缺失。
 - Demo 脚本从头到尾无 500 错误
 - 策略引擎 latency benchmark 有数据
 - 所有变更文档化
+
+---
+
+## Agent-First Wallet 专项
+
+基于 [`docs/agent-first-wallet.md`](docs/agent-first-wallet.md) 的分阶段设计。
+
+| ID | 任务 | 优先级 | 状态 | 预估工时 |
+|---|---|---|---|---|
+| A01 | Agent Session 数据层 | P0 | pending | 2h |
+| A02 | AgentSessionService 核心逻辑 | P0 | pending | 3h |
+| A03 | Policy Engine 叠加 Session Policy | P0 | pending | 2h |
+| A04 | MCP 闭环审批（approval_id + check_approval） | P0 | pending | 3h |
+| A05 | 前端 Agents 页面 | P1 | pending | 3h |
+| A06 | EVM Smart Account (ERC-4337) 基础 | P1 | pending | 5h |
+| A07 | On-Chain Session Key 模块 | P1 | pending | 4h |
+| A08 | Bundler 集成（Base/Ethereum） | P1 | pending | 3h |
+| A09 | Solana 可编程钱包 / 委托 | P2 | pending | 4h |
+
+### A01 — Agent Session 数据层
+**优先级**：P0（阻塞后续所有 Agent-first 功能）  
+**预估工时**：2h  
+**依赖**：无
+
+#### 内容
+1. 新增 migration：
+   - `agent_sessions`：核心会话表
+   - `agent_session_limits`：每种 limit 类型一条记录（per_tx / daily / total）
+   - `agent_session_usage`：按日/按总会话记录已消耗金额
+2. 更新 `gradience-db/src/models.rs` 增加对应 structs。
+3. 更新 `gradience-db/src/queries.rs` 增加 CRUD queries：
+   - `create_agent_session`
+   - `get_agent_session_by_id`
+   - `list_agent_sessions_by_wallet`
+   - `revoke_agent_session`
+   - `deduct_agent_session_budget`
+
+#### 验收标准
+- `cargo test --workspace` 通过
+- 新表可正常插入、查询、更新
+
+---
+
+### A02 — AgentSessionService 核心逻辑
+**优先级**：P0  
+**预估工时**：3h  
+**依赖**：A01
+
+#### 内容
+1. 新建 `gradience-core/src/agent/session.rs`：
+   - `AgentSessionService` struct
+   - `create_session(wallet_id, name, session_type, boundaries)`
+   - `validate_session(session_id, intended_action, chain_id, amount)`
+   - `consume_budget(session_id, token, amount_raw)`
+   - `revoke_session(session_id)`
+2. 对 `SessionType::CapabilityToken` 生成随机的 secure token（类似 JWT 或高熵随机字符串）。
+3. 对 `SessionType::OnChainSessionKey` 生成 EOA 密钥对（`alloy::signers::local::PrivateKeySigner`）。
+
+#### 验收标准
+- 单元测试：创建 session → 校验通过 → 消耗预算 → 校验失败（超限）
+- 单元测试：revoke 后的 session 校验失败
+
+---
+
+### A03 — Policy Engine 叠加 Session Policy
+**优先级**：P0  
+**预估工时**：2h  
+**依赖**：A02
+
+#### 内容
+1. 扩展 `EvalContext`：
+   ```rust
+   pub struct EvalContext {
+       // ... existing fields ...
+       pub session_id: Option<String>,
+   }
+   ```
+2. `PolicyEngine::evaluate`：如果 `session_id` 存在，读取 `agent_session_limits` 并与 Wallet/Workspace policy 进行 **strictest-merge**。
+3. Session 的 `allowed_chains`、`contract_whitelist`、`spend_limits` 都映射为临时 `Policy` rules 参与评估。
+
+#### 验收标准
+- 单元测试：Wallet policy allow 但 Session policy deny → 最终结果 deny
+- 单元测试：Wallet policy daily_limit = 1 ETH，Session daily_limit = 0.1 ETH → 取 0.1 ETH
+
+---
+
+### A04 — MCP 闭环审批（approval_id + check_approval）
+**优先级**：P0  
+**预估工时**：3h  
+**依赖**：A03
+
+#### 内容
+1. 修改 `gradience-mcp/src/tools.rs` `handle_sign_transaction`：
+   - `Decision::Warn` 时，调用 `gradience_db::queries::create_policy_approval(...)` 生成审批记录
+   - 返回 JSON 中包含 `approval_id`
+2. 新增 MCP tool `check_approval`：
+   - 参数：`approval_id`
+   - 返回：`pending | approved | rejected`
+3. 新增 MCP tool `resume_sign_transaction`（或复用 `sign_transaction` 传入 `approval_id`）：
+   - 查询 approval 状态为 approved 后，继续执行本地签名并返回 txHash
+
+#### 验收标准
+- MCP Inspector 测试：触发 Warn → 返回 approval_id → Dashboard 批准 → MCP `check_approval` 返回 approved → 交易成功签名
+
+---
+
+### A05 — 前端 Agents 页面
+**优先级**：P1  
+**预估工时**：3h  
+**依赖**：A01, A02
+
+#### 内容
+1. 新建 `web/app/agents/page.tsx`：
+   - 列出当前 Wallet 下的所有 Agent Sessions
+   - 显示状态、剩余预算、有效期
+   - 提供 Revoke 按钮
+2. 新建 `web/app/agents/new/page.tsx`：
+   - 表单：名称、选择链、操作类型、限额、有效期
+   - 创建成功后展示 token / agent private key（一次性复制）
+3. Dashboard 顶部增加 quick link 到 Agents 页面。
+
+#### 验收标准
+- 用户能在 Web UI 完成一个 Agent Session 的创建和 Revoke
+- 创建成功后 token/key 能被 Agent 使用
+
+---
+
+### A06 — EVM Smart Account (ERC-4337) 基础
+**优先级**：P1  
+**预估工时**：5h  
+**依赖**：A02
+
+#### 内容
+1. 新建 `gradience-core/src/aa/mod.rs`：
+   - 引入 `alloy` 的 ERC-4337 类型（`PackedUserOperation`, `UserOperation`）
+   - 若依赖太重，评估使用 `silius` 或 `ethers-rs` 的 AA 扩展
+2. `SmartAccountFactory`：
+   - 给定 deployer key，计算 SimpleAccount / Modular Account 的 counterfactual address
+3. `AccountDeployer`：
+   - 构造并签名 `initCode`，通过 Bundler 发起部署
+4. 在 Wallet 表中增加 `is_smart_account` 标识和 `account_factory` 字段。
+
+#### 验收标准
+- 单元测试（或 integration test）：给定 seed 计算出确定的 Smart Account 地址
+- 使用测试网 Bundler 能成功部署一个 Account（可手动验证 tx hash）
+
+---
+
+### A07 — On-Chain Session Key 模块
+**优先级**：P1  
+**预估工时**：4h  
+**依赖**：A06
+
+#### 内容
+1. `SessionKeyValidator`：
+   - 封装对 ERC-7579 / ERC-6900 session key module 的调用
+   - `encode_add_session_key(agent_pubkey, valid_until, allowed_targets, spend_limit)`
+   - `encode_revoke_session_key(agent_pubkey)`
+2. `AgentSessionService::create_session`：
+   - 当 `session_type == OnChainSessionKey` 且 wallet 是 Smart Account 时，自动构造并签名 `addSessionKey` userOp
+   - 提交到 Bundler，等待链上确认后再把 Agent 私钥展示给用户
+
+#### 验收标准
+- 成功在 Base Sepolia（或类似测试网）上为一个 Smart Account 添加 session key
+- Session key 可以签名 userOp 并被 EntryPoint 接受
+
+---
+
+### A08 — Bundler 集成（Base / Ethereum）
+**优先级**：P1  
+**预估工时**：3h  
+**依赖**：A07
+
+#### 内容
+1. `BundlerClient`：
+   - 支持 `eth_sendUserOperation`、`eth_getUserOperationReceipt`
+2. 默认配置：
+   - Base mainnet: `https://bundler.base.org` 或 Pimlico endpoint
+   - Base Sepolia: 对应测试网 bundler
+3. Paymaster（可选 Phase 2.5）：
+   - 接入 Pimlico Verifying Paymaster，允许 Agent 用 USDC 付 gas
+
+#### 验收标准
+- `cargo test` 包含一个 integration test，向 Base Sepolia Bundler 发送 userOp 并拿到 tx receipt
+
+---
+
+### A09 — Solana 可编程钱包 / 委托
+**优先级**：P2  
+**预估工时**：4h  
+**依赖**：A08
+
+#### 内容
+1. 调研 Solana 上适合 Agent 权限模型的方案：
+   - **Squads** 多签程序的 delegate
+   - **Solana Smart Wallet**（如 Castle / Snowflake）
+   - 或最简单的 **sub-wallet 预授权**：从主钱包派生子密钥对，用户预存 SOL/SPL，Agent 操作子钱包
+2. 若选择 sub-wallet：
+   - `SolanaAgentWallet`：derive sub-key from wallet seed
+   - 用户 approve 时把子钱包地址加入白名单并预存资金
+   - Agent 用子钱包私钥直接签名 Solana tx，但无法接触主钱包资金
+3. 将 Solana Session 消耗的预算统一汇总到 `agent_session_usage`。
+
+#### 验收标准
+- Agent 能使用 Solana sub-wallet 完成一次 SPL token transfer
+- 子钱包超限时自动停止（通过 off-chain budget tracking）
 
 ---
 
