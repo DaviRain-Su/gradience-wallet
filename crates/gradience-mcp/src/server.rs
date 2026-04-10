@@ -88,6 +88,10 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                     "Deactivate a delegated Solana stake account",
                 ),
                 Tool::with_schema::<VerifyApiKeyArgs>("verify_api_key", "Verify an API key hash"),
+                Tool::with_schema::<CheckApprovalArgs>(
+                    "check_approval",
+                    "Check the status of a transaction approval",
+                ),
             ];
             let result = ToolsListResult { tools };
             Ok(JsonRpcResponse::success(
@@ -293,6 +297,22 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                         }
                     };
                     match crate::tools::handle_verify_api_key(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "check_approval" => {
+                    let a: CheckApprovalArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
+                    };
+                    match crate::tools::handle_check_approval(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO agent_transaction_approvals (id, wallet_id, session_id, request_json, expires_at) VALUES (?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 5
+    },
+    "nullable": []
+  },
+  "hash": "2667939d15b97c44f949ad78687b51147d52a6810d7fc7471f689387256dd3a3"
+}

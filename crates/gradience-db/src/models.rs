@@ -266,3 +266,16 @@ pub struct AgentSessionUsage {
     pub usage_date: chrono::NaiveDate,
     pub spent_raw: String,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AgentTransactionApproval {
+    pub id: String,
+    pub wallet_id: String,
+    pub session_id: Option<String>,
+    pub request_json: String,
+    pub status: String,
+    pub approved_by: Option<String>,
+    pub approved_at: Option<DateTime<Utc>>,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}

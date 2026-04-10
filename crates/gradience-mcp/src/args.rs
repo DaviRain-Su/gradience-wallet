@@ -6,6 +6,8 @@ pub struct SignTxArgs {
     pub wallet_id: String,
     pub chain_id: String,
     pub transaction: TxBody,
+    #[serde(default)]
+    pub approval_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -94,6 +96,11 @@ pub struct DeactivateStakeArgs {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct VerifyApiKeyArgs {
     pub api_key: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct CheckApprovalArgs {
+    pub approval_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

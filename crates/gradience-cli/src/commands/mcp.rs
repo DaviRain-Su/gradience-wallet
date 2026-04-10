@@ -21,6 +21,7 @@ pub async fn sign_tx(
             value: amount,
             data: Some("0x".into()),
         },
+        approval_id: None,
     };
     let resp = gradience_mcp::tools::handle_sign_transaction(args)?;
     println!("{}", resp);

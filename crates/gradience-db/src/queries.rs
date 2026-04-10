@@ -1218,3 +1218,68 @@ pub async fn upsert_agent_session_usage(
     .await?;
     Ok(())
 }
+
+// ========== Agent Transaction Approvals ==========
+pub async fn create_agent_transaction_approval(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    wallet_id: &str,
+    session_id: Option<&str>,
+    request_json: &str,
+    expires_at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO agent_transaction_approvals (id, wallet_id, session_id, request_json, expires_at) VALUES (?, ?, ?, ?, ?)",
+        id,
+        wallet_id,
+        session_id,
+        request_json,
+        expires_at
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_agent_transaction_approval(
+    pool: &Pool<Sqlite>,
+    id: &str,
+) -> Result<Option<AgentTransactionApproval>> {
+    let row = sqlx::query_as::<_, AgentTransactionApproval>(
+        "SELECT id, wallet_id, session_id, request_json, status, approved_by, approved_at, expires_at, created_at FROM agent_transaction_approvals WHERE id = ?"
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn approve_agent_transaction_approval(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    approved_by: &str,
+) -> Result<u64> {
+    let res = sqlx::query!(
+        "UPDATE agent_transaction_approvals SET status = 'approved', approved_by = ?, approved_at = datetime('now') WHERE id = ? AND status = 'pending'",
+        approved_by,
+        id
+    )
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}
+
+pub async fn reject_agent_transaction_approval(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    approved_by: &str,
+) -> Result<u64> {
+    let res = sqlx::query!(
+        "UPDATE agent_transaction_approvals SET status = 'rejected', approved_by = ?, approved_at = datetime('now') WHERE id = ? AND status = 'pending'",
+        approved_by,
+        id
+    )
+    .execute(pool)
+    .await?;
+    Ok(res.rows_affected())
+}

@@ -150,7 +150,42 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
     };
 
     let policy_refs: Vec<&Policy> = policies.iter().collect();
-    let result = engine.evaluate(ctx, policy_refs)?;
+    let result = if let Some(ref approval_id) = args.approval_id {
+        let approved = block_on_async(async {
+            let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join(".gradience")
+                    .to_string_lossy()
+                    .to_string()
+            });
+            let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+            let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+            let approval = gradience_db::queries::get_agent_transaction_approval(&db, approval_id)
+                .await
+                .ok()??;
+            if approval.status == "approved" && approval.expires_at > chrono::Utc::now() {
+                Some(())
+            } else {
+                None
+            }
+        });
+        if approved.is_some() {
+            gradience_core::policy::engine::EvalResult {
+                decision: Decision::Allow,
+                reasons: vec!["resumed from approval".into()],
+                matched_intent: None,
+                dynamic_adjustments: vec![],
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Approval {} is not approved or has expired",
+                approval_id
+            ));
+        }
+    } else {
+        engine.evaluate(ctx, policy_refs)?
+    };
 
     match result.decision {
         Decision::Allow => {
@@ -218,11 +253,52 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
             "POLICY_DENIED: {}",
             result.reasons.join(", ")
         )),
-        Decision::Warn => Ok(json!({
-            "signature": null,
-            "decision": "warned",
-            "reasons": result.reasons,
-        })),
+        Decision::Warn => {
+            let mut buf = [0u8; 16];
+            let rng = ring::rand::SystemRandom::new();
+            let _ = ring::rand::SecureRandom::fill(&rng, &mut buf);
+            let approval_id = hex::encode(buf);
+            let request_json = serde_json::json!({
+                "wallet_id": wallet_id,
+                "chain_id": chain_id,
+                "transaction": {
+                    "to": to,
+                    "value": value,
+                    "data": data_hex,
+                },
+                "reasons": result.reasons,
+            })
+            .to_string();
+
+            block_on_async(async {
+                let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+                    dirs::home_dir()
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
+                        .join(".gradience")
+                        .to_string_lossy()
+                        .to_string()
+                });
+                let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+                if let Ok(db) = sqlx::SqlitePool::connect(&db_path).await {
+                    let _ = gradience_db::queries::create_agent_transaction_approval(
+                        &db,
+                        &approval_id,
+                        wallet_id,
+                        None::<&str>,
+                        &request_json,
+                        chrono::Utc::now() + chrono::Duration::hours(24),
+                    )
+                    .await;
+                }
+            });
+
+            Ok(json!({
+                "signature": null,
+                "decision": "warned",
+                "approval_id": approval_id,
+                "reasons": result.reasons,
+            }))
+        }
     }
 }
 
@@ -694,6 +770,38 @@ pub fn handle_verify_api_key(
         "valid": valid.is_some(),
         "apiKeyPrefix": api_key.get(..8).unwrap_or(""),
     }))
+}
+
+pub fn handle_check_approval(
+    args: crate::args::CheckApprovalArgs,
+) -> anyhow::Result<serde_json::Value> {
+    let approval_id = &args.approval_id;
+    let data_dir = std::env::var("GRADIENCE_DATA_DIR").unwrap_or_else(|_| {
+        dirs::home_dir()
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+            .join(".gradience")
+            .to_string_lossy()
+            .to_string()
+    });
+    let db_path = format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+
+    let approval = block_on_async(async {
+        let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+        gradience_db::queries::get_agent_transaction_approval(&db, approval_id)
+            .await
+            .ok()
+            .flatten()
+    });
+
+    match approval {
+        Some(a) => Ok(json!({
+            "approvalId": a.id,
+            "status": a.status,
+            "walletId": a.wallet_id,
+            "approvedAt": a.approved_at,
+        })),
+        None => Err(anyhow::anyhow!("Approval not found")),
+    }
 }
 
 pub fn handle_transfer_spl(
