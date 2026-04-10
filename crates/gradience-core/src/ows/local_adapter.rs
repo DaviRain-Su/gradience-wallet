@@ -118,6 +118,16 @@ impl OwsAdapter for LocalOwsAdapter {
             }
         }
 
+        // Append X Layer (eip155:196) using the same EVM address as Ethereum mainnet
+        if let Some(eth_account) = accounts.iter().find(|a| a.chain_id == "eip155:1") {
+            accounts.push(AccountDescriptor {
+                account_id: format!("eip155:196:{}", eth_account.address),
+                address: eth_account.address.clone(),
+                chain_id: "eip155:196".into(),
+                derivation_path: eth_account.derivation_path.clone(),
+            });
+        }
+
         Ok(WalletDescriptor {
             id: info.id,
             name: info.name,
