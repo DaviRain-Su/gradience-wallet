@@ -1,4 +1,5 @@
 pub mod biconomy;
+pub mod biconomy_session;
 pub mod bundler;
 pub mod config;
 pub mod factory;
