@@ -229,8 +229,7 @@ pub async fn run() -> anyhow::Result<()> {
             }
         })
         .fallback_service({
-            let dist_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../web/dist");
+            let dist_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/dist");
             tower_http::services::ServeDir::new(dist_dir)
         })
         .with_state(Arc::clone(&state));
