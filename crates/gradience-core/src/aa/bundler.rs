@@ -7,14 +7,20 @@ use serde_json::json;
 pub struct BundlerClient {
     url: String,
     entry_point: String,
+    auth_header: Option<String>,
     client: reqwest::Client,
 }
 
 impl BundlerClient {
-    pub fn new(url: impl Into<String>, entry_point: impl Into<String>) -> Self {
+    pub fn new(
+        url: impl Into<String>,
+        entry_point: impl Into<String>,
+        auth_header: Option<String>,
+    ) -> Self {
         Self {
             url: url.into(),
             entry_point: entry_point.into(),
+            auth_header,
             client: reqwest::Client::new(),
         }
     }
@@ -31,12 +37,11 @@ impl BundlerClient {
             "params": [op, self.entry_point],
         });
 
-        let resp = self
-            .client
-            .post(&self.url)
-            .json(&body)
-            .send()
-            .await?;
+        let mut req = self.client.post(&self.url).json(&body);
+        if let Some(auth) = &self.auth_header {
+            req = req.header("Authorization", auth.clone());
+        }
+        let resp = req.send().await?;
 
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
@@ -69,12 +74,11 @@ impl BundlerClient {
             "params": [format!("0x{}", hex::encode(user_op_hash.as_slice()))],
         });
 
-        let resp = self
-            .client
-            .post(&self.url)
-            .json(&body)
-            .send()
-            .await?;
+        let mut req = self.client.post(&self.url).json(&body);
+        if let Some(auth) = &self.auth_header {
+            req = req.header("Authorization", auth.clone());
+        }
+        let resp = req.send().await?;
 
         if !resp.status().is_success() {
             let text = resp.text().await.unwrap_or_default();
