@@ -12,6 +12,10 @@ use std::path::PathBuf;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() <= 1 {
+        return commands::start::run().await;
+    }
     let cli = Cli::parse();
 
     let data_dir = if let Ok(dir) = std::env::var("GRADIENCE_DATA_DIR") {

@@ -39,7 +39,7 @@ pub struct WorkspaceMember {
     pub invited_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct Wallet {
     pub id: String,
     pub name: String,
@@ -50,7 +50,7 @@ pub struct Wallet {
     pub updated_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct WalletAddress {
     pub id: String,
     pub wallet_id: String,
@@ -59,7 +59,7 @@ pub struct WalletAddress {
     pub derivation_path: String,
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct ApiKey {
     pub id: String,
     pub wallet_id: String,

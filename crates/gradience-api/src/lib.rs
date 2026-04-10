@@ -15,11 +15,8 @@ mod state;
 use gradience_core::ows::local_adapter::LocalOwsAdapter;
 use state::{AppState, Session, SessionStore};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
-
-    let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_string());
+pub async fn run() -> anyhow::Result<()> {
+    let origin = std::env::var("ORIGIN").unwrap_or_else(|_| "http://localhost:8080".to_string());
     let rp_id = std::env::var("RP_ID").unwrap_or_else(|_| "localhost".to_string());
     let origin_url: url::Url = origin.parse()?;
     let webauthn = WebauthnBuilder::new(&rp_id, &origin_url)?.build()?;
@@ -230,6 +227,11 @@ async fn main() -> anyhow::Result<()> {
                     .allow_methods(tower_http::cors::Any)
                     .allow_headers(allowed_headers)
             }
+        })
+        .fallback_service({
+            let dist_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../web/dist");
+            tower_http::services::ServeDir::new(dist_dir)
         })
         .with_state(Arc::clone(&state));
 

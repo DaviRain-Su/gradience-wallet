@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 
 const features = [
   {
@@ -32,6 +33,15 @@ const features = [
 const sdks = ["Python", "TypeScript", "Go", "Java", "Ruby"];
 
 export default function LandingPage() {
+  useEffect(() => {
+    if (
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
+    ) {
+      window.location.href = "/login";
+    }
+  }, []);
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       {/* Hero */}
@@ -46,13 +56,13 @@ export default function LandingPage() {
             Passkey-backed identities. Local multi-chain vaults. Fine-grained policy-gated access for AI agents via MCP.
           </p>
           <div className="flex justify-center gap-4">
-            <Link
-              href="/login"
+            <a
+              href="#download"
               className="inline-flex items-center justify-center rounded-lg px-6 py-3 font-semibold transition"
               style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
             >
               Get Started
-            </Link>
+            </a>
             <a
               href="https://github.com/open-wallet-standard/core"
               target="_blank"
@@ -87,6 +97,27 @@ export default function LandingPage() {
               <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Use MCP or SDKs to let AI agents act within your policy guardrails.</p>
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* Download */}
+      <section id="download" className="px-6 py-16" style={{ backgroundColor: "var(--card)" }}>
+        <div className="max-w-3xl mx-auto text-center">
+          <h2 className="text-3xl font-bold mb-4">Run it locally</h2>
+          <p className="mb-8" style={{ color: "var(--muted-foreground)" }}>
+            Gradience is a local-first wallet. Download the binary for your platform and start your own vault.
+          </p>
+          <div className="rounded-xl border p-6 text-left font-mono text-sm" style={{ backgroundColor: "var(--muted)", borderColor: "var(--border)" }}>
+            <p className="mb-2"># macOS / Linux</p>
+            <p className="mb-2">curl -L -o gradience https://github.com/DaviRain-Su/gradience-wallet/releases/latest/download/gradience-aarch64-apple-darwin.tar.gz</p>
+            <p className="mb-2">chmod +x gradience</p>
+            <p className="mb-4">./gradience</p>
+            <p className="mb-2"># Windows</p>
+            <p>gradience.exe</p>
+          </div>
+          <p className="mt-6 text-sm" style={{ color: "var(--muted-foreground)" }}>
+            The command starts a local server and opens your browser automatically.
+          </p>
         </div>
       </section>
 
@@ -153,8 +184,11 @@ export default function LandingPage() {
             className="inline-flex items-center justify-center rounded-lg px-8 py-3 font-semibold transition"
             style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
           >
-            Launch App
+            Open Wallet
           </Link>
+          <p className="mt-4 text-sm" style={{ color: "var(--muted-foreground)" }}>
+            Already running Gradience locally? Click above to open your wallet.
+          </p>
         </div>
       </section>
 

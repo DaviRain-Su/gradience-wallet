@@ -8,6 +8,7 @@ members = [
     "crates/gradience-api",
     "crates/gradience-ai-proxy",
     "crates/gradience-sdk-node",
+
 ]
 
 [workspace.dependencies]
