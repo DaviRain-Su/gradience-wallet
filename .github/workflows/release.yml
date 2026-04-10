@@ -55,15 +55,13 @@ jobs:
           path: gradience-x86_64-unknown-linux-gnu.tar.gz
 
   build-macos:
-    name: Build macOS
+    name: Build macOS aarch64
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Cache cargo
         uses: actions/cache@v4
@@ -85,27 +83,21 @@ jobs:
           npm install
           npm run build
 
-      - name: Build aarch64 binary
-        run: cargo build --release -p gradience-cli --bin gradience --target aarch64-apple-darwin
+      - name: Build release binary
+        run: cargo build --release -p gradience-cli --bin gradience
 
-      - name: Build x86_64 binary
-        run: cargo build --release -p gradience-cli --bin gradience --target x86_64-apple-darwin
-
-      - name: Package binaries
+      - name: Package binary
         run: |
           mkdir -p dist
-          cp target/aarch64-apple-darwin/release/gradience dist/gradience
+          cp target/release/gradience dist/gradience
           chmod +x dist/gradience
           tar czf gradience-aarch64-apple-darwin.tar.gz -C dist gradience
-          cp target/x86_64-apple-darwin/release/gradience dist/gradience
-          chmod +x dist/gradience
-          tar czf gradience-x86_64-apple-darwin.tar.gz -C dist gradience
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-artifacts
-          path: gradience-*.tar.gz
+          name: gradience-aarch64-apple-darwin.tar.gz
+          path: gradience-aarch64-apple-darwin.tar.gz
 
   create-release:
     name: Create GitHub Release
