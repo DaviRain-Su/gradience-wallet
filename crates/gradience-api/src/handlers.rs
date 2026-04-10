@@ -3419,7 +3419,13 @@ pub async fn ai_generate(
     let svc = gradience_core::ai::gateway::AiGatewayService::new();
     let provider = body.provider.as_deref().unwrap_or("anthropic");
     let resp = svc
-        .llm_generate(&state.db, &body.wallet_id, None, provider, &body.model, &body.prompt
+        .llm_generate(
+            &state.db,
+            &body.wallet_id,
+            None,
+            provider,
+            &body.model,
+            &body.prompt,
         )
         .await
         .map_err(|e| {

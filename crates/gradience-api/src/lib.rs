@@ -46,7 +46,10 @@ async fn static_handler(uri: axum::http::Uri) -> axum::response::Response {
     let path = uri.path().trim_start_matches('/');
 
     let (body, ct) = if let Some(file) = Assets::get(path) {
-        (axum::body::Body::from(file.data.into_owned()), content_type(path))
+        (
+            axum::body::Body::from(file.data.into_owned()),
+            content_type(path),
+        )
     } else {
         let html_path = format!("{}.html", path);
         if let Some(file) = Assets::get(&html_path) {
