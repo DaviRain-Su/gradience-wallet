@@ -108,12 +108,16 @@ export default function LandingPage() {
             Gradience is a local-first wallet. Download the binary for your platform and start your own vault.
           </p>
           <div className="rounded-xl border p-6 text-left font-mono text-sm" style={{ backgroundColor: "var(--muted)", borderColor: "var(--border)" }}>
-            <p className="mb-2"># macOS / Linux</p>
-            <p className="mb-2">curl -L -o gradience https://github.com/DaviRain-Su/gradience-wallet/releases/latest/download/gradience-aarch64-apple-darwin.tar.gz</p>
-            <p className="mb-2">chmod +x gradience</p>
+            <p className="mb-2"># macOS (Apple Silicon)</p>
+            <p className="mb-2">curl -L -o gradience.tar.gz https://github.com/DaviRain-Su/gradience-wallet/releases/latest/download/gradience-aarch64-apple-darwin.tar.gz</p>
+            <p className="mb-2">tar xzf gradience.tar.gz</p>
             <p className="mb-4">./gradience</p>
-            <p className="mb-2"># Windows</p>
-            <p>gradience.exe</p>
+            <p className="mb-2"># Linux (x86_64)</p>
+            <p className="mb-2">curl -L -o gradience.tar.gz https://github.com/DaviRain-Su/gradience-wallet/releases/latest/download/gradience-x86_64-unknown-linux-gnu.tar.gz</p>
+            <p className="mb-2">tar xzf gradience.tar.gz</p>
+            <p className="mb-4">./gradience</p>
+            <p className="mb-2"># Intel Mac / Windows / other</p>
+            <p>cargo install --path crates/gradience-cli --bin gradience</p>
           </div>
           <p className="mt-6 text-sm" style={{ color: "var(--muted-foreground)" }}>
             The command starts a local server and opens your browser automatically.
