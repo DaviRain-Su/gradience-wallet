@@ -77,14 +77,20 @@ impl BiconomySession {
     }
 
     /// Utility: encode ERC20SessionValidationModule sessionKeyData.
-    /// `abi.encode(address sessionKey, address token, address recipient, uint256 maxAmount)`
+    /// Biconomy V2 expects 5 fields:
+    /// `abi.encode(address sessionKey, address token, address recipient, uint256 maxAmount, uint256 maxUsage)`
+    /// where `maxUsage` packs `userOpSender` in the high 160 bits and `usageCount` in the low 64 bits.
     pub fn encode_erc20_session_key_data(
         session_key: Address,
         token: Address,
         recipient: Address,
         max_amount: U256,
+        smart_account: Address,
+        max_usage_count: u64,
     ) -> Bytes {
-        (session_key, token, recipient, max_amount)
+        let max_usage =
+            (U256::from_be_bytes(smart_account.into_word().into()) << 64) | U256::from(max_usage_count);
+        (session_key, token, recipient, max_amount, max_usage)
             .abi_encode_sequence()
             .into()
     }
@@ -103,8 +109,9 @@ mod tests {
         let recipient = address!("909E30bdBCb728131E3F8d17150eaE740C904649");
         let max = U256::from(1_000_000);
 
+        let smart_account = address!("e7825CD90B7DA8f84049d3f9FC3d2c7D02Ee5989");
         let session_key_data =
-            BiconomySession::encode_erc20_session_key_data(session_key, token, recipient, max);
+            BiconomySession::encode_erc20_session_key_data(session_key, token, recipient, max, smart_account, 1000);
         let h1 = BiconomySession::leaf_hash(0, 0, svm, &session_key_data);
         let h2 = BiconomySession::leaf_hash(0, 0, svm, &session_key_data);
         assert_eq!(h1, h2);

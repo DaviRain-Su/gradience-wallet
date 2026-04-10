@@ -32,6 +32,10 @@ sol! {
     interface SmartAccountBatch {
         function executeBatch(address[] calldata dest, uint256[] calldata value, bytes[] calldata func) external;
     }
+
+    interface IERC20 {
+        function transfer(address to, uint256 amount) external returns (bool);
+    }
 }
 
 fn to_sol_op(op: &alloy_rpc_types_eth::erc4337::UserOperation) -> UserOperation {
@@ -72,8 +76,8 @@ async fn demo_biconomy_session_key_xlayer() {
     ).unwrap();
     let session_key = session_signer.address();
 
-    // Use index 1 to deploy a fresh SmartAccount (index 0 was already used in a prior run)
-    let index = U256::from(1);
+    // Use index 5 to deploy a fresh SmartAccount (indices 0..4 already used)
+    let index = U256::from(5);
 
     // 1. Query SmartAccount address
     let account = BiconomyAccount::get_counterfactual_address(
@@ -84,16 +88,17 @@ async fn demo_biconomy_session_key_xlayer() {
     println!("Biconomy SmartAccount: {}", account);
 
     // 2. Build session key data
-    let token: Address = address!("21475455CB131a8A713e1C629c6f7398f56d504b");
+    let token: Address = address!("7220397E4a9AF851C65afe117F91c20222DAFcab");
     let recipient: Address = address!("909E30bdBCb728131E3F8d17150eaE740C904649");
     let max_amount = U256::from(1_000_000);
-    let session_key_data = BiconomySession::encode_erc20_session_key_data(
-        session_key, token, recipient, max_amount,
-    );
 
     let valid_until = 0u64;
     let valid_after = 0u64;
     let erc20_svm: Address = address!("21475455CB131a8A713e1C629c6f7398f56d504b");
+
+    let session_key_data = BiconomySession::encode_erc20_session_key_data(
+        session_key, token, recipient, max_amount, account, 1000,
+    );
     let leaf = BiconomySession::leaf_hash(valid_until, valid_after, erc20_svm, &session_key_data);
     let merkle_root = BiconomySession::single_leaf_merkle_root(&leaf);
     println!("Session Leaf: {}", leaf);
@@ -174,8 +179,9 @@ async fn demo_biconomy_session_key_xlayer() {
 
     let exec_nonce = U256::from(1);
 
+    let transfer_call = IERC20::transferCall { to: recipient, amount: U256::ZERO }.abi_encode().into();
     let exec_call = BiconomyAccount::build_execute_call_data(
-        recipient, U256::ZERO, Bytes::new(),
+        token, U256::ZERO, transfer_call,
     );
 
     let mut op_exec = UserOpBuilder::new_v06(
@@ -191,7 +197,8 @@ async fn demo_biconomy_session_key_xlayer() {
     op_exec.pre_verification_gas = U256::from(200_000);
 
     let uo_hash_p2 = UserOpBuilder::hash_v06(&op_exec, entry_point, chain_id);
-    let session_sig = session_signer.sign_hash(&uo_hash_p2).await.unwrap();
+    // Session key must sign with Ethereum Signed Message prefix because ERC20SVM uses toEthSignedMessageHash
+    let session_sig = session_signer.sign_message(uo_hash_p2.as_slice()).await.unwrap();
     let module_sig = BiconomySession::build_module_signature(
         valid_until,
         valid_after,
