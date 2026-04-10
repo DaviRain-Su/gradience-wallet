@@ -1,7 +1,9 @@
 use axum::{
+    response::IntoResponse,
     routing::{delete, get, post},
     Router,
 };
+use rust_embed::RustEmbed;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -11,6 +13,56 @@ use webauthn_rs::prelude::*;
 mod handlers;
 mod middleware;
 mod state;
+
+#[derive(RustEmbed)]
+#[folder = "../../web/dist"]
+struct Assets;
+
+fn content_type(path: &str) -> &'static str {
+    if path.ends_with(".html") {
+        "text/html"
+    } else if path.ends_with(".js") {
+        "application/javascript"
+    } else if path.ends_with(".css") {
+        "text/css"
+    } else if path.ends_with(".png") {
+        "image/png"
+    } else if path.ends_with(".jpg") || path.ends_with(".jpeg") {
+        "image/jpeg"
+    } else if path.ends_with(".svg") {
+        "image/svg+xml"
+    } else if path.ends_with(".ico") {
+        "image/x-icon"
+    } else if path.ends_with(".json") {
+        "application/json"
+    } else if path.ends_with(".woff") || path.ends_with(".woff2") {
+        "font/woff2"
+    } else {
+        "application/octet-stream"
+    }
+}
+
+async fn static_handler(uri: axum::http::Uri) -> axum::response::Response {
+    let path = uri.path().trim_start_matches('/');
+
+    let (body, ct) = if let Some(file) = Assets::get(path) {
+        (axum::body::Body::from(file.data.into_owned()), content_type(path))
+    } else {
+        let html_path = format!("{}.html", path);
+        if let Some(file) = Assets::get(&html_path) {
+            (axum::body::Body::from(file.data.into_owned()), "text/html")
+        } else if let Some(file) = Assets::get("index.html") {
+            (axum::body::Body::from(file.data.into_owned()), "text/html")
+        } else {
+            return (axum::http::StatusCode::NOT_FOUND, "Not found").into_response();
+        }
+    };
+
+    axum::response::Response::builder()
+        .header("content-type", ct)
+        .body(body)
+        .unwrap()
+}
 
 use gradience_core::ows::local_adapter::LocalOwsAdapter;
 use state::{AppState, Session, SessionStore};
@@ -228,10 +280,7 @@ pub async fn run() -> anyhow::Result<()> {
                     .allow_headers(allowed_headers)
             }
         })
-        .fallback_service({
-            let dist_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/dist");
-            tower_http::services::ServeDir::new(dist_dir)
-        })
+        .fallback(static_handler)
         .with_state(Arc::clone(&state));
 
     let anchor_state = Arc::clone(&state);
