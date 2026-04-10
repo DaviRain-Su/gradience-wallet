@@ -3375,6 +3375,7 @@ name = "gradience-core"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-rpc-types-eth",
  "anyhow",
  "async-trait",
  "base64 0.22.1",
