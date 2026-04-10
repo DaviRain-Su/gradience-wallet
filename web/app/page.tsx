@@ -181,18 +181,15 @@ export default function LandingPage() {
         <div className="max-w-2xl mx-auto">
           <h2 className="text-3xl font-bold mb-4">Ready to get started?</h2>
           <p className="mb-8" style={{ color: "var(--muted-foreground)" }}>
-            Create your Passkey identity, set policies, and connect your agents in minutes.
+            Download the binary, run it locally, and start managing your agent wallets in minutes.
           </p>
-          <Link
-            href="/login"
+          <a
+            href="#download"
             className="inline-flex items-center justify-center rounded-lg px-8 py-3 font-semibold transition"
             style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
           >
-            Open Wallet
-          </Link>
-          <p className="mt-4 text-sm" style={{ color: "var(--muted-foreground)" }}>
-            Already running Gradience locally? Click above to open your wallet.
-          </p>
+            Download & Run
+          </a>
         </div>
       </section>
 
