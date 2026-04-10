@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO agent_session_usage (session_id, token, usage_date, spent_raw) VALUES (?, ?, ?, ?)\n         ON CONFLICT(session_id, token, usage_date) DO UPDATE SET spent_raw = excluded.spent_raw",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "22c20ea6dd9689c6a6ffc097d47be87bb2fba51044e73df96a9f37d4444b9f5f"
+}

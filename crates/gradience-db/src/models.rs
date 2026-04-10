@@ -237,3 +237,31 @@ pub struct SharedBudgetTracker {
     pub total_amount: String,
     pub reset_at: DateTime<Utc>,
 }
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AgentSession {
+    pub id: String,
+    pub wallet_id: String,
+    pub name: String,
+    pub session_type: String,
+    pub agent_key_hash: Option<String>,
+    pub status: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AgentSessionLimit {
+    pub session_id: String,
+    pub limit_type: String,
+    pub token: String,
+    pub amount_raw: String,
+}
+
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct AgentSessionUsage {
+    pub session_id: String,
+    pub token: String,
+    pub usage_date: chrono::NaiveDate,
+    pub spent_raw: String,
+}

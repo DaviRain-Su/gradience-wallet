@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO agent_session_limits (session_id, limit_type, token, amount_raw) VALUES (?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 4
+    },
+    "nullable": []
+  },
+  "hash": "6653c5393163d63f459fb4790801844e8c6d08ea5c87910da714f641c6400ced"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE agent_sessions SET status = 'revoked' WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "fb6edd983bf86b6e9d692499b22019b47ad588ca7eb380ab037bdabc30c8f6c1"
+}

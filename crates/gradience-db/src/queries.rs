@@ -1088,3 +1088,131 @@ pub async fn delete_session_by_token(pool: &Pool<Sqlite>, token: &str) -> Result
         .await?;
     Ok(res.rows_affected())
 }
+
+// ========== Agent Sessions ==========
+pub async fn create_agent_session(
+    pool: &Pool<Sqlite>,
+    id: &str,
+    wallet_id: &str,
+    name: &str,
+    session_type: &str,
+    agent_key_hash: Option<&str>,
+    status: &str,
+    expires_at: DateTime<Utc>,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO agent_sessions (id, wallet_id, name, session_type, agent_key_hash, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        id,
+        wallet_id,
+        name,
+        session_type,
+        agent_key_hash,
+        status,
+        expires_at
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_agent_session_by_id(
+    pool: &Pool<Sqlite>,
+    id: &str,
+) -> Result<Option<AgentSession>> {
+    let row = sqlx::query_as::<_, AgentSession>(
+        "SELECT id, wallet_id, name, session_type, agent_key_hash, status, expires_at, created_at FROM agent_sessions WHERE id = ?"
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn list_agent_sessions_by_wallet(
+    pool: &Pool<Sqlite>,
+    wallet_id: &str,
+) -> Result<Vec<AgentSession>> {
+    let rows = sqlx::query_as::<_, AgentSession>(
+        "SELECT id, wallet_id, name, session_type, agent_key_hash, status, expires_at, created_at FROM agent_sessions WHERE wallet_id = ? ORDER BY created_at DESC"
+    )
+    .bind(wallet_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn revoke_agent_session(pool: &Pool<Sqlite>, id: &str) -> Result<u64> {
+    let res = sqlx::query!("UPDATE agent_sessions SET status = 'revoked' WHERE id = ?", id)
+        .execute(pool)
+        .await?;
+    Ok(res.rows_affected())
+}
+
+pub async fn create_agent_session_limit(
+    pool: &Pool<Sqlite>,
+    session_id: &str,
+    limit_type: &str,
+    token: &str,
+    amount_raw: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO agent_session_limits (session_id, limit_type, token, amount_raw) VALUES (?, ?, ?, ?)",
+        session_id,
+        limit_type,
+        token,
+        amount_raw
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub async fn get_agent_session_limits(
+    pool: &Pool<Sqlite>,
+    session_id: &str,
+) -> Result<Vec<AgentSessionLimit>> {
+    let rows = sqlx::query_as::<_, AgentSessionLimit>(
+        "SELECT session_id, limit_type, token, amount_raw FROM agent_session_limits WHERE session_id = ?"
+    )
+    .bind(session_id)
+    .fetch_all(pool)
+    .await?;
+    Ok(rows)
+}
+
+pub async fn get_agent_session_usage(
+    pool: &Pool<Sqlite>,
+    session_id: &str,
+    token: &str,
+    usage_date: &str,
+) -> Result<Option<AgentSessionUsage>> {
+    let row = sqlx::query_as::<_, AgentSessionUsage>(
+        "SELECT session_id, token, usage_date, spent_raw FROM agent_session_usage WHERE session_id = ? AND token = ? AND usage_date = ?"
+    )
+    .bind(session_id)
+    .bind(token)
+    .bind(usage_date)
+    .fetch_optional(pool)
+    .await?;
+    Ok(row)
+}
+
+pub async fn upsert_agent_session_usage(
+    pool: &Pool<Sqlite>,
+    session_id: &str,
+    token: &str,
+    usage_date: &str,
+    spent_raw: &str,
+) -> Result<()> {
+    sqlx::query!(
+        "INSERT INTO agent_session_usage (session_id, token, usage_date, spent_raw) VALUES (?, ?, ?, ?)
+         ON CONFLICT(session_id, token, usage_date) DO UPDATE SET spent_raw = excluded.spent_raw",
+        session_id,
+        token,
+        usage_date,
+        spent_raw
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
