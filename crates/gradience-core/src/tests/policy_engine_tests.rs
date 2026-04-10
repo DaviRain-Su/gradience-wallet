@@ -33,6 +33,7 @@ fn make_ctx(chain: &str, value: &str) -> EvalContext {
         dynamic_signals: None,
         max_tokens: None,
         model: None,
+        session_id: None,
     }
 }
 

@@ -8,6 +8,8 @@ pub struct SignTxArgs {
     pub transaction: TxBody,
     #[serde(default)]
     pub approval_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]

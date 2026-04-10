@@ -22,6 +22,7 @@ pub async fn sign_tx(
             data: Some("0x".into()),
         },
         approval_id: None,
+        session_id: None,
     };
     let resp = gradience_mcp::tools::handle_sign_transaction(args)?;
     println!("{}", resp);

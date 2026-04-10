@@ -92,10 +92,21 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         let db_policies = gradience_db::queries::list_active_policies_by_wallet(&db, wallet_id)
             .await
             .unwrap_or_default();
-        let policies: Vec<gradience_core::policy::engine::Policy> = db_policies
+        let mut policies: Vec<gradience_core::policy::engine::Policy> = db_policies
             .iter()
             .filter_map(|p| gradience_core::policy::engine::Policy::try_from_db(p).ok())
             .collect();
+
+        if let Some(ref session_id) = args.session_id {
+            if let Ok(Some(session)) =
+                gradience_db::queries::get_agent_session_by_id(&db, session_id).await
+            {
+                let svc = gradience_core::agent::session::AgentSessionService::new();
+                if let Ok(Some(policy)) = svc.to_policy(&session) {
+                    policies.push(policy);
+                }
+            }
+        }
 
         let wm = gradience_core::wallet::service::WalletManagerService::new();
         if let Err(e) = wm.require_status_active(&db, wallet_id).await {
@@ -147,6 +158,7 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
         dynamic_signals: None,
         max_tokens: None,
         model: None,
+        session_id: args.session_id.clone(),
     };
 
     let policy_refs: Vec<&Policy> = policies.iter().collect();
@@ -189,6 +201,40 @@ pub fn handle_sign_transaction(args: crate::args::SignTxArgs) -> anyhow::Result<
 
     match result.decision {
         Decision::Allow => {
+            if let Some(ref session_id) = args.session_id {
+                if let Ok(val) = value.parse::<u128>() {
+                    if val > 0 {
+                        let token = if chain_id.starts_with("solana:") {
+                            "SOL"
+                        } else if chain_id.starts_with("ton:") {
+                            "TON"
+                        } else if chain_id.starts_with("stellar:") {
+                            "XLM"
+                        } else {
+                            "ETH"
+                        };
+                        let _ = block_on_async(async {
+                            let data_dir = std::env::var("GRADIENCE_DATA_DIR")
+                                .unwrap_or_else(|_| {
+                                    dirs::home_dir()
+                                        .unwrap_or_else(|| std::path::PathBuf::from("."))
+                                        .join(".gradience")
+                                        .to_string_lossy()
+                                        .to_string()
+                                });
+                            let db_path =
+                                format!("sqlite:/{}/gradience.db?mode=rwc", data_dir);
+                            let db = sqlx::SqlitePool::connect(&db_path).await.ok()?;
+                            let svc =
+                                gradience_core::agent::session::AgentSessionService::new();
+                            svc.consume_budget(&db, session_id, token, value)
+                                .await
+                                .ok()
+                        });
+                    }
+                }
+            }
+
             let (passphrase, vault_dir) = get_vault_config()?;
 
             let tx_hex = if is_solana {

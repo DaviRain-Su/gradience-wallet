@@ -82,6 +82,7 @@ pub struct EvalContext {
     pub dynamic_signals: Option<DynamicSignals>,
     pub max_tokens: Option<u64>,
     pub model: Option<String>,
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

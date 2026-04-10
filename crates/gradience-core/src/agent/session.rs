@@ -51,6 +51,63 @@ impl AgentSessionService {
         Self
     }
 
+    /// Convert an AgentSession into a temporary Policy for the PolicyEngine.
+    pub fn to_policy(&self, session: &gradience_db::models::AgentSession) -> Result<Option<crate::policy::engine::Policy>> {
+        let boundaries: SessionBoundaries = match session.boundaries_json.as_deref() {
+            Some(json) => serde_json::from_str(json)
+                .map_err(|e| GradienceError::Database(format!("parse boundaries: {}", e)))?,
+            None => return Ok(None),
+        };
+
+        let mut rules = Vec::new();
+
+        if !boundaries.allowed_chains.is_empty() {
+            rules.push(crate::policy::engine::Rule::ChainWhitelist {
+                chain_ids: boundaries.allowed_chains.clone(),
+            });
+        }
+
+        if !boundaries.allowed_actions.is_empty() {
+            rules.push(crate::policy::engine::Rule::OperationType {
+                allowed: boundaries.allowed_actions.clone(),
+            });
+        }
+
+        if let Some(contracts) = boundaries.contract_whitelist {
+            if !contracts.is_empty() {
+                rules.push(crate::policy::engine::Rule::ContractWhitelist {
+                    contracts,
+                });
+            }
+        }
+
+        for limit in &boundaries.spend_limits {
+            if limit.limit_type == "per_tx" {
+                rules.push(crate::policy::engine::Rule::SpendLimit {
+                    max: limit.amount_raw.clone(),
+                    token: limit.token.clone(),
+                });
+            }
+        }
+
+        if rules.is_empty() {
+            return Ok(None);
+        }
+
+        Ok(Some(crate::policy::engine::Policy {
+            id: format!("session-{}", session.id),
+            name: format!("Agent Session {}", session.name),
+            wallet_id: Some(session.wallet_id.clone()),
+            workspace_id: None,
+            rules,
+            priority: 100, // session policy wins over most wallet policies
+            status: session.status.clone(),
+            version: 1,
+            created_at: session.created_at.to_rfc3339(),
+            updated_at: session.created_at.to_rfc3339(),
+        }))
+    }
+
     pub async fn create_session(
         &self,
         pool: &Pool<Sqlite>,

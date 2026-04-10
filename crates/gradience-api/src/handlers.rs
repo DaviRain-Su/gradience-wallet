@@ -1285,6 +1285,7 @@ pub async fn evaluate_wallet_policy(
         dynamic_signals: Some(dynamic_signals),
         max_tokens: None,
         model: None,
+        session_id: None,
     };
 
     let policy_refs: Vec<_> = core_policies.iter().collect();
