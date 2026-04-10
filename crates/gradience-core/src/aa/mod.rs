@@ -1,3 +1,4 @@
+pub mod biconomy;
 pub mod bundler;
 pub mod config;
 pub mod factory;

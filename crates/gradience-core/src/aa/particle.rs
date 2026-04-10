@@ -136,6 +136,7 @@ impl ParticleClient {
 
 /// Account config used by Particle AA APIs.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccountConfig {
     pub name: String,
     pub version: String,
@@ -153,6 +154,7 @@ pub struct SmartAccountInfo {
 
 /// Session key definition for `particle_aa_createSessions`.
 #[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionDef {
     pub valid_until: u64,
     pub valid_after: u64,
@@ -165,6 +167,7 @@ pub struct SessionDef {
 
 /// Response from `particle_aa_createSessions`.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateSessionsResult {
     #[serde(default)]
     pub verifying_paymaster_gasless: serde_json::Value,
