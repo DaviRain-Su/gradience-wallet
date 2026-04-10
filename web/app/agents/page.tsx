@@ -1,255 +1,175 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiGet } from "@/lib/api";
+import { apiGet, apiPost } from "@/lib/api";
+import Link from "next/link";
 
 interface Wallet {
   id: string;
   name: string;
-  status: string;
 }
 
-interface Tx {
-  id: number;
-  action: string;
-  decision: string;
-  tx_hash: string | null;
-  created_at: string;
-}
-
-interface Approval {
-  id: string;
-  status: string;
-  created_at: string;
-}
-
-interface ActivityItem {
-  type: "tx" | "approval";
+interface AgentSession {
   id: string;
   wallet_id: string;
-  wallet_name: string;
-  title: string;
-  subtitle: string;
+  name: string;
+  session_type: string;
+  agent_key_hash?: string;
+  status: string;
+  expires_at: string;
   created_at: string;
-  status?: string;
+  boundaries_json?: string;
 }
 
 export default function AgentsPage() {
   const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [pendingApprovals, setPendingApprovals] = useState(0);
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState("");
-
-  async function fetchAll() {
-    setLoading(true);
-    try {
-      const [walletsRes, approvalsRes] = await Promise.all([
-        apiGet("/api/wallets"),
-        apiGet("/api/policy-approvals"),
-      ]);
-      const walletsData: Wallet[] = await walletsRes.json();
-      const approvalsData: Approval[] = await approvalsRes.json();
-
-      setWallets(walletsData);
-      setPendingApprovals(approvalsData.filter((a) => a.status === "pending").length);
-
-      // Fetch recent transactions for first 3 wallets
-      const txPromises = walletsData.slice(0, 3).map(async (w) => {
-        try {
-          const res = await apiGet(`/api/wallets/${w.id}/transactions`);
-          const txs: Tx[] = await res.json();
-          return txs.slice(0, 3).map((t) => ({
-            type: "tx" as const,
-            id: String(t.id),
-            wallet_id: w.id,
-            wallet_name: w.name,
-            title: t.action,
-            subtitle: t.tx_hash ? t.tx_hash.slice(0, 14) + "..." : t.decision,
-            created_at: t.created_at,
-            status: t.decision,
-          }));
-        } catch {
-          return [];
-        }
-      });
-
-      const txResults = await Promise.all(txPromises);
-      const approvalActivities: ActivityItem[] = approvalsData
-        .filter((a) => a.status === "pending")
-        .slice(0, 3)
-        .map((a) => ({
-          type: "approval" as const,
-          id: a.id,
-          wallet_id: "",
-          wallet_name: "Policy Engine",
-          title: "Approval Request",
-          subtitle: `ID ${a.id.slice(0, 8)}`,
-          created_at: a.created_at,
-          status: "pending",
-        }));
-
-      const allActivities = [...txResults.flat(), ...approvalActivities].sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      );
-
-      setActivities(allActivities.slice(0, 8));
-      setMsg("");
-    } catch (e: unknown) {
-      setMsg(`Failed to load: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setLoading(false);
-    }
-  }
+  const [walletId, setWalletId] = useState("");
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchAll();
+    apiGet("/api/wallets")
+      .then(async (res) => {
+        if (res.ok) {
+          const data = (await res.json()) as { wallets?: Wallet[] };
+          const list = data.wallets || [];
+          setWallets(list);
+          if (list.length > 0) setWalletId(list[0].id);
+        }
+      })
+      .catch(() => {});
   }, []);
 
-  return (
-    <div className="min-h-screen p-8 max-w-4xl mx-auto" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">Agent Monitor</h1>
-          <p className="text-sm mt-1" style={{ color: "var(--muted-foreground)" }}>
-            Real-time overview of agent activity and system health
-          </p>
-        </div>
-        <button
-          onClick={fetchAll}
-          disabled={loading}
-          className="text-sm px-4 py-2 rounded border disabled:opacity-50"
-          style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)" }}
-        >
-          {loading ? "Loading..." : "Refresh"}
-        </button>
-      </div>
+  useEffect(() => {
+    if (!walletId) return;
+    setError(null);
+    setLoading(true);
+    apiGet(`/api/agents/sessions?wallet_id=${encodeURIComponent(walletId)}`)
+      .then(async (res) => {
+        if (res.ok) {
+          const data = (await res.json()) as { sessions?: AgentSession[] };
+          setSessions(data.sessions || []);
+        } else {
+          const text = await res.text();
+          setError(text);
+        }
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false));
+  }, [walletId]);
 
-      {msg && (
-        <p className="text-sm px-4 py-2 rounded mb-6" style={{ backgroundColor: "var(--muted)", color: "#B45309" }}>
-          {msg}
-        </p>
-      )}
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
-        <MetricCard
-          label="Active Wallets"
-          value={wallets.length}
-          trend="up"
-        />
-        <MetricCard
-          label="Pending Approvals"
-          value={pendingApprovals}
-          trend={pendingApprovals > 0 ? "warning" : "up"}
-        />
-        <MetricCard
-          label="Recent Activities"
-          value={activities.length}
-          trend="up"
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="border rounded-lg p-5" style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}>
-          <h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
-          {activities.length === 0 && (
-            <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
-              No recent activity to display.
-            </p>
-          )}
-          <div className="space-y-3">
-            {activities.map((a) => (
-              <div
-                key={a.id + a.type}
-                className="flex items-start gap-3 p-3 rounded-lg transition-colors"
-                style={{ backgroundColor: "var(--muted)" }}
-              >
-                <div
-                  className="w-2 h-2 mt-2 rounded-full shrink-0"
-                  style={{
-                    backgroundColor:
-                      a.type === "tx"
-                        ? a.status === "allow"
-                          ? "#22c55e"
-                          : "#ef4444"
-                        : "#eab308",
-                  }}
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{a.title}</p>
-                  <p className="text-xs truncate" style={{ color: "var(--muted-foreground)" }}>
-                    {a.wallet_name} • {a.subtitle}
-                  </p>
-                  <p className="text-xs mt-0.5" style={{ color: "var(--muted-foreground)" }}>
-                    {new Date(a.created_at).toLocaleString()}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="border rounded-lg p-5" style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}>
-          <h2 className="text-lg font-semibold mb-4">Quick Actions</h2>
-          <div className="space-y-3">
-            <QuickAction href="/ai" label="AI Gateway" desc="Top up balance or run inference" />
-            <QuickAction href="/policies" label="Policies" desc="Manage agent guardrails" />
-            <QuickAction href="/approvals" label="Approvals" desc="Review pending requests" />
-            <QuickAction href="/dashboard" label="Dashboard" desc="View wallets and assets" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  trend,
-}: {
-  label: string;
-  value: number;
-  trend: "up" | "down" | "warning";
-}) {
-  const colors = {
-    up: { text: "#22c55e", icon: "●" },
-    down: { text: "#ef4444", icon: "▼" },
-    warning: { text: "#eab308", icon: "▲" },
+  const handleRevoke = async (id: string) => {
+    if (!confirm("Revoke this agent session?")) return;
+    try {
+      const res = await apiPost(`/api/agents/sessions/${encodeURIComponent(id)}/revoke`, {});
+      if (!res.ok) throw new Error(await res.text());
+      setSessions((prev) =>
+        prev.map((s) => (s.id === id ? { ...s, status: "revoked" } : s))
+      );
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
-  return (
-    <div className="border rounded-lg p-4" style={{ backgroundColor: "var(--card)", borderColor: "var(--border)" }}>
-      <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>{label}</p>
-      <div className="flex items-baseline gap-2 mt-1">
-        <p className="text-2xl font-bold">{value}</p>
-        <span className="text-xs font-medium" style={{ color: colors[trend].text }}>
-          {colors[trend].icon}
-        </span>
-      </div>
-    </div>
-  );
-}
 
-function QuickAction({
-  href,
-  label,
-  desc,
-}: {
-  href: string;
-  label: string;
-  desc: string;
-}) {
+  const formatExpiry = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleString();
+  };
+
   return (
-    <a
-      href={href}
-      className="flex items-center justify-between p-3 rounded-lg border transition-colors"
-      style={{ borderColor: "var(--border)", backgroundColor: "var(--muted)", color: "var(--foreground)" }}
+    <div
+      className="min-h-screen p-6 max-w-4xl mx-auto"
+      style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}
     >
-      <div>
-        <p className="text-sm font-medium">{label}</p>
-        <p className="text-xs" style={{ color: "var(--muted-foreground)" }}>{desc}</p>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Agent Sessions</h1>
+        <Link
+          href="/agents/new"
+          className="px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+          style={{ backgroundColor: "var(--primary)", color: "var(--primary-foreground)" }}
+        >
+          + New Agent Session
+        </Link>
       </div>
-      <span style={{ color: "var(--muted-foreground)" }}>→</span>
-    </a>
+
+      <div className="mb-6">
+        <label className="block text-sm font-medium mb-1">Wallet</label>
+        <select
+          className="w-full border rounded px-3 py-2"
+          style={{ backgroundColor: "var(--card)", borderColor: "var(--border)", color: "var(--foreground)" }}
+          value={walletId}
+          onChange={(e) => setWalletId(e.target.value)}
+        >
+          {wallets.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name} ({w.id.slice(0, 8)}...)
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {error && <div className="text-sm mb-4" style={{ color: "#B45309" }}>{error}</div>}
+
+      {loading ? (
+        <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>Loading...</p>
+      ) : sessions.length === 0 ? (
+        <p className="text-sm" style={{ color: "var(--muted-foreground)" }}>
+          No agent sessions yet.{" "}
+          <Link href="/agents/new" className="underline">
+            Create one
+          </Link>
+          .
+        </p>
+      ) : (
+        <div className="space-y-3">
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              className="border rounded p-4 flex items-center justify-between"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}
+            >
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium">{s.name}</p>
+                  <span
+                    className="text-xs px-2 py-0.5 rounded"
+                    style={{
+                      backgroundColor:
+                        s.status === "active"
+                          ? "var(--muted)"
+                          : s.status === "revoked"
+                          ? "#F3F4F6"
+                          : "var(--muted)",
+                      color: s.status === "revoked" ? "#9CA3AF" : "var(--foreground)",
+                    }}
+                  >
+                    {s.status}
+                  </span>
+                </div>
+                <p className="text-xs mt-1" style={{ color: "var(--muted-foreground)" }}>
+                  Expires {formatExpiry(s.expires_at)} · {s.session_type.replace(/_/g, " ")}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {s.status === "active" ? (
+                  <button
+                    onClick={() => handleRevoke(s.id)}
+                    className="text-sm px-3 py-1 rounded border"
+                    style={{ borderColor: "var(--border)" }}
+                  >
+                    Revoke
+                  </button>
+                ) : (
+                  <span className="text-sm" style={{ color: "var(--muted-foreground)" }}>
+                    Revoked
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

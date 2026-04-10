@@ -3475,3 +3475,134 @@ pub async fn ai_balance(
         })),
     ))
 }
+
+// ==================== Agent Session Handlers ====================
+
+#[derive(Deserialize)]
+pub struct CreateAgentSessionReq {
+    pub wallet_id: String,
+    pub name: String,
+    pub allowed_chains: Vec<String>,
+    pub allowed_actions: Vec<String>,
+    pub spend_limits: Vec<AgentSessionLimitReq>,
+    pub contract_whitelist: Option<Vec<String>>,
+    pub expires_hours: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AgentSessionLimitReq {
+    pub limit_type: String,
+    pub token: String,
+    pub amount_raw: String,
+}
+
+pub async fn list_agent_sessions(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let wallet_id = params.get("wallet_id").ok_or(StatusCode::BAD_REQUEST)?;
+    let _wallet = require_wallet_owner(&state, &session, wallet_id).await?;
+
+    let rows = gradience_db::queries::list_agent_sessions_by_wallet(&state.db, wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({ "sessions": rows })),
+    ))
+}
+
+pub async fn create_agent_session(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<CreateAgentSessionReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let wallet_id = &body.wallet_id;
+    let _wallet = require_wallet_owner(&state, &session, wallet_id).await?;
+
+    let name = body.name.trim();
+    if name.is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let boundaries = gradience_core::agent::session::SessionBoundaries {
+        allowed_chains: body.allowed_chains,
+        allowed_actions: body.allowed_actions,
+        spend_limits: body
+            .spend_limits
+            .into_iter()
+            .map(|l| gradience_core::agent::session::SpendLimit {
+                limit_type: l.limit_type,
+                token: l.token,
+                amount_raw: l.amount_raw,
+            })
+            .collect(),
+        contract_whitelist: body.contract_whitelist,
+    };
+
+    let expires_at = chrono::Utc::now() + chrono::Duration::hours(body.expires_hours);
+
+    let svc = gradience_core::agent::session::AgentSessionService::new();
+    let (session_id, credential) = svc
+        .create_session(
+            &state.db,
+            wallet_id,
+            name,
+            gradience_core::agent::session::SessionType::CapabilityToken,
+            boundaries,
+            expires_at,
+        )
+        .await
+        .map_err(|e| {
+            tracing::warn!("create_agent_session failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let token = match credential {
+        gradience_core::agent::session::SessionCredential::Token(t) => t,
+        _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+    };
+
+    Ok((
+        StatusCode::CREATED,
+        axum::Json(serde_json::json!({
+            "session_id": session_id,
+            "token": token,
+        })),
+    ))
+}
+
+pub async fn revoke_agent_session(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(session_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let row = gradience_db::queries::get_agent_session_by_id(&state.db, &session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::NOT_FOUND)?;
+
+    let _wallet = require_wallet_owner(&state, &session, &row.wallet_id).await?;
+
+    let svc = gradience_core::agent::session::AgentSessionService::new();
+    svc.revoke_session(&state.db, &session_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok(StatusCode::NO_CONTENT)
+}

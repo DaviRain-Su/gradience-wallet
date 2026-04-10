@@ -238,7 +238,7 @@ pub struct SharedBudgetTracker {
     pub reset_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct AgentSession {
     pub id: String,
     pub wallet_id: String,
