@@ -89,6 +89,26 @@ impl AiGatewayService {
                     );
                 (fallback, estimated_input_tokens, 25i64, "fallback_mock")
             }
+        } else if provider.eq_ignore_ascii_case("openai") {
+            if let Ok(key) = std::env::var("OPENAI_API_KEY") {
+                match super::providers::openai::call_openai(&key, model, prompt).await {
+                    Ok(res) => (res.content, res.input_tokens, res.output_tokens, "success"),
+                    Err(e) => {
+                        tracing::warn!("OpenAI call failed: {}", e);
+                        let fallback = format!(
+                                "[OpenAI unavailable] This is a mock response from {} {} for prompt length {} chars.",
+                                provider, model, input_chars
+                            );
+                        (fallback, estimated_input_tokens, 25i64, "fallback_mock")
+                    }
+                }
+            } else {
+                let fallback = format!(
+                        "[OPENAI_API_KEY not set] This is a mock response from {} {} for prompt length {} chars.",
+                        provider, model, input_chars
+                    );
+                (fallback, estimated_input_tokens, 25i64, "fallback_mock")
+            }
         } else {
             let fallback = format!(
                 "This is a mock response from {} {} for prompt length {} chars.",

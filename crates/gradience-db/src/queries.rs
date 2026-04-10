@@ -557,6 +557,34 @@ pub async fn seed_model_pricing(pool: &Pool<Sqlite>) -> Result<()> {
     .bind("USDC")
     .execute(pool)
     .await?;
+
+    // OpenAI GPT-4o
+    sqlx::query(
+        "INSERT OR IGNORE INTO model_pricing (id, provider, model, input_per_m, output_per_m, cache_per_m, currency, effective_from) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+    )
+    .bind(2i64)
+    .bind("openai")
+    .bind("gpt-4o")
+    .bind(2500000i64) // $2.5 per 1M tokens
+    .bind(10000000i64) // $10 per 1M tokens
+    .bind(0i64)
+    .bind("USDC")
+    .execute(pool)
+    .await?;
+
+    // OpenAI GPT-4o-mini
+    sqlx::query(
+        "INSERT OR IGNORE INTO model_pricing (id, provider, model, input_per_m, output_per_m, cache_per_m, currency, effective_from) VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))"
+    )
+    .bind(3i64)
+    .bind("openai")
+    .bind("gpt-4o-mini")
+    .bind(150000i64) // $0.15 per 1M tokens
+    .bind(600000i64) // $0.6 per 1M tokens
+    .bind(0i64)
+    .bind("USDC")
+    .execute(pool)
+    .await?;
     Ok(())
 }
 

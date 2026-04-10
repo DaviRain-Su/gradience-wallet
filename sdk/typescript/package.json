@@ -1,6 +1,6 @@
 {
   "name": "@gradience/sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "TypeScript SDK for Gradience Wallet",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,6 +8,9 @@
     "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "peerDependencies": {
     "react": ">=18.0.0"

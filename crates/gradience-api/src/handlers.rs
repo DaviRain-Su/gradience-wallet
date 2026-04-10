@@ -3393,3 +3393,78 @@ pub async fn mpp_demo(
     );
     Ok(resp)
 }
+
+// ==================== AI Gateway Handlers ====================
+
+#[derive(Deserialize)]
+pub struct AiGenerateReq {
+    wallet_id: String,
+    #[serde(default)]
+    provider: Option<String>,
+    model: String,
+    prompt: String,
+}
+
+pub async fn ai_generate(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<AiGenerateReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &body.wallet_id).await?;
+
+    let svc = gradience_core::ai::gateway::AiGatewayService::new();
+    let provider = body.provider.as_deref().unwrap_or("anthropic");
+    let resp = svc
+        .llm_generate(&state.db, &body.wallet_id, None, provider, &body.model, &body.prompt
+        )
+        .await
+        .map_err(|e| {
+            tracing::warn!("ai_generate failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "text": resp.content,
+            "cost": resp.cost_raw,
+            "input_tokens": resp.input_tokens,
+            "output_tokens": resp.output_tokens,
+            "status": resp.status,
+        })),
+    ))
+}
+
+pub async fn ai_balance(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
+
+    let svc = gradience_core::ai::gateway::AiGatewayService::new();
+    let balance = svc
+        .get_balance(&state.db, &wallet_id, "USDC")
+        .await
+        .map_err(|e| {
+            tracing::warn!("ai_balance failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({
+            "walletId": wallet_id,
+            "token": "USDC",
+            "balance": balance,
+        })),
+    ))
+}

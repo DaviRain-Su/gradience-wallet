@@ -33,10 +33,19 @@ console.log(quote.to_amount);
 
 const ai = await client.aiGenerate({
   walletId: wallet.id,
+  provider: "anthropic",
   model: "claude-3-5-sonnet",
   prompt: "Summarize DeFi trends",
 });
 console.log(ai.text);
+
+const openAi = await client.aiGenerate({
+  walletId: wallet.id,
+  provider: "openai",
+  model: "gpt-4o",
+  prompt: "Analyze Uniswap volume today",
+});
+console.log(openAi.text);
 ```
 
 ## React Hooks

@@ -33,6 +33,7 @@ export interface SwapQuoteResult {
 
 export interface AiGenerateParams {
   walletId: string;
+  provider?: string;
   model: string;
   prompt: string;
 }

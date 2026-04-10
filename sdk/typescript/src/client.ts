@@ -136,7 +136,12 @@ export class GradienceClient {
 
   async aiGenerate(params: AiGenerateParams): Promise<AiGenerateResult> {
     return this.request<AiGenerateResult>("POST", "/api/ai/generate", {
-      body: { wallet_id: params.walletId, model: params.model, prompt: params.prompt },
+      body: {
+        wallet_id: params.walletId,
+        provider: params.provider || "anthropic",
+        model: params.model,
+        prompt: params.prompt,
+      },
     });
   }
 
