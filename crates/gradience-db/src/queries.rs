@@ -1099,16 +1099,18 @@ pub async fn create_agent_session(
     agent_key_hash: Option<&str>,
     status: &str,
     expires_at: DateTime<Utc>,
+    boundaries_json: Option<&str>,
 ) -> Result<()> {
     sqlx::query!(
-        "INSERT INTO agent_sessions (id, wallet_id, name, session_type, agent_key_hash, status, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO agent_sessions (id, wallet_id, name, session_type, agent_key_hash, status, expires_at, boundaries_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         id,
         wallet_id,
         name,
         session_type,
         agent_key_hash,
         status,
-        expires_at
+        expires_at,
+        boundaries_json
     )
     .execute(pool)
     .await?;
@@ -1120,7 +1122,7 @@ pub async fn get_agent_session_by_id(
     id: &str,
 ) -> Result<Option<AgentSession>> {
     let row = sqlx::query_as::<_, AgentSession>(
-        "SELECT id, wallet_id, name, session_type, agent_key_hash, status, expires_at, created_at FROM agent_sessions WHERE id = ?"
+        "SELECT id, wallet_id, name, session_type, agent_key_hash, status, expires_at, created_at, boundaries_json FROM agent_sessions WHERE id = ?"
     )
     .bind(id)
     .fetch_optional(pool)
@@ -1133,7 +1135,7 @@ pub async fn list_agent_sessions_by_wallet(
     wallet_id: &str,
 ) -> Result<Vec<AgentSession>> {
     let rows = sqlx::query_as::<_, AgentSession>(
-        "SELECT id, wallet_id, name, session_type, agent_key_hash, status, expires_at, created_at FROM agent_sessions WHERE wallet_id = ? ORDER BY created_at DESC"
+        "SELECT id, wallet_id, name, session_type, agent_key_hash, status, expires_at, created_at, boundaries_json FROM agent_sessions WHERE wallet_id = ? ORDER BY created_at DESC"
     )
     .bind(wallet_id)
     .fetch_all(pool)

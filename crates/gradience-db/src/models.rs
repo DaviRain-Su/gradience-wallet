@@ -248,6 +248,7 @@ pub struct AgentSession {
     pub status: String,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+    pub boundaries_json: Option<String>,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow)]
