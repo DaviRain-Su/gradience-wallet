@@ -8,6 +8,7 @@ pub struct BundlerClient {
     url: String,
     entry_point: String,
     auth_header: Option<String>,
+    chain_id: Option<u64>,
     client: reqwest::Client,
 }
 
@@ -16,11 +17,13 @@ impl BundlerClient {
         url: impl Into<String>,
         entry_point: impl Into<String>,
         auth_header: Option<String>,
+        chain_id: Option<u64>,
     ) -> Self {
         Self {
             url: url.into(),
             entry_point: entry_point.into(),
             auth_header,
+            chain_id,
             client: reqwest::Client::new(),
         }
     }
@@ -30,12 +33,15 @@ impl BundlerClient {
         &self,
         op: &UserOperation,
     ) -> anyhow::Result<SendUserOperationResponse> {
-        let body = json!({
+        let mut body = json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "eth_sendUserOperation",
             "params": [op, self.entry_point],
         });
+        if let Some(chain_id) = self.chain_id {
+            body["chainId"] = json!(chain_id);
+        }
 
         let mut req = self.client.post(&self.url).json(&body);
         if let Some(auth) = &self.auth_header {
@@ -67,12 +73,15 @@ impl BundlerClient {
         &self,
         user_op_hash: &B256,
     ) -> anyhow::Result<Option<UserOperationReceipt>> {
-        let body = json!({
+        let mut body = json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "eth_getUserOperationReceipt",
             "params": [format!("0x{}", hex::encode(user_op_hash.as_slice()))],
         });
+        if let Some(chain_id) = self.chain_id {
+            body["chainId"] = json!(chain_id);
+        }
 
         let mut req = self.client.post(&self.url).json(&body);
         if let Some(auth) = &self.auth_header {

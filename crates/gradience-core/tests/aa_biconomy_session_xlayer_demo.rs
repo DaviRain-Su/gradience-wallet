@@ -3,6 +3,7 @@ use alloy::signers::Signer;
 use alloy::signers::local::PrivateKeySigner;
 use gradience_core::aa::biconomy::BiconomyAccount;
 use gradience_core::aa::biconomy_session::BiconomySession;
+use gradience_core::aa::bundler::BundlerClient;
 use gradience_core::aa::user_op::UserOpBuilder;
 
 #[tokio::test]
@@ -75,9 +76,45 @@ async fn demo_biconomy_session_key_xlayer() {
         ecdsa_module,
     ).await.unwrap();
 
+    // Set realistic gas limits for on-chain submission
+    op_set_root.call_gas_limit = U256::from(300_000);
+    op_set_root.verification_gas_limit = U256::from(300_000);
+    op_set_root.pre_verification_gas = U256::from(100_000);
+    op_set_root.max_fee_per_gas = U256::from(2_000_000_000u64);
+    op_set_root.max_priority_fee_per_gas = U256::from(1_000_000_000u64);
+
     println!("\n--- Phase 1: setMerkleRoot UserOp ---");
     println!("UserOp Hash: {}", UserOpBuilder::hash_v06(&op_set_root, entry_point, chain_id));
     println!("Signature length: {} bytes", op_set_root.signature.len());
+
+    // Try submitting via Particle Bundler
+    let auth = "Basic MDlkM2JiM2UtYzlhOS00ZjAwLThjZGItODQ4YjQyOWFjNWEzOmNhNW9WZU1WUXJyUFdhcE4wWlhlTjcxVjZzQUtBWW9LeW41N1hVSVY=".to_string();
+    let bundler = BundlerClient::new(
+        "https://bundler.particle.network",
+        entry_point.to_string(),
+        Some(auth),
+        Some(chain_id),
+    );
+
+    match bundler.send_user_operation(&op_set_root).await {
+        Ok(resp) => {
+            println!("Phase 1 submitted! UserOp Hash from bundler: 0x{}", hex::encode(&resp.user_op_hash[..]));
+            // Wait a moment and check receipt
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            let uo_hash = alloy::primitives::B256::from_slice(&resp.user_op_hash[..]);
+            match bundler.get_user_operation_receipt(&uo_hash).await {
+                Ok(Some(receipt)) => {
+                    println!("Phase 1 receipt: success={}, tx_hash={:?}, actual_gas_cost={}",
+                        receipt.success, receipt.receipt.transaction_hash, receipt.actual_gas_cost);
+                }
+                Ok(None) => println!("Phase 1 pending (no receipt yet)."),
+                Err(e) => println!("Phase 1 receipt query failed: {}", e),
+            }
+        }
+        Err(e) => {
+            println!("Phase 1 bundler submission failed (expected if no gas/paymaster): {}", e);
+        }
+    }
 
     // ======================== PHASE 2: execute with session key ========================
     // Demo call: simple execute to recipient with 0 value and empty data
@@ -93,6 +130,13 @@ async fn demo_biconomy_session_key_xlayer() {
         U256::from(1000),
         U256::from(100),
     );
+
+    // If Phase 1 succeeded, use higher gas for Phase 2 as well
+    op_exec.call_gas_limit = U256::from(300_000);
+    op_exec.verification_gas_limit = U256::from(300_000);
+    op_exec.pre_verification_gas = U256::from(100_000);
+    op_exec.max_fee_per_gas = U256::from(2_000_000_000u64);
+    op_exec.max_priority_fee_per_gas = U256::from(1_000_000_000u64);
 
     let user_op_hash = UserOpBuilder::hash_v06(&op_exec, entry_point, chain_id);
 
@@ -115,4 +159,14 @@ async fn demo_biconomy_session_key_xlayer() {
     println!("UserOp Hash: {}", user_op_hash);
     println!("Module Signature length: {} bytes", module_sig.len());
     println!("Final Signature length: {} bytes", op_exec.signature.len());
+
+    // Optionally try Phase 2 submission as well
+    match bundler.send_user_operation(&op_exec).await {
+        Ok(resp) => {
+            println!("Phase 2 submitted! UserOp Hash from bundler: 0x{}", hex::encode(&resp.user_op_hash[..]));
+        }
+        Err(e) => {
+            println!("Phase 2 bundler submission failed (expected if account not deployed or no gas): {}", e);
+        }
+    }
 }
