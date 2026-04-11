@@ -222,6 +222,7 @@ pub async fn run() -> anyhow::Result<()> {
             "/api/wallets/:id/payment-routes",
             get(handlers::list_payment_routes).post(handlers::set_payment_routes),
         )
+        .route("/api/earn/discover", get(handlers::earn_discover))
         .route("/api/swap/quote", post(handlers::swap_quote))
         .route("/api/ai/generate", post(handlers::ai_generate))
         .route("/api/ai/balance/:wallet_id", get(handlers::ai_balance))

@@ -2004,6 +2004,35 @@ pub struct SwapReq {
 }
 
 #[derive(Deserialize)]
+pub struct EarnDiscoverQuery {
+    chain_id: u64,
+    limit: Option<usize>,
+}
+
+pub async fn earn_discover(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    axum::extract::Query(query): axum::extract::Query<EarnDiscoverQuery>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    let api_key = std::env::var("LIFI_API_KEY").unwrap_or_default();
+    let client = gradience_core::earn::EarnClient::new(api_key);
+    let vaults = client
+        .discover_vaults(query.chain_id, query.limit)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    Ok((
+        StatusCode::OK,
+        axum::Json(serde_json::json!({ "vaults": vaults })),
+    ))
+}
+
+#[derive(Deserialize)]
 pub struct SwapQuoteReq {
     chain: String,
     from_token: String,

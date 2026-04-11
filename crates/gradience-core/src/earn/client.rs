@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Minimal LI.FI Earn API client.
 ///
@@ -13,7 +13,7 @@ pub struct EarnClient {
 
 /// High-level vault description (best-effort typed subset).
 /// Missing fields gracefully ignored via #[serde(default)].
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Vault {
     pub chain_id: u64,
@@ -24,7 +24,7 @@ pub struct Vault {
     pub contract_address: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub address: String,
