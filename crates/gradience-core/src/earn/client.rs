@@ -54,6 +54,22 @@ impl EarnClient {
         }
     }
 
+    /// macOS + reqwest 0.11 native-tls 在 Cloudflare HTTP/2 下偶发
+    /// "bad protocol version"，curl 工作正常，故作 fallback。
+    fn curl_get_json(&self, url: &str) -> anyhow::Result<serde_json::Value> {
+        let mut cmd = std::process::Command::new("curl");
+        cmd.arg("-s").arg("-L").arg(url);
+        if !self.api_key.is_empty() {
+            cmd.arg("-H")
+                .arg(format!("x-lifi-api-key: {}", self.api_key));
+        }
+        let output = cmd.output()?;
+        if !output.status.success() {
+            anyhow::bail!("curl failed: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        Ok(serde_json::from_slice(&output.stdout)?)
+    }
+
     /// Discover yield vaults on a given chain.
     /// Returns raw JSON first; use `parse_vaults` to extract typed data.
     pub async fn discover_vaults_raw(
@@ -65,20 +81,24 @@ impl EarnClient {
         if let Some(l) = limit {
             url.push_str(&format!("&limit={}", l));
         }
-        if let Some(sort) = Some("apy") {
-            url.push_str(&format!("&sortBy={}", sort));
-        }
-        let resp = self
-            .client
-            .get(&url)
-            .header("x-lifi-api-key", &self.api_key)
-            .send()
-            .await?;
-        if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Earn API error (discover): {}", text);
-        }
-        Ok(resp.json().await?)
+        url.push_str("&sortBy=apy");
+        // Fallback to curl on macOS native-tls issues
+        tokio::task::spawn_blocking({
+            let url = url.clone();
+            let api_key = self.api_key.clone();
+            move || {
+                let mut cmd = std::process::Command::new("curl");
+                cmd.arg("-s").arg("-L").arg(&url);
+                if !api_key.is_empty() {
+                    cmd.arg("-H").arg(format!("x-lifi-api-key: {}", api_key));
+                }
+                let output = cmd.output()?;
+                if !output.status.success() {
+                    anyhow::bail!("curl failed: {}", String::from_utf8_lossy(&output.stderr));
+                }
+                Ok(serde_json::from_slice(&output.stdout)?)
+            }
+        }).await?
     }
 
     /// Typed wrapper over `discover_vaults_raw`.
@@ -109,17 +129,22 @@ impl EarnClient {
             "{}/v1/earn/portfolio/{}/positions",
             self.base_url, wallet_address
         );
-        let resp = self
-            .client
-            .get(&url)
-            .header("x-lifi-api-key", &self.api_key)
-            .send()
-            .await?;
-        if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Earn API error (positions): {}", text);
-        }
-        Ok(resp.json().await?)
+        tokio::task::spawn_blocking({
+            let url = url.clone();
+            let api_key = self.api_key.clone();
+            move || {
+                let mut cmd = std::process::Command::new("curl");
+                cmd.arg("-s").arg("-L").arg(&url);
+                if !api_key.is_empty() {
+                    cmd.arg("-H").arg(format!("x-lifi-api-key: {}", api_key));
+                }
+                let output = cmd.output()?;
+                if !output.status.success() {
+                    anyhow::bail!("curl failed: {}", String::from_utf8_lossy(&output.stderr));
+                }
+                Ok(serde_json::from_slice(&output.stdout)?)
+            }
+        }).await?
     }
 
     /// Typed wrapper over `get_positions_raw`.
@@ -160,16 +185,21 @@ impl EarnClient {
             to_address,
             from_amount
         );
-        let resp = self
-            .client
-            .get(&url)
-            .header("x-lifi-api-key", &self.api_key)
-            .send()
-            .await?;
-        if !resp.status().is_success() {
-            let text = resp.text().await.unwrap_or_default();
-            anyhow::bail!("Composer API error (quote): {}", text);
-        }
-        Ok(resp.json().await?)
+        tokio::task::spawn_blocking({
+            let url = url.clone();
+            let api_key = self.api_key.clone();
+            move || {
+                let mut cmd = std::process::Command::new("curl");
+                cmd.arg("-s").arg("-L").arg(&url);
+                if !api_key.is_empty() {
+                    cmd.arg("-H").arg(format!("x-lifi-api-key: {}", api_key));
+                }
+                let output = cmd.output()?;
+                if !output.status.success() {
+                    anyhow::bail!("curl failed: {}", String::from_utf8_lossy(&output.stderr));
+                }
+                Ok(serde_json::from_slice(&output.stdout)?)
+            }
+        }).await?
     }
 }
