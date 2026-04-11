@@ -92,6 +92,18 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                     "check_approval",
                     "Check the status of a transaction approval",
                 ),
+                Tool::with_schema::<EarnDiscoverArgs>(
+                    "earn_discover",
+                    "Discover yield vaults on a chain via LI.FI Earn",
+                ),
+                Tool::with_schema::<EarnPositionsArgs>(
+                    "earn_positions",
+                    "Check wallet positions across earn protocols",
+                ),
+                Tool::with_schema::<EarnQuoteArgs>(
+                    "earn_quote",
+                    "Get a Composer quote for depositing into an earn vault",
+                ),
             ];
             let result = ToolsListResult { tools };
             Ok(JsonRpcResponse::success(
@@ -313,6 +325,54 @@ pub fn handle_request(req: JsonRpcRequest) -> anyhow::Result<JsonRpcResponse> {
                         }
                     };
                     match crate::tools::handle_check_approval(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "earn_discover" => {
+                    let a: EarnDiscoverArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
+                    };
+                    match crate::tools::handle_earn_discover(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "earn_positions" => {
+                    let a: EarnPositionsArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
+                    };
+                    match crate::tools::handle_earn_positions(a) {
+                        Ok(v) => v,
+                        Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
+                    }
+                }
+                "earn_quote" => {
+                    let a: EarnQuoteArgs = match serde_json::from_value(args) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            return Ok(JsonRpcResponse::error(
+                                req.id,
+                                -32000,
+                                format!("invalid args: {}", e),
+                            ))
+                        }
+                    };
+                    match crate::tools::handle_earn_quote(a) {
                         Ok(v) => v,
                         Err(e) => return Ok(JsonRpcResponse::error(req.id, -32000, e.to_string())),
                     }

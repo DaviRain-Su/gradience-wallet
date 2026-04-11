@@ -5,6 +5,7 @@ pub mod audit;
 pub mod chain;
 pub mod config;
 pub mod dex;
+pub mod earn;
 pub mod error;
 pub mod identity;
 pub mod ows;

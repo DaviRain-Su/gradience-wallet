@@ -107,3 +107,25 @@ pub struct CheckApprovalArgs {
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct AiModelsArgs {}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct EarnDiscoverArgs {
+    pub chain_id: u64,
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct EarnPositionsArgs {
+    pub wallet_address: String,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct EarnQuoteArgs {
+    pub from_chain: u64,
+    pub to_chain: u64,
+    pub from_token: String,
+    pub to_token: String,
+    pub from_address: String,
+    pub to_address: String,
+    pub from_amount: String,
+}

@@ -1068,3 +1068,41 @@ pub fn handle_deactivate_stake(
 
     Ok(json!({"txHash": result.tx_hash, "walletId": wallet_id, "chainId": chain_id}))
 }
+
+pub fn handle_earn_discover(args: crate::args::EarnDiscoverArgs) -> anyhow::Result<serde_json::Value> {
+    let api_key = std::env::var("LIFI_API_KEY")
+        .map_err(|_| anyhow::anyhow!("LIFI_API_KEY env var not set"))?;
+    let client = gradience_core::earn::EarnClient::new(api_key);
+    let result = block_on_async(async {
+        client.discover_vaults_raw(args.chain_id, args.limit).await
+    })?;
+    Ok(result)
+}
+
+pub fn handle_earn_positions(args: crate::args::EarnPositionsArgs) -> anyhow::Result<serde_json::Value> {
+    let api_key = std::env::var("LIFI_API_KEY")
+        .map_err(|_| anyhow::anyhow!("LIFI_API_KEY env var not set"))?;
+    let client = gradience_core::earn::EarnClient::new(api_key);
+    let result = block_on_async(async {
+        client.get_positions_raw(&args.wallet_address).await
+    })?;
+    Ok(result)
+}
+
+pub fn handle_earn_quote(args: crate::args::EarnQuoteArgs) -> anyhow::Result<serde_json::Value> {
+    let api_key = std::env::var("LIFI_API_KEY")
+        .map_err(|_| anyhow::anyhow!("LIFI_API_KEY env var not set"))?;
+    let client = gradience_core::earn::EarnClient::new(api_key);
+    let result = block_on_async(async {
+        client.quote_deposit(
+            args.from_chain,
+            args.to_chain,
+            &args.from_token,
+            &args.to_token,
+            &args.from_address,
+            &args.to_address,
+            &args.from_amount,
+        ).await
+    })?;
+    Ok(result)
+}
