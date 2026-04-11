@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { apiGet } from "@/lib/api";
+import { useEffect, useState } from "react";
+import { apiGet, apiPost } from "@/lib/api";
 
 interface UnderlyingToken {
   symbol: string;
@@ -33,10 +33,32 @@ interface Vault {
   description?: string;
 }
 
+interface Wallet {
+  id: string;
+  name: string;
+}
+
 export default function EarnPage() {
   const [vaults, setVaults] = useState<Vault[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [selectedWalletId, setSelectedWalletId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
+  const [depositing, setDepositing] = useState<Record<string, boolean>>({});
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    apiGet("/api/wallets")
+      .then(async (res) => {
+        const data = await res.json();
+        const list = data as Wallet[];
+        setWallets(list);
+        if (list.length > 0) {
+          setSelectedWalletId(list[0].id);
+        }
+      })
+      .catch(() => setMsg(""));
+  }, []);
 
   async function discover() {
     setLoading(true);
@@ -55,13 +77,63 @@ export default function EarnPage() {
     }
   }
 
+  async function deposit(vault: Vault) {
+    if (!selectedWalletId) {
+      setMsg("Please select a wallet first.");
+      return;
+    }
+    const token = vault.underlyingTokens?.[0];
+    if (!token) {
+      setMsg("No underlying token info for this vault.");
+      return;
+    }
+    const raw = amounts[vault.address] || "";
+    if (!raw || Number(raw) <= 0) {
+      setMsg("Enter a valid amount.");
+      return;
+    }
+    const scale = BigInt("1" + "0".repeat(token.decimals));
+    const amount = (BigInt(Math.floor(Number(raw) * 1e6)) * scale / BigInt(1e6)).toString();
+
+    setDepositing((d) => ({ ...d, [vault.address]: true }));
+    setMsg("");
+    try {
+      const res = await apiPost(`/api/wallets/${selectedWalletId}/earn-deposit`, {
+        vault_address: vault.address,
+        from_token: token.address,
+        amount,
+      });
+      const data = await res.json();
+      setMsg(`Deposit submitted! tx_hash: ${data.tx_hash}`);
+    } catch (e: unknown) {
+      const text = e instanceof Error ? e.message : String(e);
+      setMsg(`Deposit failed: ${text}`);
+    } finally {
+      setDepositing((d) => ({ ...d, [vault.address]: false }));
+    }
+  }
+
   return (
     <div className="min-h-screen p-6" style={{ backgroundColor: "var(--background)", color: "var(--foreground)" }}>
       <div className="max-w-3xl mx-auto">
         <h1 className="text-3xl font-bold mb-2">Earn</h1>
-        <p className="mb-6" style={{ color: "var(--muted-foreground)" }}>
+        <p className="mb-4" style={{ color: "var(--muted-foreground)" }}>
           Discover yield vaults and deposit directly from your wallet.
         </p>
+
+        <div className="mb-4 flex items-center gap-3">
+          <label className="text-sm" style={{ color: "var(--muted-foreground)" }}>Wallet:</label>
+          <select
+            className="rounded-md border px-3 py-2 text-sm"
+            style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}
+            value={selectedWalletId}
+            onChange={(e) => setSelectedWalletId(e.target.value)}
+          >
+            {wallets.map((w) => (
+              <option key={w.id} value={w.id}>{w.name}</option>
+            ))}
+          </select>
+        </div>
 
         <button
           onClick={discover}
@@ -72,7 +144,7 @@ export default function EarnPage() {
           {loading ? "Discovering..." : "Discover Base Vaults"}
         </button>
 
-        {msg && <p className="mt-4 text-red-500">{msg}</p>}
+        {msg && <p className="mt-4 text-sm text-red-500">{msg}</p>}
 
         <div className="mt-6 space-y-4">
           {vaults.map((v) => {
@@ -114,6 +186,27 @@ export default function EarnPage() {
                 <div className="mt-3 text-xs font-mono break-all" style={{ color: "var(--muted-foreground)" }}>
                   Vault: {v.address}
                 </div>
+
+                {token && (
+                  <div className="mt-4 flex items-center gap-2">
+                    <input
+                      type="number"
+                      placeholder={`Amount in ${token.symbol}`}
+                      className="flex-1 rounded-md border px-3 py-2 text-sm"
+                      style={{ borderColor: "var(--border)", backgroundColor: "var(--card)" }}
+                      value={amounts[v.address] || ""}
+                      onChange={(e) => setAmounts((a) => ({ ...a, [v.address]: e.target.value }))}
+                    />
+                    <button
+                      onClick={() => deposit(v)}
+                      disabled={depositing[v.address]}
+                      className="px-4 py-2 rounded-md font-semibold text-white transition disabled:opacity-60"
+                      style={{ backgroundColor: "var(--primary)" }}
+                    >
+                      {depositing[v.address] ? "Deposit..." : "Deposit"}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}

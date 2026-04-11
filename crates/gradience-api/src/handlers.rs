@@ -2321,6 +2321,206 @@ pub async fn wallet_swap(
     Ok((StatusCode::OK, axum::Json(resp)))
 }
 
+#[derive(Deserialize)]
+pub struct EarnDepositReq {
+    vault_address: String,
+    from_token: String,
+    amount: String,
+}
+
+pub async fn earn_deposit(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+    Path(wallet_id): Path<String>,
+    Json(body): Json<EarnDepositReq>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let token = auth_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let session = get_session(&state, &token)
+        .await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    let passphrase = session.passphrase.clone().ok_or(StatusCode::FORBIDDEN)?;
+    let _wallet = require_wallet_owner(&state, &session, &wallet_id).await?;
+
+    let wm = gradience_core::wallet::service::WalletManagerService::new();
+    wm.require_status_active(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::FORBIDDEN)?;
+
+    let addrs = gradience_db::queries::list_wallet_addresses(&state.db, &wallet_id)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut addr = None;
+    for a in &addrs {
+        if a.chain_id.starts_with("eip155:") {
+            addr = Some(a.address.clone());
+            break;
+        }
+    }
+    let from_addr = addr.ok_or(StatusCode::BAD_REQUEST)?;
+
+    let api_key = std::env::var("LIFI_API_KEY").unwrap_or_default();
+    let client = gradience_core::earn::EarnClient::new(api_key);
+    let chain_id = 8453u64;
+    let quote = client
+        .quote_deposit(
+            chain_id,
+            chain_id,
+            &body.from_token,
+            &body.vault_address,
+            &from_addr.to_lowercase(),
+            &from_addr.to_lowercase(),
+            &body.amount,
+        )
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let tx_req = quote.get("transactionRequest").ok_or(StatusCode::BAD_REQUEST)?;
+    let to = tx_req.get("to").and_then(|v| v.as_str()).ok_or(StatusCode::BAD_REQUEST)?;
+    let data = tx_req.get("data").and_then(|v| v.as_str()).unwrap_or("0x");
+    let value_hex = tx_req.get("value").and_then(|v| v.as_str()).unwrap_or("0x0");
+    let gas_limit_hex = tx_req.get("gasLimit").and_then(|v| v.as_str()).unwrap_or("0x0");
+    let gas_price_hex = tx_req
+        .get("gasPrice")
+        .and_then(|v| v.as_str())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+    let quote_chain_id = tx_req
+        .get("chainId")
+        .and_then(|v| v.as_u64())
+        .ok_or(StatusCode::BAD_REQUEST)?;
+
+    let to_bytes = hex::decode(to.trim_start_matches("0x")).unwrap_or_default();
+    let data_bytes = hex::decode(data.trim_start_matches("0x")).unwrap_or_default();
+    let value_wei = u128::from_str_radix(value_hex.trim_start_matches("0x"), 16)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let gas_limit = u64::from_str_radix(gas_limit_hex.trim_start_matches("0x"), 16)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    let gas_price = u128::from_str_radix(gas_price_hex.trim_start_matches("0x"), 16)
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+
+    let chain_str = String::from("base");
+    let rpc_url = gradience_core::chain::resolve_rpc(&chain_str);
+
+    let tx = gradience_core::ows::adapter::Transaction {
+        to: Some(to.to_string()),
+        value: body.amount.clone(),
+        data: data_bytes.clone(),
+        raw_hex: format!("0x{}", hex::encode(to.trim_start_matches("0x"))),
+    };
+    let (eval, core_policies) = evaluate_wallet_policy(
+        &state,
+        &wallet_id,
+        &format!("eip155:{}", quote_chain_id),
+        tx.clone(),
+    )
+    .await?;
+
+    let mut approval_id = None;
+    if eval.decision == gradience_core::policy::engine::Decision::Deny {
+        let _ = gradience_core::audit::service::log_wallet_action(
+            &state.db,
+            &wallet_id,
+            None,
+            "earn_deposit",
+            &serde_json::json!({"vault": body.vault_address, "amount": body.amount})
+                .to_string(),
+            "denied",
+        )
+        .await;
+        return Ok((
+            StatusCode::FORBIDDEN,
+            axum::Json(serde_json::json!({"error": eval.reasons.join(", ")})),
+        ));
+    }
+    if eval.decision == gradience_core::policy::engine::Decision::Warn {
+        let aid = uuid::Uuid::new_v4().to_string();
+        let policy_id = core_policies
+            .first()
+            .map(|p| p.id.clone())
+            .unwrap_or_default();
+        let request_json = serde_json::json!({
+            "action": "earn_deposit",
+            "wallet_id": wallet_id,
+            "vault_address": body.vault_address,
+            "from_token": body.from_token,
+            "amount": body.amount,
+        })
+        .to_string();
+        let _ = gradience_db::queries::create_policy_approval(
+            &state.db,
+            &aid,
+            &policy_id,
+            &wallet_id,
+            &request_json,
+        )
+        .await;
+        approval_id = Some(aid);
+    }
+
+    let evm_client = gradience_core::rpc::evm::EvmRpcClient::new("evm", rpc_url)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let nonce = evm_client
+        .get_transaction_count(&from_addr)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let mut rlp = rlp::RlpStream::new_list(9);
+    rlp.append(&nonce);
+    rlp.append(&gas_price);
+    rlp.append(&gas_limit);
+    rlp.append(&to_bytes);
+    rlp.append(&value_wei);
+    rlp.append(&data_bytes);
+    rlp.append(&quote_chain_id);
+    rlp.append(&0u8);
+    rlp.append(&0u8);
+    let tx_hex = format!("0x{}", hex::encode(rlp.out()));
+
+    let result = ows_lib::sign_and_send(
+        &wallet_id,
+        &chain_str,
+        &tx_hex,
+        Some(&passphrase),
+        None,
+        Some(rpc_url),
+        Some(&state.vault_dir),
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let wallet_ws = gradience_db::queries::get_wallet_by_id(&state.db, &wallet_id)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|w| w.workspace_id);
+    let _ = gradience_core::policy::spending::record_spending(
+        &state.db,
+        &wallet_id,
+        wallet_ws.as_deref(),
+        &format!("eip155:{}", quote_chain_id),
+        value_wei,
+        &core_policies,
+    )
+    .await;
+    let _ = gradience_core::audit::service::log_wallet_action(
+        &state.db,
+        &wallet_id,
+        None,
+        "earn_deposit",
+        &serde_json::json!({"vault": body.vault_address, "amount": body.amount, "tx_hash": result.tx_hash})
+            .to_string(),
+        "allowed",
+    )
+    .await;
+
+    let mut resp = serde_json::json!({ "tx_hash": result.tx_hash });
+    if let Some(aid) = approval_id {
+        resp["approval_id"] = aid.into();
+        resp["warning"] = true.into();
+        resp["reasons"] = eval.reasons.into();
+    }
+    Ok((StatusCode::OK, axum::Json(resp)))
+}
+
 // ==================== Policy Approval Handlers ====================
 
 pub async fn list_policy_approvals(
