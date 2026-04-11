@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO agent_sessions (id, wallet_id, name, session_type, agent_key_hash, session_key_private, status, expires_at, boundaries_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "41cf09e29f878583f8891432673ebf8038e25adc364e60f89432e94e3bee9230"
+}

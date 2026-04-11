@@ -1097,17 +1097,19 @@ pub async fn create_agent_session(
     name: &str,
     session_type: &str,
     agent_key_hash: Option<&str>,
+    session_key_private: Option<&str>,
     status: &str,
     expires_at: DateTime<Utc>,
     boundaries_json: Option<&str>,
 ) -> Result<()> {
     sqlx::query!(
-        "INSERT INTO agent_sessions (id, wallet_id, name, session_type, agent_key_hash, status, expires_at, boundaries_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO agent_sessions (id, wallet_id, name, session_type, agent_key_hash, session_key_private, status, expires_at, boundaries_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         id,
         wallet_id,
         name,
         session_type,
         agent_key_hash,
+        session_key_private,
         status,
         expires_at,
         boundaries_json
@@ -1122,7 +1124,7 @@ pub async fn get_agent_session_by_id(
     id: &str,
 ) -> Result<Option<AgentSession>> {
     let row = sqlx::query_as::<_, AgentSession>(
-        "SELECT id, wallet_id, name, session_type, agent_key_hash, status, expires_at, created_at, boundaries_json FROM agent_sessions WHERE id = ?"
+        "SELECT id, wallet_id, name, session_type, agent_key_hash, session_key_private, status, expires_at, created_at, boundaries_json FROM agent_sessions WHERE id = ?"
     )
     .bind(id)
     .fetch_optional(pool)

@@ -245,6 +245,7 @@ pub struct AgentSession {
     pub name: String,
     pub session_type: String,
     pub agent_key_hash: Option<String>,
+    pub session_key_private: Option<String>,
     pub status: String,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,

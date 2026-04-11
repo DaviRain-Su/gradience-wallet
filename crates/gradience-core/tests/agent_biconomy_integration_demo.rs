@@ -5,7 +5,7 @@ use alloy::sol_types::{sol, SolCall};
 use gradience_core::aa::biconomy::BiconomyAccount;
 use gradience_core::aa::biconomy_session::BiconomySession;
 use gradience_core::aa::user_op::UserOpBuilder;
-use gradience_core::agent::session::{AgentSessionService, SessionBoundaries, SessionCredential, SessionType, SpendLimit};
+use gradience_core::agent::session::{AgentSessionService, SessionBoundaries, SessionType, SpendLimit};
 use gradience_core::policy::engine::{Decision, EvalContext, Intent, PolicyEngine};
 
 sol! {
@@ -84,7 +84,7 @@ async fn agent_biconomy_integration_demo() {
         contract_whitelist: None,
     };
 
-    let (session_id, cred) = svc
+    let (session_id, _cred) = svc
         .create_session(
             &pool,
             "w1",
@@ -96,10 +96,8 @@ async fn agent_biconomy_integration_demo() {
         .await
         .unwrap();
 
-    let session_signer = match cred {
-        SessionCredential::Signer(s) => s,
-        _ => panic!("expected signer credential"),
-    };
+    // Recover signer from database (productized flow)
+    let session_signer = svc.get_session_signer(&pool, &session_id).await.unwrap();
     let session_key = session_signer.address();
 
     // ========== 2. Policy Engine Check ==========
@@ -156,7 +154,7 @@ async fn agent_biconomy_integration_demo() {
     ).unwrap();
     let owner = owner_signer.address();
 
-    let index = U256::from(6);
+    let index = U256::from(7);
 
     let account = BiconomyAccount::get_counterfactual_address(
         rpc_url, factory, ecdsa_module, owner, index,

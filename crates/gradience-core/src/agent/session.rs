@@ -121,16 +121,23 @@ impl AgentSessionService {
         let boundaries_json = serde_json::to_string(&boundaries)
             .map_err(|e| GradienceError::Database(format!("serialize boundaries: {}", e)))?;
 
-        let (agent_key_hash, credential) = match session_type {
+        let (agent_key_hash, session_key_private, credential) = match session_type {
             SessionType::CapabilityToken => {
                 let token = uuid::Uuid::new_v4().to_string();
                 let hash = ring::digest::digest(&ring::digest::SHA256, token.as_bytes());
-                (Some(hex::encode(hash.as_ref())), SessionCredential::Token(token))
+                (Some(hex::encode(hash.as_ref())), None, SessionCredential::Token(token))
             }
             SessionType::OnChainSessionKey => {
                 let signer = alloy::signers::local::PrivateKeySigner::random();
                 let pubkey = hex::encode(signer.address());
-                (Some(pubkey), SessionCredential::Signer(signer))
+                // WARNING: storing raw private key in plaintext is only acceptable for demos.
+                // Production must use encrypted keystore, HSM, or secure enclave.
+                let private_hex = hex::encode(signer.to_bytes());
+                (
+                    Some(pubkey),
+                    Some(private_hex),
+                    SessionCredential::Signer(signer),
+                )
             }
         };
 
@@ -141,6 +148,7 @@ impl AgentSessionService {
             name,
             &session_type.to_string(),
             agent_key_hash.as_deref(),
+            session_key_private.as_deref(),
             "active",
             expires_at,
             Some(&boundaries_json),
@@ -163,6 +171,41 @@ impl AgentSessionService {
         }
 
         Ok((session_id, credential))
+    }
+
+    /// Recover the session key signer from an OnChainSessionKey session.
+    ///
+    /// WARNING: this relies on plaintext storage in SQLite and is intended
+    /// for demos. Production deployments must encrypt the key at rest.
+    pub async fn get_session_signer(
+        &self,
+        pool: &Pool<Sqlite>,
+        session_id: &str,
+    ) -> Result<alloy::signers::local::PrivateKeySigner> {
+        let session = gradience_db::queries::get_agent_session_by_id(pool, session_id)
+            .await
+            .map_err(|e| GradienceError::Database(format!("db error: {}", e)))?
+            .ok_or_else(|| GradienceError::Validation("agent session not found".into()))?;
+
+        if session.session_type != "on_chain_session_key" {
+            return Err(GradienceError::Validation(
+                "session is not an on-chain session key".into(),
+            ));
+        }
+
+        let private_hex = session
+            .session_key_private
+            .ok_or_else(|| GradienceError::Validation("session key private not found".into()))?;
+
+        let bytes = hex::decode(private_hex)
+            .map_err(|e| GradienceError::Validation(format!("invalid session key hex: {}", e)))?;
+        let array: [u8; 32] = bytes
+            .try_into()
+            .map_err(|_| GradienceError::Validation("session key length invalid".into()))?;
+        let b256 = alloy::primitives::B256::from(array);
+        let signer = alloy::signers::local::PrivateKeySigner::from_bytes(&b256)
+            .map_err(|e| GradienceError::Validation(format!("invalid session key: {}", e)))?;
+        Ok(signer)
     }
 
     pub async fn validate_session(
@@ -406,5 +449,45 @@ mod tests {
             .validate_session(&pool, &session_id, "transfer", "eip155:8453", None)
             .await;
         assert!(err.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_session_key_persistence() {
+        let pool = setup_db().await;
+        gradience_db::queries::create_user(&pool, "u1", "a@b.com").await.unwrap();
+        gradience_db::queries::create_wallet(&pool, "w1", "main", "u1", None::<&str>)
+            .await
+            .unwrap();
+
+        let svc = AgentSessionService::new();
+        let boundaries = SessionBoundaries {
+            allowed_chains: vec!["eip155:1952".into()],
+            allowed_actions: vec!["transfer".into()],
+            spend_limits: vec![],
+            contract_whitelist: None,
+        };
+
+        let (session_id, _cred) = svc
+            .create_session(
+                &pool,
+                "w1",
+                "on-chain-agent",
+                SessionType::OnChainSessionKey,
+                boundaries,
+                Utc::now() + chrono::Duration::hours(24),
+            )
+            .await
+            .unwrap();
+
+        let recovered = svc.get_session_signer(&pool, &session_id).await.unwrap();
+        let session = gradience_db::queries::get_agent_session_by_id(&pool, &session_id)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            recovered.address().to_string().to_lowercase().trim_start_matches("0x"),
+            session.agent_key_hash.unwrap().to_lowercase()
+        );
     }
 }
